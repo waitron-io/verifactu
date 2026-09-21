@@ -24,7 +24,7 @@ The authoritative index for all of them is AEAT's developer portal:
 ## Why two different hosts
 
 The first three were already recoverable without guessing: their URLs are the exact
-`targetNamespace` constants committed in `packages/verifactu/src/xml/serialize.ts`
+`targetNamespace` constants committed in `src/xml/serialize.ts`
 (`NS_SF`/`NS_LR`/`NS_LRC`), served from AEAT's production static-files host (`www2.
 agenciatributaria.gob.es`), and AEAT publishes each schema at its own namespace URI.
 

@@ -38,8 +38,8 @@ export function trimValue(value: string | undefined | null): string {
 }
 
 // Anchored, no exponent, no leading plus, no leading zeros, at least one digit each side of a
-// point — the same shape @waitron/shared's Decimal uses, re-stated here because packages/verifactu
-// has ZERO in-repo dependencies and cannot import it.
+// point. This library has ZERO runtime dependencies, so the exact-decimal shape is defined here
+// rather than imported.
 const AMOUNT_PATTERN = /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/;
 
 /**

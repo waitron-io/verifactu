@@ -30,8 +30,9 @@ export type ValidationCode =
   // AEAT error 1118: ImporteRectificacion is mandatory when TipoRectificativa is "S".
   | "IMPORTE_RECTIFICACION_REQUIRED"
   // A full invoice (F1/F3) must identify its recipient. For F3 (canje) AEAT is
-  // explicit: «Siempre debe llevar el destinatario»
-  // (docs/compliance/verifactu-findings.md:621).
+  // explicit: «Siempre debe llevar el destinatario». The XSD leaves Destinatarios
+  // optional (minOccurs=0) for every TipoFactura, so this is an AEAT validation
+  // rule enforced here, not a schema restriction.
   | "DESTINATARIOS_REQUIRED"
   // A simplified ticket (F2) must NOT carry a recipient — it records the absence
   // via FacturaSinIdentifDestinatarioArt61d instead.
@@ -252,7 +253,7 @@ export function validate(record: RegistroAlta | RegistroAnulacion): ValidationIs
   }
 
   // A full invoice (F1/F3) must identify its recipient; for F3 canje AEAT is
-  // explicit — «Siempre debe llevar el destinatario» (verifactu-findings.md:621).
+  // explicit — «Siempre debe llevar el destinatario».
   // A simplified ticket (F2) must NOT carry one; it records the absence via
   // FacturaSinIdentifDestinatarioArt61d instead. The XSD makes Destinatarios
   // minOccurs=0 for every TipoFactura, so this business rule is enforced here
@@ -303,10 +304,10 @@ export function validate(record: RegistroAlta | RegistroAnulacion): ValidationIs
   //
   // IDOtro.ID gets the control-character scan even so: xml/serialize.ts writes it into the document
   // as element text exactly as it writes NombreRazon, so one there makes the filing equally
-  // unparseable. `@waitron/fiscal-verifactu` cannot reach it today (buildDestinatarios refuses a
-  // non-Spanish recipient before building one), but this is the library's OWN boundary and the whole
-  // reason this check exists is that a rule with no caller rots unnoticed. Its two siblings are
-  // enumerations, not free text, so neither is scanned.
+  // unparseable. No caller exercises the IDOtro branch today (a non-Spanish recipient is refused
+  // before one is built), but this is the library's OWN boundary and the whole reason this check
+  // exists is that a rule with no caller rots unnoticed. Its two siblings are enumerations, not free
+  // text, so neither is scanned.
   record.Destinatarios?.IDDestinatario.forEach((destinatario, index) => {
     const field = `Destinatarios.IDDestinatario[${index}]`;
     checkNoControlChars(`${field}.NombreRazon`, destinatario.NombreRazon);

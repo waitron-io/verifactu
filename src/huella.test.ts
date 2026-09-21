@@ -141,22 +141,17 @@ describe("computeHuella", () => {
   });
 });
 
-describe("till_id is not part of the huella (SP-A.2 §16.4(a))", () => {
-  // The H2 fiscal receipt for the SP-A.2 device-unification cutover (spec §16.4(a)). A sale's
-  // `till_id` moved from an env value (`WAITRON_TILL_TILL_ID`) to the authenticated device's assigned
-  // `tills` row (`requireSaleTillId`, apps/server/src/device-session.ts). That is a change to a piece
-  // of SALE METADATA only — `till_id` is stored on `sales.till_id` and snapshotted on
-  // `registros_facturacion.till_id`, and is NEVER a huella input. This block is the structural half of
-  // the receipt: the canonical string the huella hashes is built from exactly the eight alta fields
+describe("till_id is not part of the huella", () => {
+  // `till_id` is a piece of caller SALE METADATA, never a huella input. This block is the structural
+  // proof: the canonical string the huella hashes is built from exactly the eight alta fields
   // (`CadenaAltaInput` in types.ts) and five anulación fields (`CadenaAnulacionInput` in types.ts),
-  // and `till_id` is none of them. The §5 invariant "never put our own metadata into a hash" — the
-  // same one the `entorno`-identity and `parent_line_id` tests pin — applied to `till_id`.
+  // and `till_id` is none of them — the invariant "never put the caller's own metadata into the hash",
+  // applied to `till_id`.
   //
-  // Failing case (what makes this meaningful, per §16.4): if `till_id` entered `buildCadena`, two
-  // records differing only in `till_id` would hash DIFFERENTLY, and the two assertions below would
-  // fail. Proven by mutation for the H2 receipt: temporarily appending `["TillId", …]` to
-  // `buildCadenaAlta`'s `joinCampos` array turns the AEAT official-vector tests and the identity
-  // assertions here RED (captured verbatim in the Task 16 receipt), then reverted.
+  // Failing case (what makes this meaningful): if `till_id` entered `buildCadena`, two records
+  // differing only in `till_id` would hash DIFFERENTLY, and the two assertions below would fail.
+  // Proven by mutation: temporarily appending `["TillId", …]` to `buildCadenaAlta`'s `joinCampos`
+  // array turns the AEAT official-vector tests and the identity assertions here RED, then reverted.
 
   it("names no till field in either canonical string", () => {
     // Structural: the built canonical strings carry only their fixed field names. `till_id` (in any
@@ -166,11 +161,10 @@ describe("till_id is not part of the huella (SP-A.2 §16.4(a))", () => {
   });
 
   it("hashes two alta records that differ only in a carried till_id identically", () => {
-    // The `entorno`-identity analog for `till_id` (CLAUDE.md §5). `RegistroAlta` has no `till_id`
-    // field at all (types.ts:136) — it is sale metadata that lives on `sales`/`registros_facturacion`,
-    // not on the AEAT record — so a `till_id` carried ALONGSIDE the record (the widest shape a
-    // regression could leak) is spread on and cast. `computeHuella` reads only the eight hashed
-    // fields, so both hash to the same published vector.
+    // `till_id` is the caller's own metadata, never an AEAT field, so it must never enter the huella.
+    // `RegistroAlta` has no `till_id` field at all, so a `till_id` carried ALONGSIDE the record (the
+    // widest shape a regression could leak) is spread on and cast. `computeHuella` reads only the
+    // eight hashed fields (`CadenaAltaInput`), so both hash to the same published vector.
     const record = altaRecord(VECTOR_1_INPUT, { PrimerRegistro: "S" });
     expect(computeHuella({ ...record, tillId: "till-X" } as RegistroAlta)).toBe(VECTOR_1_HUELLA);
     expect(computeHuella({ ...record, tillId: "till-Y" } as RegistroAlta)).toBe(VECTOR_1_HUELLA);
@@ -188,19 +182,19 @@ describe("till_id is not part of the huella (SP-A.2 §16.4(a))", () => {
 });
 
 describe("unit_name (the frozen unit label) is not part of the huella", () => {
-  // The fiscal receipt for the units-abbreviation feature. A sold line now freezes the unit's
-  // ABBREVIATION into `sale_lines.unit_name` (a jsonb column, packages/db/src/schema/sales.ts) instead
-  // of the unit's full name. The whole feature rests on the claim that `unit_name` is presentation-only
-  // — it prints on the receipt but never feeds the Veri*Factu hash — so freezing a different string is
-  // a display change, not a fiscal one.
+  // A `unit_name` is a frozen unit label a caller may carry on a sold line for display. The whole
+  // feature rests on the claim that the label is presentation-only — it prints on the receipt but
+  // never feeds the Veri*Factu hash — so freezing a different label is a display change, not a fiscal
+  // one.
   //
-  // This block RUNS that claim rather than reading it (CLAUDE.md §1). It is the `till_id` receipt above
-  // applied to `unit_name`, and rests on the same structural fact: the canonical string the huella
-  // hashes is built from exactly the eight alta fields and five anulación fields (`CadenaAltaInput` /
-  // `CadenaAnulacionInput` in types.ts), and the unit label is none of them. The huella carries NO
-  // per-line data at all — only the aggregate CuotaTotal/ImporteTotal — so a per-line unit label is
-  // doubly removed from it. `RegistroAlta` and `RegistroAnulacion` have no unit-label field either
-  // (types.ts): the label lives on `sale_lines`/`working_order_lines`, not on the AEAT record.
+  // This block RUNS that claim rather than reading it — it proves fiscal-neutrality by executing the
+  // hash instead of asserting it. It is the `till_id` receipt above applied to `unit_name`, and rests
+  // on the same structural fact: the canonical string the huella hashes is built from exactly the
+  // eight alta fields and five anulación fields (`CadenaAltaInput` / `CadenaAnulacionInput` in
+  // types.ts), and the unit label is none of them. The huella carries NO per-line data at all — only
+  // the aggregate CuotaTotal/ImporteTotal — so a per-line unit label is doubly removed from it.
+  // `RegistroAlta` and `RegistroAnulacion` have no unit-label field either, so a carried label sits
+  // ALONGSIDE the record, never inside it.
   //
   // Failing case (what makes this meaningful): if the unit label DID feed `buildCadena`, two records
   // carrying different labels would hash DIFFERENTLY and the equality assertions below would fail, and
@@ -222,10 +216,10 @@ describe("unit_name (the frozen unit label) is not part of the huella", () => {
   });
 
   it("hashes two alta records that differ only in a carried unit label identically", () => {
-    // `RegistroAlta` has no unit-label field at all — the frozen label is sale-line metadata on
-    // `sale_lines.unit_name`, not on the AEAT record — so a label carried ALONGSIDE the record (the
-    // widest shape a regression could leak) is spread on and cast. computeHuella reads only the eight
-    // hashed fields, so both hash to the same published vector regardless of the label.
+    // `RegistroAlta` has no unit-label field at all — a frozen label is caller metadata, not part of
+    // the AEAT record — so a label carried ALONGSIDE the record (the widest shape a regression could
+    // leak) is spread on and cast. computeHuella reads only the eight hashed fields, so both hash to
+    // the same published vector regardless of the label.
     const record = altaRecord(VECTOR_1_INPUT, { PrimerRegistro: "S" });
     expect(computeHuella({ ...record, unitName: { es: "ud" } } as RegistroAlta)).toBe(
       VECTOR_1_HUELLA,

@@ -414,11 +414,11 @@ describe("buildAltaRecord — Destinatarios (recipient)", () => {
   });
 
   it("does not change the huella when Destinatarios is populated", () => {
-    // Fiscal invariant (CLAUDE.md §5): Destinatarios is NOT one of the eight
-    // fields CadenaAltaInput hashes, so a record built with a recipient must
-    // hash identically to the same record without one. If it ever fed the
-    // huella, an F3 would verify differently by recipient — which AEAT's own
-    // recomputation would reject.
+    // Fiscal invariant: Destinatarios is NOT one of the eight fields
+    // CadenaAltaInput hashes, so a record built with a recipient must hash
+    // identically to the same record without one. If it ever fed the huella, an
+    // F3 would verify differently by recipient — which AEAT's own recomputation
+    // would reject.
     const base = buildAltaRecord({ ...ALTA_INPUT, TipoFactura: "F3" });
     const withDest = buildAltaRecord({
       ...ALTA_INPUT,

@@ -927,8 +927,8 @@ describe("serializeConsulta", () => {
 
 describe("serializeEnvio — Destinatarios", () => {
   it("emits Destinatarios at its XSD ordinal (after Macrodato, before Cupon), for both NIF and IDOtro entries", () => {
-    // One contiguous substring pins three things a wrong serialiser would break
-    // (§1.5 of the F3 design): the block's ORDINAL (between Macrodato and Cupon,
+    // One contiguous substring pins three things a wrong serialiser would break:
+    // the block's ORDINAL (between Macrodato and Cupon,
     // which is where SuministroInformacion.xsd puts it — getting this wrong
     // fails XSD validation), the NIF-vs-IDOtro exclusive choice on each entry,
     // and the internal element order of IDOtro (CodigoPais, IDType, ID).

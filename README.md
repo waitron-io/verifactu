@@ -134,15 +134,7 @@ received, so `123.1` and `123.10` are both valid and hash differently. Records c
 pre-formatted strings for exactly this reason — never reformat a value between building a record
 and serialising it.
 
-## Known limitations
-
-**This package is not yet npm-publishable.** `package.json` has `private: true` and `version
-0.0.0`, `main` points at TypeScript source rather than a build artifact, and there is no
-`exports` map, `files` allowlist or build step. That is intentional for now — this package is
-consumed from within this monorepo, not published — but it means the usual `npm install
-@waitron/verifactu` consumption path does not work yet.
-
 ## Licence
 
-Source-available under the Elastic License 2.0, with additional permissions. See `LICENSE` and
-`LICENSE-GRANTS.md` at the repository root.
+Apache License 2.0. See [`LICENSE`](./LICENSE). The AEAT documents this library is implemented
+from, and the references consulted, are recorded in [`PROVENANCE.md`](./PROVENANCE.md).
