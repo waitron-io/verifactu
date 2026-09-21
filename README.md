@@ -134,6 +134,19 @@ received, so `123.1` and `123.10` are both valid and hash differently. Records c
 pre-formatted strings for exactly this reason — never reformat a value between building a record
 and serialising it.
 
+## Releasing
+
+Pushing a `v*` tag (for example `v0.1.0`) runs the release workflow: it builds, re-runs the
+pack-smoke check, and publishes the package to npm with
+[provenance](https://docs.npmjs.com/generating-provenance-statements) attached, via GitHub's OIDC
+token rather than a long-lived npm token in the workflow. Provenance also needs the workflow to
+run from this public repository, with `package.json`'s `repository` field matching it — both are
+already true here.
+
+Publishing itself still needs one secret: an npm **automation** token for the `waitron`
+organisation, stored as the repository secret `NPM_TOKEN`. That is a one-time setup step for
+whoever holds npm publish rights on the org; it is not something a contributor needs.
+
 ## Licence
 
 Apache License 2.0. See [`LICENSE`](./LICENSE). The AEAT documents this library is implemented
