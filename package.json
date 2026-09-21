@@ -1,0 +1,42 @@
+{
+  "name": "@waitron/verifactu",
+  "version": "0.1.0",
+  "description": "AEAT Veri*Factu / SIF protocol library: huella chaining, QR payload, invoice records, XML serialise/parse, and the AEAT SOAP submission client.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "repository": { "type": "git", "url": "git+https://github.com/waitron-io/verifactu.git" },
+  "homepage": "https://github.com/waitron-io/verifactu#readme",
+  "bugs": { "url": "https://github.com/waitron-io/verifactu/issues" },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./testing": { "types": "./dist/testing/fake-aeat.d.ts", "default": "./dist/testing/fake-aeat.js" }
+  },
+  "files": ["dist", "schemas", "PROVENANCE.md", "README.md", "LICENSE"],
+  "publishConfig": { "access": "public", "provenance": true },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint .",
+    "mutation": "stryker run",
+    "format:check": "prettier --check ."
+  },
+  "dependencies": {
+    "fast-xml-parser": "^5.11.1"
+  },
+  "devDependencies": {
+    "@stryker-mutator/core": "^10.0.0",
+    "@stryker-mutator/vitest-runner": "^10.0.0",
+    "@types/node": "^26.0.0",
+    "@vitest/coverage-v8": "^4.1.11",
+    "eslint": "^9.39.5",
+    "fast-check": "^4.10.1",
+    "prettier": "^3.9.8",
+    "typescript": "^7.0.0",
+    "vitest": "^4.1.11"
+  }
+}
