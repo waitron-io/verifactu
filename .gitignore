@@ -6,3 +6,6 @@ reports/
 *.tsbuildinfo
 *.tgz
 .DS_Store
+
+# Local scratch — backlog and session handoffs (not published)
+docs/
