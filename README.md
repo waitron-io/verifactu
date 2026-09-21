@@ -136,16 +136,22 @@ and serialising it.
 
 ## Releasing
 
-Pushing a `v*` tag (for example `v0.1.0`) runs the release workflow: it builds, re-runs the
-pack-smoke check, and publishes the package to npm with
-[provenance](https://docs.npmjs.com/generating-provenance-statements) attached, via GitHub's OIDC
-token rather than a long-lived npm token in the workflow. Provenance also needs the workflow to
-run from this public repository, with `package.json`'s `repository` field matching it — both are
-already true here.
+The first release, `0.1.0`, was published by hand from a local checkout with `npm publish`, so
+there was a person present for npm's two-factor prompt.
 
-Publishing itself still needs one secret: an npm **automation** token for the `waitron`
-organisation, stored as the repository secret `NPM_TOKEN`. That is a one-time setup step for
-whoever holds npm publish rights on the org; it is not something a contributor needs.
+Every release after that uses npm's **Trusted Publishing**: pushing a `v*` tag (for example
+`v0.1.0`) runs the release workflow, which builds, re-runs the pack-smoke check, and publishes the
+package to npm. There is no npm token and no stored secret anywhere in this repository — the
+workflow proves who it is to npm using a short-lived identity token that GitHub Actions issues for
+the run (OIDC), and npm generates and attaches
+[provenance](https://docs.npmjs.com/generating-provenance-statements) automatically as part of
+that same publish.
+
+For this to work, the package's Trusted Publisher is configured on npmjs.com to trust this exact
+workflow: organisation `waitron-io`, repository `verifactu`, workflow file `release.yml`. Only a
+publish that runs from that workflow, in that repository, is accepted. Trusted Publishing also
+needs a recent npm and Node — npm 11.5.1 or later and Node 22.14 or later — which the workflow
+installs and provisions itself, so nothing extra is required of a contributor.
 
 ## Licence
 
