@@ -4,21 +4,41 @@
   "description": "AEAT Veri*Factu / SIF protocol library: huella chaining, QR payload, invoice records, XML serialise/parse, and the AEAT SOAP submission client.",
   "type": "module",
   "license": "Apache-2.0",
-  "repository": { "type": "git", "url": "git+https://github.com/waitron-io/verifactu.git" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/waitron-io/verifactu.git"
+  },
   "homepage": "https://github.com/waitron-io/verifactu#readme",
-  "bugs": { "url": "https://github.com/waitron-io/verifactu/issues" },
+  "bugs": {
+    "url": "https://github.com/waitron-io/verifactu/issues"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
-    "./testing": { "types": "./dist/testing/fake-aeat.d.ts", "default": "./dist/testing/fake-aeat.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/fake-aeat.d.ts",
+      "default": "./dist/testing/fake-aeat.js"
+    }
   },
-  "files": ["dist", "schemas", "PROVENANCE.md", "README.md", "LICENSE"],
-  "publishConfig": { "access": "public", "provenance": true },
+  "files": [
+    "dist",
+    "schemas",
+    "PROVENANCE.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "sideEffects": false,
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc --noEmit",
+    "build": "node node_modules/typescript-7/bin/tsc -p tsconfig.build.json",
+    "typecheck": "node node_modules/typescript-7/bin/tsc --noEmit",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "lint": "eslint .",
@@ -29,14 +49,18 @@
     "fast-xml-parser": "^5.11.1"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "@stryker-mutator/core": "^10.0.0",
     "@stryker-mutator/vitest-runner": "^10.0.0",
     "@types/node": "^26.0.0",
     "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^9.39.5",
     "fast-check": "^4.10.1",
+    "globals": "^17.12.0",
     "prettier": "^3.9.8",
-    "typescript": "^7.0.0",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "typescript-7": "npm:typescript@^7.0.0",
+    "typescript-eslint": "^8.70.0",
     "vitest": "^4.1.11"
   }
 }

@@ -10,7 +10,10 @@ execSync("npm run build", { cwd: root, stdio: "inherit" });
 const tarball = execSync("npm pack --silent", { cwd: root }).toString().trim();
 
 const dir = mkdtempSync(join(tmpdir(), "verifactu-smoke-"));
-writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "smoke", type: "module", private: true }));
+writeFileSync(
+  join(dir, "package.json"),
+  JSON.stringify({ name: "smoke", type: "module", private: true }),
+);
 execSync(`npm install ${join(root, tarball)}`, { cwd: dir, stdio: "inherit" });
 writeFileSync(
   join(dir, "smoke.mjs"),

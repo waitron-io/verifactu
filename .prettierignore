@@ -2,7 +2,5 @@ node_modules/
 dist/
 coverage/
 reports/
-.stryker-tmp/
-*.tsbuildinfo
 *.tgz
-.DS_Store
+schemas/

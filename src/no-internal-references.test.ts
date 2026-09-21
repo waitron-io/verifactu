@@ -7,9 +7,12 @@ describe("the public repo carries no internal or AI-workflow references", () => 
     const pattern = "claude|codex|superpower|CLAUDE\\.md|docs/(superpowers|compliance|handoffs)";
     let hits = "";
     try {
-      hits = execSync(`git grep -In -iE '${pattern}' -- . ':(exclude)src/no-internal-references.test.ts'`, {
-        encoding: "utf8",
-      });
+      hits = execSync(
+        `git grep -In -iE '${pattern}' -- . ':(exclude)src/no-internal-references.test.ts'`,
+        {
+          encoding: "utf8",
+        },
+      );
     } catch (e: unknown) {
       // git grep exits 1 with empty stdout when there are no matches — that is success.
       const err = e as { status?: number; stdout?: string };
