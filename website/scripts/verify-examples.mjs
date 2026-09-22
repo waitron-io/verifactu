@@ -36,6 +36,7 @@ const sale = {
   DescripcionOperacion: "Coffee and lunch",
   Desglose: [
     {
+      ClaveRegimen: "01",
       CalificacionOperacion: "S1",
       TipoImpositivo: "21",
       BaseImponibleOimporteNoSujeto: "10.00",
