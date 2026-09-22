@@ -155,8 +155,8 @@ export interface RegistroAlta {
    * ordinal is AFTER Macrodato and BEFORE Cupon (SuministroInformacion.xsd,
    * RegistroFacturacionAltaType line 153; the two elements between Macrodato and
    * Destinatarios — EmitidaPorTerceroODestinatario, Tercero — are optional and
-   * not modelled). Mandatory for a full invoice (F1/F3), forbidden on a
-   * simplified ticket (F2); see validate.ts. NOT a huella input.
+   * not modelled). Required on F1/F3 and R1-R4, forbidden on F2/R5;
+   * see validate.ts. Not a huella input.
    */
   Destinatarios?: { IDDestinatario: Destinatario[] };
   Cupon?: SiNo;

@@ -7,7 +7,7 @@ export default defineConfig({
     // A crashed Stryker run leaves .stryker-tmp holding mutated copies of the
     // source. Without this exclude Vitest discovers them as real test files, so
     // one interrupted mutation run makes every later test run fail confusingly.
-    exclude: [...configDefaults.exclude, "**/.stryker-tmp/**"],
+    exclude: [...configDefaults.exclude, "**/.stryker-tmp/**", "scripts/*.test.mjs"],
     coverage: {
       provider: "v8",
       include: ["src/**/*.ts"],

@@ -9,8 +9,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -19,6 +19,8 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run build
+      - run: node --test scripts/source-watch.test.mjs
+      - run: node --test scripts/live-aeat.test.mjs
       - run: node scripts/pack-smoke.mjs
       - run: npm run test:coverage
       - run: npm run mutation

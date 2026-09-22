@@ -20,10 +20,11 @@ const fullInvoice = buildAltaRecord({
 });
 ```
 
-Aquí `saleInput` contiene los datos del ejemplo anterior y su enlace con la cadena. Una factura
-simplificada no puede llevar `Destinatarios`, mientras que una completa sí debe llevarlo.
-`validate(fullInvoice)` devuelve un error que bloquea el envío si incumples cualquiera de estas
-reglas.
+Aquí `saleInput` contiene los datos del ejemplo anterior y su enlace con la cadena. Incluye
+`Destinatarios` en `F1`, `F3` y las facturas rectificativas `R1`–`R4`. Omítelo en las facturas
+simplificadas `F2` y sus rectificaciones `R5`. `validate(fullInvoice)` devuelve un error que bloquea
+el envío si incumples cualquiera de estas reglas. En las líneas de IVA, IPSI e IGIC, indica también
+el código de régimen aplicable en `ClaveRegimen`. Omítelo para otros impuestos.
 
 `buildAltaRecord` devuelve el registro completo, con fechas e importes formateados y su `Huella`.
 El hash usa los mismos textos que se envían en el XML. Conserva el registro devuelto sin cambios,

@@ -1,0 +1,47 @@
+name: VeriFactu source watch
+
+on:
+  schedule:
+    - cron: "17 7 * * 2"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - id: check
+        shell: bash
+        run: |
+          set +e
+          node scripts/source-watch.mjs --report source-watch-report.md
+          status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          cat source-watch-report.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Open or update review issue
+        if: steps.check.outputs.status != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          title='VeriFactu source watch requires review'
+          number=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 100 \
+            --json number,title --jq ".[] | select(.title == \"$title\") | .number" | head -n 1)
+          if [ -n "$number" ]; then
+            gh issue edit "$number" --repo "$GITHUB_REPOSITORY" --body-file source-watch-report.md
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" \
+              --body-file source-watch-report.md
+          fi
+      - name: Fail on source change or fetch error
+        if: steps.check.outputs.status != '0'
+        env:
+          CHECK_STATUS: ${{ steps.check.outputs.status }}
+        run: exit "$CHECK_STATUS"

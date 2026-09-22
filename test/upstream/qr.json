@@ -1,0 +1,180 @@
+{
+  "descripcion": "Casos de prueba para la URL del código QR de la factura Verifactu.",
+  "fuente": {
+    "organismo": "AEAT",
+    "documento": "Detalle de las especificaciones técnicas del código «QR» de la factura y de la «URL» del servicio de cotejo o remisión de información por parte del receptor de la factura",
+    "version": "0.5.0",
+    "fecha": "2025-12-10",
+    "url": "https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf"
+  },
+  "bases": [
+    {
+      "url": "https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR",
+      "sistema": "verificable",
+      "entorno": "produccion"
+    },
+    {
+      "url": "https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQRNoVerifactu",
+      "sistema": "no-verificable",
+      "entorno": "produccion"
+    },
+    {
+      "url": "https://prewww2.aeat.es/wlpl/TIKE-CONT/ValidarQR",
+      "sistema": "verificable",
+      "entorno": "pruebas"
+    },
+    {
+      "url": "https://prewww2.aeat.es/wlpl/TIKE-CONT/ValidarQRNoVerifactu",
+      "sistema": "no-verificable",
+      "entorno": "pruebas"
+    }
+  ],
+  "parametros": [
+    {
+      "nombre": "nif",
+      "formato": "NIF",
+      "longitud": "9",
+      "obligatorio": true,
+      "descripcion": "NIF del obligado a expedir la factura"
+    },
+    {
+      "nombre": "numserie",
+      "formato": "texto, solo ASCII imprimible (32-126)",
+      "longitud": "máximo 60",
+      "obligatorio": true,
+      "descripcion": "Nº de serie + nº de factura"
+    },
+    {
+      "nombre": "fecha",
+      "formato": "DD-MM-AAAA",
+      "longitud": "10",
+      "obligatorio": true,
+      "descripcion": "Fecha de expedición de la factura"
+    },
+    {
+      "nombre": "importe",
+      "formato": "decimal con punto",
+      "longitud": "máximo 12 enteros y 2 decimales",
+      "obligatorio": true,
+      "descripcion": "Importe total de la factura"
+    }
+  ],
+  "reglas": [
+    "La URL del QR debe incorporar ÚNICAMENTE los cuatro parámetros obligatorios.",
+    "Los valores van con URL encoding en UTF-8. Solo se admiten caracteres ASCII imprimibles (32-126).",
+    "El separador decimal del importe es el punto, nunca la coma. Sin símbolo de moneda ni separador de millares.",
+    "El parámetro 'formato' (p. ej. formato=json) NUNCA puede incluirse en la URL del código QR de la factura.",
+    "Requisitos del código impreso: entre 30x30 y 40x40 mm, nivel M de corrección de errores (ISO/IEC 18004:2015), mínimo 2 mm de margen blanco (recomendados 6), texto «QR tributario:» encima y, si el sistema emite facturas verificables, «VERI*FACTU» o «Factura verificable en la sede electrónica de la AEAT» debajo."
+  ],
+  "casos": [
+    {
+      "id": "produccion-verificable",
+      "procedencia": "oficial",
+      "referencia": "apartado 8.3",
+      "valido": true,
+      "url": "https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR?nif=89890001K&numserie=12345678-G33&fecha=01-09-2024&importe=241.4"
+    },
+    {
+      "id": "produccion-no-verificable",
+      "procedencia": "oficial",
+      "referencia": "apartado 8.4",
+      "valido": true,
+      "url": "https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQRNoVerifactu?nif=89890001K&numserie=12345678-G33&fecha=01-09-2024&importe=241.4"
+    },
+    {
+      "id": "pruebas-verificable",
+      "procedencia": "oficial",
+      "referencia": "apartado 8.1",
+      "valido": true,
+      "url": "https://prewww2.aeat.es/wlpl/TIKE-CONT/ValidarQR?nif=89890001K&numserie=12345678-G33&fecha=01-09-2024&importe=241.4"
+    },
+    {
+      "id": "pruebas-no-verificable",
+      "procedencia": "oficial",
+      "referencia": "apartado 8.2",
+      "valido": true,
+      "url": "https://prewww2.aeat.es/wlpl/TIKE-CONT/ValidarQRNoVerifactu?nif=89890001K&numserie=12345678-G33&fecha=01-09-2024&importe=241.4"
+    },
+    {
+      "id": "ampersand-codificado",
+      "procedencia": "oficial",
+      "referencia": "apartado 4",
+      "valido": true,
+      "descripcion": "El número de serie contiene un '&', correctamente codificado como %26.",
+      "url": "https://prewww2.aeat.es/wlpl/TIKE-CONT/ValidarQR?nif=89890001K&numserie=12345678%26G33&fecha=01-01-2024&importe=241.4"
+    },
+    {
+      "id": "ampersand-sin-codificar",
+      "procedencia": "oficial",
+      "referencia": "apartado 4",
+      "valido": false,
+      "descripcion": "La MISMA URL sin codificar. La AEAT la publica como ejemplo de URL incorrecta: el '&' parte la URL y aparece un parámetro que no existe.",
+      "url": "https://prewww2.aeat.es/wlpl/TIKE-CONT/ValidarQR?nif=89890001K&numserie=12345678&G33&fecha=01-01-2024&importe=241.4",
+      "errores": ["numserie-sin-codificar"],
+      "urlCorregida": "https://prewww2.aeat.es/wlpl/TIKE-CONT/ValidarQR?nif=89890001K&numserie=12345678%26G33&fecha=01-01-2024&importe=241.4"
+    },
+    {
+      "id": "importe-coma-decimal",
+      "procedencia": "derivado",
+      "referencia": "apartado 6, formato del parámetro importe",
+      "valido": false,
+      "descripcion": "Caso derivado de la regla, no un ejemplo literal de la AEAT: el separador decimal debe ser el punto.",
+      "url": "https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR?nif=89890001K&numserie=12345678-G33&fecha=01-09-2024&importe=241,40",
+      "errores": ["importe-formato"]
+    },
+    {
+      "id": "formato-json-en-el-qr",
+      "procedencia": "derivado",
+      "referencia": "apartado 7.2",
+      "valido": false,
+      "descripcion": "Caso derivado de la regla: la norma prohíbe expresamente el parámetro 'formato' en la URL del QR de la factura.",
+      "url": "https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR?nif=89890001K&numserie=12345678-G33&fecha=01-09-2024&importe=241.4&formato=json",
+      "errores": ["formato-prohibido-en-qr"]
+    },
+    {
+      "id": "fecha-formato-iso",
+      "procedencia": "derivado",
+      "referencia": "apartado 6, formato del parámetro fecha",
+      "valido": false,
+      "descripcion": "Caso derivado de la regla: la fecha va en DD-MM-AAAA, no en ISO.",
+      "url": "https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR?nif=89890001K&numserie=12345678-G33&fecha=2024-09-01&importe=241.4",
+      "errores": ["fecha-formato"]
+    },
+    {
+      "id": "fecha-inexistente",
+      "procedencia": "derivado",
+      "referencia": "apartado 6, formato del parámetro fecha",
+      "valido": false,
+      "descripcion": "Caso derivado de la regla: 31 de febrero no existe.",
+      "url": "https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR?nif=89890001K&numserie=12345678-G33&fecha=31-02-2024&importe=241.4",
+      "errores": ["fecha-inexistente"]
+    },
+    {
+      "id": "nif-letra-de-control-incorrecta",
+      "procedencia": "derivado",
+      "referencia": "apartado 6, formato del parámetro nif",
+      "valido": false,
+      "descripcion": "Caso derivado de la regla: el NIF debe ser válido, incluida su letra de control.",
+      "url": "https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR?nif=89890001Z&numserie=12345678-G33&fecha=01-09-2024&importe=241.4",
+      "errores": ["nif-invalido"]
+    },
+    {
+      "id": "faltan-parametros-obligatorios",
+      "procedencia": "derivado",
+      "referencia": "apartado 6",
+      "valido": false,
+      "descripcion": "Caso derivado de la regla: los cuatro parámetros son obligatorios.",
+      "url": "https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR?nif=89890001K",
+      "errores": ["falta-numserie", "falta-fecha", "falta-importe"]
+    },
+    {
+      "id": "url-base-desconocida",
+      "procedencia": "derivado",
+      "referencia": "apartado 5",
+      "valido": false,
+      "descripcion": "Caso derivado de la regla: la URL base debe ser una de las cuatro publicadas por la AEAT.",
+      "url": "https://ejemplo.com/wlpl/TIKE-CONT/ValidarQR?nif=89890001K&numserie=12345678-G33&fecha=01-09-2024&importe=241.4",
+      "errores": ["url-base-desconocida"]
+    }
+  ]
+}

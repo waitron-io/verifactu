@@ -1,0 +1,43 @@
+name: AEAT preproduction integration
+
+on:
+  schedule:
+    - cron: "23 10 1 * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Test mode
+        type: choice
+        options:
+          - consult
+          - submit
+        default: consult
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.AEAT_LIVE_TESTS_ENABLED == 'true')
+    runs-on: ubuntu-latest
+    environment: aeat-preproduction
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Call AEAT preproduction
+        env:
+          AEAT_TEST_P12_BASE64: ${{ secrets.AEAT_TEST_P12_BASE64 }}
+          AEAT_TEST_P12_PASSWORD: ${{ secrets.AEAT_TEST_P12_PASSWORD }}
+          AEAT_TEST_NIF: ${{ secrets.AEAT_TEST_NIF }}
+          AEAT_TEST_NAME: ${{ secrets.AEAT_TEST_NAME }}
+          AEAT_TEST_CERT_KIND: ${{ vars.AEAT_TEST_CERT_KIND }}
+          AEAT_TEST_SYSTEM_NIF: ${{ secrets.AEAT_TEST_SYSTEM_NIF }}
+          AEAT_TEST_SYSTEM_NAME: ${{ secrets.AEAT_TEST_SYSTEM_NAME }}
+          TEST_MODE: ${{ github.event_name == 'schedule' && 'submit' || inputs.mode }}
+        run: node scripts/live-aeat.mjs "$TEST_MODE"

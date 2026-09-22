@@ -22,6 +22,8 @@ export type ValidationCode =
   | "DESGLOSE_COUNT"
   | "AMOUNT_FORMAT"
   | "DESGLOSE_CHOICE"
+  | "CLAVE_REGIMEN_REQUIRED"
+  | "CLAVE_REGIMEN_FORBIDDEN"
   | "TIPO_RANGE"
   | "CUOTA_TOTAL_MISMATCH"
   | "IMPORTE_TOTAL_MISMATCH"
@@ -31,13 +33,10 @@ export type ValidationCode =
   | "TIPO_RECTIFICATIVA_FORBIDDEN"
   // AEAT error 1118: ImporteRectificacion is mandatory when TipoRectificativa is "S".
   | "IMPORTE_RECTIFICACION_REQUIRED"
-  // A full invoice (F1/F3) must identify its recipient. For F3 (canje) AEAT is
-  // explicit: «Siempre debe llevar el destinatario». The XSD leaves Destinatarios
-  // optional (minOccurs=0) for every TipoFactura, so this is an AEAT validation
-  // rule enforced here, not a schema restriction.
+  // AEAT requires a recipient on F1/F3 and R1-R4. The XSD leaves Destinatarios
+  // optional for every TipoFactura, so this rule must be checked outside the schema.
   | "DESTINATARIOS_REQUIRED"
-  // A simplified ticket (F2) must NOT carry a recipient — it records the absence
-  // via FacturaSinIdentifDestinatarioArt61d instead.
+  // AEAT forbids a recipient on F2 and R5.
   | "DESTINATARIOS_FORBIDDEN"
   // sf:Destinatarios is minOccurs=0, but its inner IDDestinatario is
   // minOccurs=1 maxOccurs=1000 (SuministroInformacion.xsd:159) — so a present
@@ -76,6 +75,8 @@ const TIPO_FACTURA_RECTIFICATIVA_PATTERN = /^R[1-5]$/;
 const NUMSERIE_PATTERN = /^[A-Za-z0-9/_.-]+$/;
 /** AEAT applies a +/- 10.00 euro tolerance on the total cross-checks. */
 const TOTAL_TOLERANCE = 10;
+/** AEAT validation §3.1.3.16–17 omits both total cross-checks for these regimes. */
+const TOTAL_CHECK_EXEMPT_REGIMES = new Set(["03", "05", "06", "08", "09"]);
 /**
  * AEAT's schema type for these fields is `(\+|-)?\d{1,12}(\.\d{0,2})?`, but
  * this project's own serialisation policy (see formatAmountExact) is
@@ -257,26 +258,21 @@ export function validate(record: RegistroAlta | RegistroAnulacion): ValidationIs
     );
   }
 
-  // A full invoice (F1/F3) must identify its recipient; for F3 canje AEAT is
-  // explicit — «Siempre debe llevar el destinatario».
-  // A simplified ticket (F2) must NOT carry one; it records the absence via
-  // FacturaSinIdentifDestinatarioArt61d instead. The XSD makes Destinatarios
-  // minOccurs=0 for every TipoFactura, so this business rule is enforced here
-  // rather than by the schema — an F3 filed without it is rejected by AEAT, the
-  // same failure mode as an R5 missing its TipoRectificativa.
-  const requiereDestinatario = record.TipoFactura === "F1" || record.TipoFactura === "F3";
+  // AEAT validation 3.1.3.13 makes recipients mandatory for full and R1-R4
+  // invoices, and forbidden for F2/R5, even though the XSD leaves the block optional.
+  const requiereDestinatario = ["F1", "F3", "R1", "R2", "R3", "R4"].includes(record.TipoFactura);
   if (requiereDestinatario && record.Destinatarios === undefined) {
     add(
       "DESTINATARIOS_REQUIRED",
       "Destinatarios",
-      "Destinatarios is mandatory when TipoFactura is F1 or F3",
+      "Destinatarios is mandatory when TipoFactura is F1, F3 or R1-R4",
     );
   }
-  if (record.TipoFactura === "F2" && record.Destinatarios !== undefined) {
+  if (["F2", "R5"].includes(record.TipoFactura) && record.Destinatarios !== undefined) {
     add(
       "DESTINATARIOS_FORBIDDEN",
       "Destinatarios",
-      "Destinatarios must not be set when TipoFactura is F2 (simplified ticket)",
+      "Destinatarios must not be set when TipoFactura is F2 or R5",
     );
   }
   // sf:Destinatarios is minOccurs=0, but once present its inner IDDestinatario
@@ -357,6 +353,23 @@ export function validate(record: RegistroAlta | RegistroAnulacion): ValidationIs
 
   let desgloseAmountsValid = true;
   record.Desglose.forEach((detalle, index) => {
+    // AEAT validation §3.1.3.15.6 requires ClaveRegimen for IVA, IPSI and
+    // IGIC (including omitted Impuesto, which means IVA) and forbids it otherwise.
+    const claveRegimenAllowed = [undefined, "01", "02", "03"].includes(detalle.Impuesto);
+    if (claveRegimenAllowed && !detalle.ClaveRegimen) {
+      add(
+        "CLAVE_REGIMEN_REQUIRED",
+        `Desglose[${index}].ClaveRegimen`,
+        "ClaveRegimen is mandatory for IVA, IPSI and IGIC",
+      );
+    }
+    if (!claveRegimenAllowed && detalle.ClaveRegimen !== undefined) {
+      add(
+        "CLAVE_REGIMEN_FORBIDDEN",
+        `Desglose[${index}].ClaveRegimen`,
+        "ClaveRegimen is only allowed for IVA, IPSI and IGIC",
+      );
+    }
     // The schema's DetalleType models these two as an xsd:choice: exactly
     // one of the two must be present. Both present or both absent are
     // equally invalid — neither is "more correct" than the other, so both
@@ -412,8 +425,14 @@ export function validate(record: RegistroAlta | RegistroAnulacion): ValidationIs
   const cuotas = sum(record.Desglose.map((d) => d.CuotaRepercutida));
   const recargos = sum(record.Desglose.map((d) => d.CuotaRecargoEquivalencia));
   const bases = sum(record.Desglose.map((d) => d.BaseImponibleOimporteNoSujeto));
+  // The rule compares record totals. For a mixed-regime record, keep the
+  // advisory cross-check rather than let one exempt line silence every line.
+  const crossCheckTotals =
+    record.Desglose.length === 0 ||
+    !record.Desglose.every((detail) => TOTAL_CHECK_EXEMPT_REGIMES.has(detail.ClaveRegimen ?? ""));
 
   if (
+    crossCheckTotals &&
     cuotaTotalValid &&
     desgloseAmountsValid &&
     Math.abs(Number(record.CuotaTotal) - (cuotas + recargos)) > TOTAL_TOLERANCE
@@ -426,6 +445,7 @@ export function validate(record: RegistroAlta | RegistroAnulacion): ValidationIs
     );
   }
   if (
+    crossCheckTotals &&
     importeTotalValid &&
     desgloseAmountsValid &&
     Math.abs(Number(record.ImporteTotal) - (bases + cuotas + recargos)) > TOTAL_TOLERANCE

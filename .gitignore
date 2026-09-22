@@ -5,6 +5,8 @@ reports/
 .stryker-tmp/
 *.tsbuildinfo
 *.tgz
+*.p12
+*.pfx
 .DS_Store
 
 # Local scratch — backlog and session handoffs (not published)

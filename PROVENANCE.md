@@ -24,8 +24,14 @@ dates, source URLs and SHA-256 checksums in [`schemas/README.md`](schemas/README
 
 ## References consulted
 
-- `borjamrd/verifactu-conformance` (MIT) — official AEAT test vectors packaged for CI.
+- `borjamrd/verifactu-conformance` (MIT) — third-party JSON packaging of AEAT's published
+  examples, pinned at commit `e654c97a1dcc877dc2931a148413284757d7a072` in
+  [`test/upstream/`](test/upstream/). The three hash examples and supported valid QR examples
+  are exercised in `src/upstream-conformance.test.ts`. AEAT's PDFs, not this repository, are
+  authoritative; derived cases in its QR fixture are labelled separately.
 - `inoguerols/verifactu` (MIT) — consulted as a reference implementation.
+
+The [source watch](sources/README.md) checks these repositories and AEAT publications weekly.
 
 ## Not consulted
 

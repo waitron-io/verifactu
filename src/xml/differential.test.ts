@@ -80,6 +80,7 @@ function buildAnulacion(alta: RegistroAlta): RegistroAnulacion {
 function buildValidAlta(input: AltaInput = ALTA_INPUT): RegistroAlta {
   return buildAltaRecord({
     ...input,
+    Desglose: input.Desglose.map((line) => ({ ...line, ClaveRegimen: line.ClaveRegimen ?? "01" })),
     Destinatarios: input.Destinatarios ?? {
       IDDestinatario: [{ NombreRazon: "Cliente Uno", NIF: "11111111H" }],
     },

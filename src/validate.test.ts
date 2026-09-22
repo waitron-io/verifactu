@@ -31,6 +31,7 @@ const INPUT: AltaInput = {
   },
   Desglose: [
     {
+      ClaveRegimen: "01",
       CalificacionOperacion: "S1",
       BaseImponibleOimporteNoSujeto: "111.10",
       CuotaRepercutida: "12.35",
@@ -62,6 +63,26 @@ const anulacionCodes = (record: RegistroAnulacion) => validate(record).map((issu
 describe("validate", () => {
   it("returns no issues for a well-formed record", () => {
     expect(validate(valid())).toEqual([]);
+  });
+
+  it.each([undefined, "01", "02", "03"])("requires ClaveRegimen for tax code %s", (impuesto) => {
+    const record = valid();
+    record.Desglose[0]!.Impuesto = impuesto;
+    record.Desglose[0]!.ClaveRegimen = undefined;
+    expect(codes(record)).toContain("CLAVE_REGIMEN_REQUIRED");
+  });
+
+  it("does not require ClaveRegimen for the other-tax code", () => {
+    const record = valid();
+    record.Desglose[0]!.Impuesto = "05";
+    record.Desglose[0]!.ClaveRegimen = undefined;
+    expect(codes(record)).not.toContain("CLAVE_REGIMEN_REQUIRED");
+  });
+
+  it("forbids ClaveRegimen for the other-tax code", () => {
+    const record = valid();
+    record.Desglose[0]!.Impuesto = "05";
+    expect(codes(record)).toContain("CLAVE_REGIMEN_FORBIDDEN");
   });
 
   it("rejects a NIF that is not exactly nine characters", () => {
@@ -248,6 +269,27 @@ describe("validate", () => {
   it("flags ImporteTotal disagreeing with the desglose beyond tolerance", () => {
     const record = valid();
     record.ImporteTotal = "999.00";
+    expect(codes(record)).toContain("IMPORTE_TOTAL_MISMATCH");
+  });
+
+  it.each(["03", "05", "06", "08", "09"])(
+    "skips both total cross-checks for ClaveRegimen %s",
+    (claveRegimen) => {
+      const record = valid();
+      record.Desglose[0]!.ClaveRegimen = claveRegimen;
+      record.CuotaTotal = "999.00";
+      record.ImporteTotal = "999.00";
+      expect(codes(record)).not.toContain("CUOTA_TOTAL_MISMATCH");
+      expect(codes(record)).not.toContain("IMPORTE_TOTAL_MISMATCH");
+    },
+  );
+
+  it("keeps total mismatch warnings when only one of several tax lines has an exempt regime", () => {
+    const record = valid();
+    record.Desglose.push({ ...record.Desglose[0]!, ClaveRegimen: "03" });
+    record.CuotaTotal = "999.00";
+    record.ImporteTotal = "999.00";
+    expect(codes(record)).toContain("CUOTA_TOTAL_MISMATCH");
     expect(codes(record)).toContain("IMPORTE_TOTAL_MISMATCH");
   });
 
@@ -765,7 +807,7 @@ describe("validate — rectificativa rules (AEAT 1114/1115/1118)", () => {
   });
 });
 
-describe("validate — Destinatarios rules (F1/F3 require, F2 forbids)", () => {
+describe("validate — Destinatarios rules (F1/F3/R1-R4 require, F2/R5 forbid)", () => {
   const DESTINATARIOS = {
     IDDestinatario: [{ NombreRazon: "Cliente Factura SL", NIF: "B99999997" }],
   } satisfies NonNullable<AltaInput["Destinatarios"]>;
@@ -785,6 +827,13 @@ describe("validate — Destinatarios rules (F1/F3 require, F2 forbids)", () => {
     expect(codes(withoutDestinatario("F1"))).toContain("DESTINATARIOS_REQUIRED");
   });
 
+  it.each(["R1", "R2", "R3", "R4"] as const)(
+    "requires Destinatarios on a %s rectificativa",
+    (tipo) => {
+      expect(codes(withoutDestinatario(tipo))).toContain("DESTINATARIOS_REQUIRED");
+    },
+  );
+
   it("does not require Destinatarios once an F3 carries one", () => {
     expect(codes(withDestinatario("F3"))).not.toContain("DESTINATARIOS_REQUIRED");
   });
@@ -795,6 +844,10 @@ describe("validate — Destinatarios rules (F1/F3 require, F2 forbids)", () => {
 
   it("forbids Destinatarios on an F2 (simplified ticket)", () => {
     expect(codes(withDestinatario("F2"))).toContain("DESTINATARIOS_FORBIDDEN");
+  });
+
+  it("forbids Destinatarios on an R5 rectificativa", () => {
+    expect(codes(withDestinatario("R5"))).toContain("DESTINATARIOS_FORBIDDEN");
   });
 
   it("does not forbid Destinatarios on an F2 that carries none", () => {
@@ -1211,10 +1264,28 @@ describe("validate — pins the exact field, message and severity for every Vali
       },
     },
     {
+      description: "CLAVE_REGIMEN_REQUIRED",
+      code: "CLAVE_REGIMEN_REQUIRED",
+      field: "Desglose[0].ClaveRegimen",
+      message: "ClaveRegimen is mandatory for IVA, IPSI and IGIC",
+      mutate: (r) => {
+        r.Desglose[0]!.ClaveRegimen = undefined;
+      },
+    },
+    {
+      description: "CLAVE_REGIMEN_FORBIDDEN",
+      code: "CLAVE_REGIMEN_FORBIDDEN",
+      field: "Desglose[0].ClaveRegimen",
+      message: "ClaveRegimen is only allowed for IVA, IPSI and IGIC",
+      mutate: (r) => {
+        r.Desglose[0]!.Impuesto = "05";
+      },
+    },
+    {
       description: "DESTINATARIOS_REQUIRED",
       code: "DESTINATARIOS_REQUIRED",
       field: "Destinatarios",
-      message: "Destinatarios is mandatory when TipoFactura is F1 or F3",
+      message: "Destinatarios is mandatory when TipoFactura is F1, F3 or R1-R4",
       mutate: (r) => {
         delete r.Destinatarios;
       },
@@ -1223,7 +1294,7 @@ describe("validate — pins the exact field, message and severity for every Vali
       description: "DESTINATARIOS_FORBIDDEN",
       code: "DESTINATARIOS_FORBIDDEN",
       field: "Destinatarios",
-      message: "Destinatarios must not be set when TipoFactura is F2 (simplified ticket)",
+      message: "Destinatarios must not be set when TipoFactura is F2 or R5",
       mutate: (r) => {
         r.TipoFactura = "F2";
       },
