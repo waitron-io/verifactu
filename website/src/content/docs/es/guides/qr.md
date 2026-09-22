@@ -58,7 +58,7 @@ for (let y = 0; y < width; y++) {
 if (jsQR(pixels, width, width)?.data !== payload) throw new Error("El QR cambió la URL");
 ```
 
-La [comprobación ejecutable del sitio](https://github.com/waitron-io/verifactu/blob/main/website/scripts/verify-examples.mjs)
+La [comprobación de los ejemplos publicados](https://github.com/waitron-io/verifactu/blob/main/website/scripts/verify-docs.mjs)
 realiza esta prueba. El valor decodificado debe coincidir **exactamente** con `payload`,
 incluidos signos y escapes de porcentaje. `M` es el nivel de corrección de errores del ejemplo.
 Tu generador de facturas debe respetar el tamaño físico exigido por la AEAT y dejar un margen

@@ -14,6 +14,7 @@ npm run build
 cd website
 npm ci
 npm run verify:examples
+npm run verify:docs
 npm run verify:types
 npm run build
 npm run verify:links
@@ -24,6 +25,7 @@ Open the preview at `/verifactu/`; the root page sends you to the English homepa
 Español in the language menu for the full Spanish translation. The generated API reference uses
 English descriptions in both languages.
 
-When you change an example in the submission or QR guides, update `scripts/verify-examples.mjs`
-and run it again. It checks the record chain, fake-AEAT submission, consulta, cancellation, the
-certificate-fetch adapter, and a QR image decoded back to its exact payload.
+When you change an example in the submission, QR, or testing guides, run `npm run verify:docs`.
+It compiles and runs the published English and Spanish code blocks, including the documented
+output values and QR image round trip. `verify:examples` also checks the record chain,
+fake-AEAT submission, consulta, cancellation, and certificate-fetch adapter.

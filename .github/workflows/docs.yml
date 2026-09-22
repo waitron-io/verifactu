@@ -27,6 +27,8 @@ jobs:
         working-directory: website
       - run: npm run verify:examples
         working-directory: website
+      - run: npm run verify:docs
+        working-directory: website
       - run: npm run verify:types
         working-directory: website
       - run: npm run build

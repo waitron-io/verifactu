@@ -59,7 +59,7 @@ for (let y = 0; y < width; y++) {
 if (jsQR(pixels, width, width)?.data !== payload) throw new Error("QR changed the payload");
 ```
 
-The [site's runnable example check](https://github.com/waitron-io/verifactu/blob/main/website/scripts/verify-examples.mjs)
+The [site's published snippet check](https://github.com/waitron-io/verifactu/blob/main/website/scripts/verify-docs.mjs)
 executes this round trip. The decoded value must match **exactly**, including punctuation and
 percent escapes. Level `M` is the error correction setting in this recipe. Your invoice renderer
 remains responsible for AEAT's physical print size and a clear quiet zone around the QR.

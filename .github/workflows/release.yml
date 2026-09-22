@@ -4,7 +4,7 @@ on:
     tags: ["v*"]
 permissions:
   contents: read
-  id-token: write # OIDC token for npm Trusted Publishing (generates provenance automatically)
+  id-token: write # npm uses OIDC for Trusted Publishing and the explicit provenance flag below.
 jobs:
   publish:
     runs-on: ubuntu-latest

@@ -130,7 +130,8 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
         !(tipo === "anulacion" && existing.tipo === "alta" && existing.estado !== "Anulada")
       ) {
         // Anulación of a live alta changes its state; all other resubmissions leave the stored
-        // record untouched and report the already-stored state in RegistroDuplicado.
+        // record untouched. The outer Incorrecto line carries the stored state in
+        // RegistroDuplicado; resolveEstadoEfectivo reads that inner state.
         anyRejected = true;
         const detail = noDuplicadoDetail.has(key) ? undefined : existing.estado;
         lineas.push(duplicadoLineaXml(idf, detail, ref));
@@ -139,23 +140,31 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
       if (forced) {
         anyRejected = true;
         lineas.push(lineaXml(idf, "Incorrecto", forced.code, forced.message, ref));
-      } else if (future) {
-        // 2004 is non-rejecting: the record is still stored and the line reads AceptadoConErrores.
-        store.set(key, { key, huella, estado: "AceptadaConErrores", tipo, refExterna: ref });
-        lineas.push(
-          lineaXml(
-            idf,
-            "AceptadoConErrores",
-            2004,
-            "Fecha de expedición posterior a la fecha del sistema",
-            ref,
-          ),
-        );
       } else {
-        // A clean alta lands the record; a clean anulación retires the same invoice identity.
-        const estado = tipo === "anulacion" ? "Anulada" : "Correcta";
-        store.set(key, { key, huella, estado, tipo, refExterna: ref });
-        lineas.push(lineaXml(idf, "Correcto", undefined, undefined, ref));
+        const estado =
+          tipo === "anulacion" ? "Anulada" : future ? "AceptadaConErrores" : "Correcta";
+        // AEAT retains the original alta when an anulación adds a separate record. This one-row
+        // fake updates status while retaining the alta's hash and external reference for consulta.
+        store.set(
+          key,
+          existing && tipo === "anulacion"
+            ? { ...existing, estado }
+            : { key, huella, estado, tipo, refExterna: ref },
+        );
+        if (future) {
+          // 2004 is non-rejecting: the record is stored and the line reads AceptadoConErrores.
+          lineas.push(
+            lineaXml(
+              idf,
+              "AceptadoConErrores",
+              2004,
+              "Fecha de expedición posterior a la fecha del sistema",
+              ref,
+            ),
+          );
+        } else {
+          lineas.push(lineaXml(idf, "Correcto", undefined, undefined, ref));
+        }
       }
     }
     // Hands back the CURRENT wait time (what this response is telling the caller to honour before
