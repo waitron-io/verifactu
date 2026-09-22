@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  docs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,7 +44,7 @@ jobs:
 
   deploy:
     if: github.event_name != 'pull_request'
-    needs: build
+    needs: docs
     runs-on: ubuntu-latest
     permissions:
       contents: read
