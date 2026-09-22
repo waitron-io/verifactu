@@ -1,0 +1,56 @@
+# Keeping the source checks current
+
+AEAT can revise a PDF, a schema, or an FAQ page without changing its URL. The weekly
+`VeriFactu source watch` workflow downloads each source and compares its fingerprint with
+[`watch-baseline.json`](watch-baseline.json). It opens or updates a GitHub issue when content
+changes or a source becomes unavailable. It never accepts a new fingerprint automatically.
+
+The watch covers AEAT's technical index, all 18 pages currently linked by its FAQ index,
+the developer FAQ, the service, hash, QR and validation documents, and the six checked-in
+schemas. It also watches the current commits of `borjamrd/verifactu-conformance` and
+`inoguerols/verifactu`. The first of these is a third-party package of examples from AEAT's
+PDFs, not an AEAT-hosted test suite. The AEAT documents remain authoritative.
+
+If the workflow raises an issue, open the linked source and inspect what changed. Update
+code, tests and documentation if the change affects this library. Then run:
+
+```sh
+node scripts/source-watch.mjs --refresh
+node scripts/source-watch.mjs
+```
+
+Commit the new baseline with the change it represents. HTML fingerprints include the page's
+main text and links, so navigation or footer changes should not cause an alert. PDF and schema
+fingerprints cover the downloaded bytes. A new FAQ page changes the index fingerprint; add
+the new page to `scripts/source-watch.mjs` before refreshing the baseline.
+
+## Live AEAT checks
+
+The `AEAT preproduction integration` workflow runs on the first of each month once you enable
+it. It submits one small test alta to AEAT's preproduction service, then queries that record
+and compares the stored hash. You can also run its `consult` mode manually to check the
+certificate, connection and response parser without submitting a record. The workflow never
+uses a production endpoint.
+
+Create the `aeat-preproduction` GitHub environment and add these environment secrets:
+
+| Secret                   | Value                                                               |
+| ------------------------ | ------------------------------------------------------------------- |
+| `AEAT_TEST_P12_BASE64`   | Base64 encoding of the authorized certificate's `.p12`/`.pfx` bytes |
+| `AEAT_TEST_P12_PASSWORD` | Password for that certificate                                       |
+| `AEAT_TEST_NIF`          | Test issuer NIF accepted by AEAT for that certificate               |
+| `AEAT_TEST_NAME`         | Test issuer's registered name                                       |
+| `AEAT_TEST_SYSTEM_NIF`   | NIF of the software producer represented in `SistemaInformatico`    |
+| `AEAT_TEST_SYSTEM_NAME`  | Registered name of that software producer                           |
+
+Set the repository variable `AEAT_TEST_CERT_KIND` to `personal` or `sello` (defaults to
+`personal`). After merging this workflow, run `consult` manually to check authentication and
+response parsing. Then run `submit` manually to check an alta and its stored hash. Once both pass,
+set the repository variable `AEAT_LIVE_TESTS_ENABLED` to `true` for the monthly job. Manual runs
+on `main` work while that variable is unset. Limit the GitHub environment to the `main` branch.
+The certificate must be authorised for the test issuer in AEAT's preproduction service. Base64
+is only an encoding, so keep the value in a GitHub secret, never in this repository.
+
+AEAT says its preproduction service is for occasional integration tests and rules out bulk
+testing. This workflow makes two requests per monthly run. If AEAT changes its conditions or
+the certificate expires, pause the live workflow and update the test setup.

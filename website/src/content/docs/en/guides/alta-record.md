@@ -19,9 +19,11 @@ const fullInvoice = buildAltaRecord({
 });
 ```
 
-Here `saleInput` is the input from the earlier example, including your chain link. A simplified
-invoice must not carry `Destinatarios`; a full invoice must. `validate(fullInvoice)` reports a
-blocking issue when either rule is broken.
+Here `saleInput` is the input from the earlier example, including your chain link. Include
+`Destinatarios` for `F1`, `F3`, and corrective invoices `R1`–`R4`. Omit it for simplified invoices
+`F2` and their corrections `R5`. `validate(fullInvoice)` reports a blocking issue when either rule
+is broken. For IVA, IPSI, and IGIC tax lines, also set `ClaveRegimen` to the applicable regime code.
+Omit it for other taxes.
 
 `buildAltaRecord` returns a complete record with formatted date and money strings and a `Huella`.
 The hash uses the exact literals that XML serialization sends. Keep that returned record intact and

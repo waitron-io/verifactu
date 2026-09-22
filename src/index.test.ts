@@ -42,6 +42,7 @@ describe("package public surface (./index.js)", () => {
       DescripcionOperacion: "Venta en establecimiento",
       Desglose: [
         {
+          ClaveRegimen: "01",
           CalificacionOperacion: "S1",
           BaseImponibleOimporteNoSujeto: "10",
           CuotaRepercutida: "2.1",

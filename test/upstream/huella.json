@@ -1,0 +1,125 @@
+{
+  "descripcion": "Casos de prueba para el cálculo de la huella (hash) de los registros de facturación Verifactu.",
+  "fuente": {
+    "organismo": "AEAT",
+    "documento": "Detalle de las especificaciones técnicas para generación de la huella o hash de los registros de facturación",
+    "version": "0.1.2",
+    "fecha": "2024-08-27",
+    "url": "https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_especificaciones_huella_hash_registros.pdf"
+  },
+  "algoritmo": {
+    "hash": "SHA-256",
+    "codificacionEntrada": "UTF-8",
+    "formatoSalida": "hexadecimal en mayúsculas",
+    "longitudSalida": 64,
+    "separadorCampos": "&",
+    "separadorNombreValor": "="
+  },
+  "reglas": [
+    "Los campos se concatenan como nombre=valor&nombre=valor, en el orden exacto definido para cada tipo de registro.",
+    "El campo Huella (o HuellaEvento) contiene la huella del registro ANTERIOR. Va vacío en el primer registro de la cadena.",
+    "Si un campo falta o está vacío, se escribe solo su nombre y el '=', sin valor.",
+    "Los valores se recortan por los extremos, pero los espacios interiores se conservan.",
+    "En los campos numéricos (CuotaTotal, ImporteTotal) la norma admite indistintamente una o dos posiciones decimales: 123.1 y 123.10 son ambos válidos y producen huellas distintas, las dos aceptables."
+  ],
+  "campos": {
+    "alta": [
+      "IDEmisorFactura",
+      "NumSerieFactura",
+      "FechaExpedicionFactura",
+      "TipoFactura",
+      "CuotaTotal",
+      "ImporteTotal",
+      "Huella",
+      "FechaHoraHusoGenRegistro"
+    ],
+    "anulacion": [
+      "IDEmisorFacturaAnulada",
+      "NumSerieFacturaAnulada",
+      "FechaExpedicionFacturaAnulada",
+      "Huella",
+      "FechaHoraHusoGenRegistro"
+    ],
+    "evento": [
+      "NIF",
+      "ID",
+      "IdSistemaInformatico",
+      "Version",
+      "NumeroInstalacion",
+      "NIF",
+      "TipoEvento",
+      "HuellaEvento",
+      "FechaHoraHusoGenEvento"
+    ]
+  },
+  "avisos": [
+    "En el registro de EVENTO el nombre 'NIF' aparece DOS veces (posiciones 1 y 6): una para el sistema informático y otra para el obligado a emitir. Si modelas los campos como un mapa nombre→valor, el segundo pisa al primero y la huella sale mal. Los campos son una lista ordenada, no un objeto."
+  ],
+  "camposNumericos": {
+    "alta": ["CuotaTotal", "ImporteTotal"],
+    "anulacion": [],
+    "evento": []
+  },
+  "casos": [
+    {
+      "id": "alta-primer-registro",
+      "procedencia": "oficial",
+      "referencia": "apartado 6.1",
+      "tipo": "alta",
+      "descripcion": "Primer registro de facturación de un SIF: no hay registro anterior, así que Huella va vacía.",
+      "campos": [
+        { "nombre": "IDEmisorFactura", "valor": "89890001K" },
+        { "nombre": "NumSerieFactura", "valor": "12345678/G33" },
+        { "nombre": "FechaExpedicionFactura", "valor": "01-01-2024" },
+        { "nombre": "TipoFactura", "valor": "F1" },
+        { "nombre": "CuotaTotal", "valor": "12.35" },
+        { "nombre": "ImporteTotal", "valor": "123.45" },
+        { "nombre": "Huella", "valor": "" },
+        { "nombre": "FechaHoraHusoGenRegistro", "valor": "2024-01-01T19:20:30+01:00" }
+      ],
+      "cadena": "IDEmisorFactura=89890001K&NumSerieFactura=12345678/G33&FechaExpedicionFactura=01-01-2024&TipoFactura=F1&CuotaTotal=12.35&ImporteTotal=123.45&Huella=&FechaHoraHusoGenRegistro=2024-01-01T19:20:30+01:00",
+      "huella": "3C464DAF61ACB827C65FDA19F352A4E3BDC2C640E9E9FC4CC058073F38F12F60"
+    },
+    {
+      "id": "alta-encadenada",
+      "procedencia": "oficial",
+      "referencia": "apartado 6.2",
+      "tipo": "alta",
+      "descripcion": "Segundo registro de alta: incorpora la huella del anterior, formando la cadena.",
+      "campos": [
+        { "nombre": "IDEmisorFactura", "valor": "89890001K" },
+        { "nombre": "NumSerieFactura", "valor": "12345679/G34" },
+        { "nombre": "FechaExpedicionFactura", "valor": "01-01-2024" },
+        { "nombre": "TipoFactura", "valor": "F1" },
+        { "nombre": "CuotaTotal", "valor": "12.35" },
+        { "nombre": "ImporteTotal", "valor": "123.45" },
+        {
+          "nombre": "Huella",
+          "valor": "3C464DAF61ACB827C65FDA19F352A4E3BDC2C640E9E9FC4CC058073F38F12F60"
+        },
+        { "nombre": "FechaHoraHusoGenRegistro", "valor": "2024-01-01T19:20:35+01:00" }
+      ],
+      "cadena": "IDEmisorFactura=89890001K&NumSerieFactura=12345679/G34&FechaExpedicionFactura=01-01-2024&TipoFactura=F1&CuotaTotal=12.35&ImporteTotal=123.45&Huella=3C464DAF61ACB827C65FDA19F352A4E3BDC2C640E9E9FC4CC058073F38F12F60&FechaHoraHusoGenRegistro=2024-01-01T19:20:35+01:00",
+      "huella": "F7B94CFD8924EDFF273501B01EE5153E4CE8F259766F88CF6ACB8935802A2B97"
+    },
+    {
+      "id": "anulacion-encadenada",
+      "procedencia": "oficial",
+      "referencia": "apartado 6.3",
+      "tipo": "anulacion",
+      "descripcion": "Registro de anulación encadenado. Ojo: sus campos son otros, y son menos.",
+      "campos": [
+        { "nombre": "IDEmisorFacturaAnulada", "valor": "89890001K" },
+        { "nombre": "NumSerieFacturaAnulada", "valor": "12345679/G34" },
+        { "nombre": "FechaExpedicionFacturaAnulada", "valor": "01-01-2024" },
+        {
+          "nombre": "Huella",
+          "valor": "F7B94CFD8924EDFF273501B01EE5153E4CE8F259766F88CF6ACB8935802A2B97"
+        },
+        { "nombre": "FechaHoraHusoGenRegistro", "valor": "2024-01-01T19:20:40+01:00" }
+      ],
+      "cadena": "IDEmisorFacturaAnulada=89890001K&NumSerieFacturaAnulada=12345679/G34&FechaExpedicionFacturaAnulada=01-01-2024&Huella=F7B94CFD8924EDFF273501B01EE5153E4CE8F259766F88CF6ACB8935802A2B97&FechaHoraHusoGenRegistro=2024-01-01T19:20:40+01:00",
+      "huella": "177547C0D57AC74748561D054A9CEC14B4C4EA23D1BEFD6F2E69E3A388F90C68"
+    }
+  ]
+}

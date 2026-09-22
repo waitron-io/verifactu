@@ -368,7 +368,14 @@ describe("buildAltaRecord — TipoRectificativa, FacturasRectificadas, FacturasS
   });
 
   it("builds a full rectificativa por sustitución end to end, valid per AEAT rules 1114/1115/1118", () => {
-    const record = buildAltaRecord({ ...ALTA_INPUT, ...RECTIFICATIVA_EXTRAS });
+    const record = buildAltaRecord({
+      ...ALTA_INPUT,
+      ...RECTIFICATIVA_EXTRAS,
+      Destinatarios: {
+        IDDestinatario: [{ NombreRazon: "Cliente Factura SL", NIF: "B99999997" }],
+      },
+      Desglose: [{ ...ALTA_INPUT.Desglose[0]!, ClaveRegimen: "01" }],
+    });
     expect(record.TipoFactura).toBe("R1");
     expect(record.TipoRectificativa).toBe("S");
     expect(record.ImporteRectificacion).toBeDefined();
@@ -384,6 +391,10 @@ describe("buildAltaRecord — TipoRectificativa, FacturasRectificadas, FacturasS
       ...ALTA_INPUT,
       TipoFactura: "R1",
       TipoRectificativa: "I",
+      Destinatarios: {
+        IDDestinatario: [{ NombreRazon: "Cliente Factura SL", NIF: "B99999997" }],
+      },
+      Desglose: [{ ...ALTA_INPUT.Desglose[0]!, ClaveRegimen: "01" }],
     });
     expect(computeHuella(record)).toBe(record.Huella);
     expect(validate(record)).toEqual([]);
