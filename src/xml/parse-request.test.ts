@@ -282,6 +282,54 @@ describe("parseEnvio", () => {
       "Envio does not contain at least one RegistroFactura",
     );
   });
+
+  it("throws a well-formed error when an envio header has no issuer", () => {
+    const registros: EnvioRegistro[] = [{ RegistroAlta: alta }];
+    const xml = serializeEnvio(cabecera, registros).replace(
+      /<sf:ObligadoEmision>.*<\/sf:ObligadoEmision>/,
+      "<sf:Destinatario><sf:NombreRazon>Cliente Uno</sf:NombreRazon><sf:NIF>11111111H</sf:NIF></sf:Destinatario>",
+    );
+    expect(() => parseEnvio(xml)).toThrow("Envio Cabecera does not contain ObligadoEmision");
+  });
+});
+
+describe("parseConsulta full header and date choice", () => {
+  it("round-trips a recipient header and date range", () => {
+    const consultaCabecera = {
+      Destinatario: { NombreRazon: "Cliente Uno", NIF: "11111111H" },
+    } as const;
+    const filtro: ConsultaFiltro = {
+      Ejercicio: "2026",
+      Periodo: "07",
+      RangoFechaExpedicion: { Desde: "01-07-2026", Hasta: "31-07-2026" },
+    };
+    expect(parseConsulta(serializeConsulta(consultaCabecera, filtro))).toStrictEqual({
+      cabecera: consultaCabecera,
+      filtro,
+    });
+  });
+
+  it("round-trips an issuer header with IndicadorRepresentante", () => {
+    const consultaCabecera = {
+      ObligadoEmision: cabecera.ObligadoEmision,
+      IndicadorRepresentante: "S" as const,
+    };
+    const filtro: ConsultaFiltro = { Ejercicio: "2026", Periodo: "07" };
+    expect(parseConsulta(serializeConsulta(consultaCabecera, filtro))).toStrictEqual({
+      cabecera: consultaCabecera,
+      filtro,
+    });
+  });
+
+  it("rejects a consulta header without an issuer or recipient", () => {
+    const xml = serializeConsulta(cabecera, { Ejercicio: "2026", Periodo: "07" }).replace(
+      /<sf:ObligadoEmision>.*<\/sf:ObligadoEmision>/,
+      "",
+    );
+    expect(() => parseConsulta(xml)).toThrow(
+      "Consulta Cabecera does not identify an issuer or recipient",
+    );
+  });
 });
 
 describe("parseConsulta", () => {

@@ -36,9 +36,21 @@ const detailed = await client.consultar(cabecera, {
 });
 console.log(detailed.registros[0]?.DatosRegistroFacturacion.NombreRazonEmisor); // Example SL
 console.log(Boolean(detailed.registros[0]?.DatosRegistroFacturacion.SistemaInformatico)); // true
+
+const received = await client.consultar(
+  { Destinatario: { NombreRazon: "Customer SL", NIF: "B12345674" } },
+  {
+    Ejercicio: "2026",
+    Periodo: "07",
+    Contraparte: cabecera.ObligadoEmision,
+    RangoFechaExpedicion: { Desde: "01-07-2026", Hasta: "31-07-2026" },
+  },
+);
 ```
 
 `NumSerieFactura` and `FechaExpedicionFactura` narrow the query; omit them to sweep the period.
+Use `RangoFechaExpedicion` with `Desde` and `Hasta` when you need a date range. It is an
+alternative to `FechaExpedicionFactura`; the serializer rejects a request that sends both.
 Use `RefExterna` when you stored your own reference on the record. Use `Contraparte` with the
 customer's `NombreRazon` and either `NIF` or `IDOtro` when you need that customer's records.
 `SistemaInformatico` narrows the result to one software installation. Supply `NombreRazon`, either
@@ -49,6 +61,12 @@ Request `DatosAdicionalesRespuesta` only when you need the issuer's name or soft
 each result. AEAT's `ConsultaLR.xsd` says these fields can slow its response. The same schema
 requires recipient queries to omit `MostrarSistemaInformatico` or set it to `"N"`. The client
 places these options after `FiltroConsulta` in the XML request.
+
+A recipient uses a different consulta header and identifies the issuer as the counterparty, as the
+`received` query above demonstrates.
+
+Set `IndicadorRepresentante: "S"` alongside `ObligadoEmision` when the certificate holder queries
+as that issuer's representative.
 
 When `IndicadorPaginacion` is `"S"`, send `ClavePaginacion` from the response in your next query.
 Do not try to recover a submission's CSV here: consulta does not return it.

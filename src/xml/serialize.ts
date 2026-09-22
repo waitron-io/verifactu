@@ -33,6 +33,19 @@ export interface Cabecera {
   Representante?: { NombreRazon: string; NIF: string };
 }
 
+/** AEAT permits consulta either as the invoice issuer or as its Spanish recipient. */
+export type CabeceraConsulta =
+  | {
+      ObligadoEmision: { NombreRazon: string; NIF: string };
+      Destinatario?: never;
+      IndicadorRepresentante?: SiNo;
+    }
+  | {
+      Destinatario: { NombreRazon: string; NIF: string };
+      ObligadoEmision?: never;
+      IndicadorRepresentante?: never;
+    };
+
 export type EnvioRegistro =
   { RegistroAlta: RegistroAlta } | { RegistroAnulacion: RegistroAnulacion };
 
@@ -57,7 +70,6 @@ export interface ConsultaFiltro {
   Periodo: string;
   NumSerieFactura?: string;
   Contraparte?: Destinatario;
-  FechaExpedicionFactura?: string;
   SistemaInformatico?: SistemaInformaticoConsulta;
   RefExterna?: string;
   ClavePaginacion?: {
@@ -67,6 +79,9 @@ export interface ConsultaFiltro {
   };
   /** Request-level response options; serialized after FiltroConsulta, as the XSD requires. */
   DatosAdicionalesRespuesta?: DatosAdicionalesRespuesta;
+  /** Exact date and date range are mutually exclusive; serializeConsulta rejects both together. */
+  FechaExpedicionFactura?: string;
+  RangoFechaExpedicion?: { Desde?: string; Hasta?: string };
 }
 
 function el(prefix: string, name: string, value: string | undefined): string {
@@ -79,6 +94,21 @@ function obligadoEmisionXml(obligado: Cabecera["ObligadoEmision"]): string {
     el("sf", "NombreRazon", obligado.NombreRazon) +
     el("sf", "NIF", obligado.NIF) +
     "</sf:ObligadoEmision>"
+  );
+}
+
+function consultaCabeceraXml(cabecera: CabeceraConsulta): string {
+  if (cabecera.ObligadoEmision !== undefined) {
+    return (
+      obligadoEmisionXml(cabecera.ObligadoEmision) +
+      el("sf", "IndicadorRepresentante", cabecera.IndicadorRepresentante)
+    );
+  }
+  return (
+    "<sf:Destinatario>" +
+    el("sf", "NombreRazon", cabecera.Destinatario.NombreRazon) +
+    el("sf", "NIF", cabecera.Destinatario.NIF) +
+    "</sf:Destinatario>"
   );
 }
 
@@ -361,12 +391,15 @@ export function serializeEnvio(cabecera: Cabecera, registros: EnvioRegistro[]): 
 }
 
 /** Serialises a consulta. PeriodoImputacion is mandatory even for one invoice. */
-export function serializeConsulta(cabecera: Cabecera, filtro: ConsultaFiltro): string {
+export function serializeConsulta(cabecera: CabeceraConsulta, filtro: ConsultaFiltro): string {
+  if (filtro.FechaExpedicionFactura !== undefined && filtro.RangoFechaExpedicion !== undefined) {
+    throw new Error("Use either FechaExpedicionFactura or RangoFechaExpedicion, not both");
+  }
   const body =
     `<sfLRC:ConsultaFactuSistemaFacturacion>` +
     "<sfLRC:Cabecera>" +
     el("sf", "IDVersion", "1.0") +
-    obligadoEmisionXml(cabecera.ObligadoEmision) +
+    consultaCabeceraXml(cabecera) +
     "</sfLRC:Cabecera>" +
     "<sfLRC:FiltroConsulta>" +
     "<sfLRC:PeriodoImputacion>" +
@@ -380,6 +413,14 @@ export function serializeConsulta(cabecera: Cabecera, filtro: ConsultaFiltro): s
     (filtro.FechaExpedicionFactura !== undefined
       ? "<sfLRC:FechaExpedicionFactura>" +
         el("sf", "FechaExpedicionFactura", filtro.FechaExpedicionFactura) +
+        "</sfLRC:FechaExpedicionFactura>"
+      : "") +
+    (filtro.RangoFechaExpedicion !== undefined
+      ? "<sfLRC:FechaExpedicionFactura>" +
+        "<sf:RangoFechaExpedicion>" +
+        el("sf", "Desde", filtro.RangoFechaExpedicion.Desde) +
+        el("sf", "Hasta", filtro.RangoFechaExpedicion.Hasta) +
+        "</sf:RangoFechaExpedicion>" +
         "</sfLRC:FechaExpedicionFactura>"
       : "") +
     consultaSistemaXml(filtro.SistemaInformatico) +

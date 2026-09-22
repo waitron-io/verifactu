@@ -34,8 +34,9 @@ row with the exact source section, implementation, behavioural test, and any int
 limit. Check the English and Spanish guides against each finding. The audit remains open until
 this review is complete.
 
-The monthly preproduction workflow is built but has not run. A prior Waitron test authenticated
-with the same certificate and received a `SinDatos` consultation response; it did not submit an
-alta. The test environment uses the certificate company's identity for both issuer and software
-producer until a producer NIF exists. Run this workflow's manual `consult` and `submit` checks
-after merge, then enable its monthly schedule.
+The preproduction workflow's manual `consult` and alta-plus-consulta checks succeeded on
+2026-09-22, including comparison of AEAT's stored hash with the submitted hash. Its monthly schedule
+is enabled. The test environment uses the certificate company's identity for both issuer and
+software producer until a producer NIF exists. The expanded monthly sequence covers both submit
+record types, every consulta filter and header form available to the configured representative
+certificate, and the JSON QR lookup. Verify that complete sequence manually after it lands.

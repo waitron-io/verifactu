@@ -4,6 +4,7 @@ import {
   serializeConsulta,
   serializeEnvio,
   type Cabecera,
+  type CabeceraConsulta,
   type ConsultaFiltro,
   type EnvioRegistro,
 } from "./xml/serialize.js";
@@ -23,7 +24,7 @@ export interface ClientOptions {
 
 export interface VerifactuClient {
   submit(cabecera: Cabecera, registros: EnvioRegistro[]): Promise<RespuestaSuministro>;
-  consultar(cabecera: Cabecera, filtro: ConsultaFiltro): Promise<RespuestaConsulta>;
+  consultar(cabecera: CabeceraConsulta, filtro: ConsultaFiltro): Promise<RespuestaConsulta>;
 }
 
 async function post(options: ClientOptions, xml: string): Promise<string> {

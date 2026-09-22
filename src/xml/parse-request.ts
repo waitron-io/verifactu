@@ -1,6 +1,7 @@
 import { asArray, parser } from "./parse-common.js";
 import type {
   Cabecera,
+  CabeceraConsulta,
   ConsultaFiltro,
   DatosAdicionalesRespuesta,
   EnvioRegistro,
@@ -37,8 +38,10 @@ interface RawEnvelope {
   };
 }
 interface RawCabecera {
-  ObligadoEmision: { NombreRazon: string; NIF: string };
+  ObligadoEmision?: { NombreRazon: string; NIF: string };
+  Destinatario?: { NombreRazon: string; NIF: string };
   Representante?: { NombreRazon: string; NIF: string };
+  IndicadorRepresentante?: "S" | "N";
 }
 type RawRegistroFactura = { RegistroAlta: RawRecord } | { RegistroAnulacion: RawRecord };
 type RawRecord = Record<string, unknown>;
@@ -58,7 +61,10 @@ interface RawFiltro {
   PeriodoImputacion: { Ejercicio: string; Periodo: string };
   NumSerieFactura?: string;
   Contraparte?: RawConsultaPersona;
-  FechaExpedicionFactura?: { FechaExpedicionFactura: string };
+  FechaExpedicionFactura?: {
+    FechaExpedicionFactura?: string;
+    RangoFechaExpedicion?: { Desde?: string; Hasta?: string };
+  };
   SistemaInformatico?: RawSistemaInformaticoConsulta;
   RefExterna?: string;
   ClavePaginacion?: {
@@ -82,6 +88,7 @@ function consultaPersonaOf(raw: RawConsultaPersona): RawConsultaPersona {
 }
 
 function cabeceraOf(raw: RawCabecera): Cabecera {
+  if (!raw.ObligadoEmision) throw new Error("Envio Cabecera does not contain ObligadoEmision");
   const cabecera: Cabecera = {
     ObligadoEmision: { NombreRazon: raw.ObligadoEmision.NombreRazon, NIF: raw.ObligadoEmision.NIF },
   };
@@ -91,6 +98,19 @@ function cabeceraOf(raw: RawCabecera): Cabecera {
       NIF: raw.Representante.NIF,
     };
   return cabecera;
+}
+
+function cabeceraConsultaOf(raw: RawCabecera): CabeceraConsulta {
+  if (raw.ObligadoEmision) {
+    return {
+      ObligadoEmision: { ...raw.ObligadoEmision },
+      ...(raw.IndicadorRepresentante !== undefined && {
+        IndicadorRepresentante: raw.IndicadorRepresentante,
+      }),
+    };
+  }
+  if (raw.Destinatario) return { Destinatario: { ...raw.Destinatario } };
+  throw new Error("Consulta Cabecera does not identify an issuer or recipient");
 }
 
 // Only defined keys are copied back, so `toEqual` against the original record (which omits absent
@@ -258,7 +278,7 @@ export function parseEnvio(xml: string): { cabecera: Cabecera; registros: EnvioR
   return { cabecera: cabeceraOf(body.Cabecera), registros };
 }
 
-export function parseConsulta(xml: string): { cabecera: Cabecera; filtro: ConsultaFiltro } {
+export function parseConsulta(xml: string): { cabecera: CabeceraConsulta; filtro: ConsultaFiltro } {
   const body = (parser.parse(xml) as RawEnvelope).Envelope?.Body?.ConsultaFactuSistemaFacturacion;
   if (!body?.Cabecera || !body.FiltroConsulta)
     throw new Error("Consulta does not contain a ConsultaFactuSistemaFacturacion body");
@@ -271,8 +291,10 @@ export function parseConsulta(xml: string): { cabecera: Cabecera; filtro: Consul
   };
   if (f.NumSerieFactura !== undefined) filtro.NumSerieFactura = f.NumSerieFactura;
   if (f.Contraparte !== undefined) filtro.Contraparte = consultaPersonaOf(f.Contraparte);
-  if (f.FechaExpedicionFactura !== undefined)
+  if (f.FechaExpedicionFactura?.FechaExpedicionFactura !== undefined)
     filtro.FechaExpedicionFactura = f.FechaExpedicionFactura.FechaExpedicionFactura;
+  if (f.FechaExpedicionFactura?.RangoFechaExpedicion !== undefined)
+    filtro.RangoFechaExpedicion = f.FechaExpedicionFactura.RangoFechaExpedicion;
   if (f.SistemaInformatico !== undefined) {
     const raw = f.SistemaInformatico;
     const sistema: SistemaInformaticoConsulta = {
@@ -304,5 +326,5 @@ export function parseConsulta(xml: string): { cabecera: Cabecera; filtro: Consul
     }
     filtro.DatosAdicionalesRespuesta = options;
   }
-  return { cabecera: cabeceraOf(body.Cabecera), filtro };
+  return { cabecera: cabeceraConsultaOf(body.Cabecera), filtro };
 }
