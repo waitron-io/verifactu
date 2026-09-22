@@ -2,8 +2,19 @@ import { createClient, type VerifactuClient } from "../client.js";
 import { escapeXml } from "../xml/escape.js";
 import { parseConsulta, parseEnvio } from "../xml/parse-request.js";
 import type { EstadoEnvio, EstadoRegistroSuministro } from "../xml/parse-suministro.js";
-import type { EnvioRegistro } from "../xml/serialize.js";
-import { isAlta, type IDFactura, type RegistroAlta, type RegistroAnulacion } from "../types.js";
+import type {
+  ConsultaFiltro,
+  EnvioRegistro,
+  SistemaInformaticoConsulta,
+} from "../xml/serialize.js";
+import {
+  isAlta,
+  type Destinatario,
+  type IDFactura,
+  type RegistroAlta,
+  type RegistroAnulacion,
+  type SistemaInformatico,
+} from "../types.js";
 
 export type FacturaKey = string;
 
@@ -13,6 +24,45 @@ export interface StoredRecord {
   estado: "Correcta" | "AceptadaConErrores" | "Anulada";
   tipo: "alta" | "anulacion";
   refExterna?: string;
+}
+
+interface StoredMetadata {
+  nombreRazonEmisor: string;
+  destinatarios: Destinatario[];
+  sistema: SistemaInformatico;
+}
+
+function samePersona(left: Destinatario, right: Destinatario): boolean {
+  if (left.NombreRazon !== right.NombreRazon) return false;
+  if (left.NIF !== undefined) return left.NIF === right.NIF;
+  if (right.IDOtro === undefined) return false;
+  return (
+    left.IDOtro.CodigoPais === right.IDOtro.CodigoPais &&
+    left.IDOtro.IDType === right.IDOtro.IDType &&
+    left.IDOtro.ID === right.IDOtro.ID
+  );
+}
+
+function matchesSistema(
+  stored: SistemaInformatico,
+  requested: SistemaInformaticoConsulta,
+): boolean {
+  return (
+    requested.NIF !== undefined &&
+    stored.NombreRazon === requested.NombreRazon &&
+    stored.NIF === requested.NIF &&
+    stored.IdSistemaInformatico === requested.IdSistemaInformatico &&
+    stored.NumeroInstalacion === requested.NumeroInstalacion &&
+    (requested.NombreSistemaInformatico === undefined ||
+      stored.NombreSistemaInformatico === requested.NombreSistemaInformatico) &&
+    (requested.Version === undefined || stored.Version === requested.Version) &&
+    (requested.TipoUsoPosibleSoloVerifactu === undefined ||
+      stored.TipoUsoPosibleSoloVerifactu === requested.TipoUsoPosibleSoloVerifactu) &&
+    (requested.TipoUsoPosibleMultiOT === undefined ||
+      stored.TipoUsoPosibleMultiOT === requested.TipoUsoPosibleMultiOT) &&
+    (requested.IndicadorMultiplesOT === undefined ||
+      stored.IndicadorMultiplesOT === requested.IndicadorMultiplesOT)
+  );
 }
 
 export interface FakeAeatOptions {
@@ -98,6 +148,7 @@ function fechaToDate(ddMmYyyy: string): Date {
 
 export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
   const store = new Map<FacturaKey, StoredRecord>();
+  const metadata = new Map<FacturaKey, StoredMetadata>();
   const rejections = new Map<FacturaKey, { code: number; message: string }>();
   // Keys for which the next resubmit's 3000 response omits RegistroDuplicado.EstadoRegistroDuplicado
   // entirely (AEAT reporting a duplicate without saying what it holds — duplicate_unknown).
@@ -113,7 +164,7 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
   const consultaPageSize = options.consultaPageSize ?? 2;
 
   function handleEnvio(xml: string): string {
-    const { registros } = parseEnvio(xml);
+    const { cabecera, registros } = parseEnvio(xml);
     const lineas: string[] = [];
     let anyRejected = false;
     // Every non-rejected envío issues exactly one CSV (Task 3 will suppress it when the whole
@@ -151,6 +202,22 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
             ? { ...existing, estado }
             : { key, huella, estado, tipo, refExterna: ref },
         );
+        if (!existing) {
+          metadata.set(
+            key,
+            "RegistroAlta" in entry
+              ? {
+                  nombreRazonEmisor: entry.RegistroAlta.NombreRazonEmisor,
+                  destinatarios: entry.RegistroAlta.Destinatarios?.IDDestinatario ?? [],
+                  sistema: entry.RegistroAlta.SistemaInformatico,
+                }
+              : {
+                  nombreRazonEmisor: cabecera.ObligadoEmision.NombreRazon,
+                  destinatarios: [],
+                  sistema: entry.RegistroAnulacion.SistemaInformatico,
+                },
+          );
+        }
         if (future) {
           // 2004 is non-rejecting: the record is stored and the line reads AceptadoConErrores.
           lineas.push(
@@ -198,6 +265,24 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
     if (filtro.FechaExpedicionFactura !== undefined) {
       all = all.filter((s) => s.key.split("|")[2] === filtro.FechaExpedicionFactura);
     }
+    const contraparte = filtro.Contraparte;
+    if (contraparte !== undefined) {
+      all = all.filter((s) =>
+        (metadata.get(s.key)?.destinatarios ?? []).some((recipient) =>
+          samePersona(recipient, contraparte),
+        ),
+      );
+    }
+    const sistemaFiltro = filtro.SistemaInformatico;
+    if (sistemaFiltro !== undefined) {
+      all = all.filter((s) => {
+        const sistema = metadata.get(s.key)?.sistema;
+        return sistema !== undefined && matchesSistema(sistema, sistemaFiltro);
+      });
+    }
+    if (filtro.RefExterna !== undefined) {
+      all = all.filter((s) => s.refExterna === filtro.RefExterna);
+    }
     // Continue after ClavePaginacion (match by the last-returned identity), ordered by insertion.
     // If that identity is no longer found (e.g. `forget`ten between pages), fall back to the full
     // filtered set rather than throwing — a stale cursor is a caller bug this fake surfaces as
@@ -209,7 +294,7 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
     }
     const page = all.slice(0, consultaPageSize);
     const more = all.length > consultaPageSize;
-    return consultaEnvelope(page, more);
+    return consultaEnvelope(page, more, metadata, filtro.DatosAdicionalesRespuesta);
   }
 
   const fetchImpl: typeof globalThis.fetch = async (_url, init) => {
@@ -249,6 +334,7 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
     },
     forget: (key) => {
       store.delete(key);
+      metadata.delete(key);
     },
   };
 }
@@ -342,10 +428,32 @@ function clavePaginacionXml(s: StoredRecord): string {
 }
 
 /** `matches` is the already-paged slice to return; `more` says whether further pages remain beyond it. */
-function consultaEnvelope(matches: StoredRecord[], more: boolean): string {
+function sistemaConsultaXml(value: SistemaInformatico): string {
+  return (
+    "<sfRC:SistemaInformatico>" +
+    `<sf:NombreRazon>${escapeXml(value.NombreRazon)}</sf:NombreRazon>` +
+    `<sf:NIF>${escapeXml(value.NIF)}</sf:NIF>` +
+    `<sf:NombreSistemaInformatico>${escapeXml(value.NombreSistemaInformatico)}</sf:NombreSistemaInformatico>` +
+    `<sf:IdSistemaInformatico>${escapeXml(value.IdSistemaInformatico)}</sf:IdSistemaInformatico>` +
+    `<sf:Version>${escapeXml(value.Version)}</sf:Version>` +
+    `<sf:NumeroInstalacion>${escapeXml(value.NumeroInstalacion)}</sf:NumeroInstalacion>` +
+    `<sf:TipoUsoPosibleSoloVerifactu>${value.TipoUsoPosibleSoloVerifactu}</sf:TipoUsoPosibleSoloVerifactu>` +
+    `<sf:TipoUsoPosibleMultiOT>${value.TipoUsoPosibleMultiOT}</sf:TipoUsoPosibleMultiOT>` +
+    `<sf:IndicadorMultiplesOT>${value.IndicadorMultiplesOT}</sf:IndicadorMultiplesOT>` +
+    "</sfRC:SistemaInformatico>"
+  );
+}
+
+function consultaEnvelope(
+  matches: StoredRecord[],
+  more: boolean,
+  metadata: Map<FacturaKey, StoredMetadata>,
+  responseOptions: ConsultaFiltro["DatosAdicionalesRespuesta"],
+): string {
   const registros = matches
     .map((s) => {
       const [emisor, serie, fecha] = s.key.split("|");
+      const details = metadata.get(s.key);
       return (
         "<sfRC:RegistroRespuestaConsultaFactuSistemaFacturacion>" +
         "<sfRC:IDFactura>" +
@@ -354,10 +462,16 @@ function consultaEnvelope(matches: StoredRecord[], more: boolean): string {
         `<sf:FechaExpedicionFactura>${escapeXml(fecha)}</sf:FechaExpedicionFactura>` +
         "</sfRC:IDFactura>" +
         "<sfRC:DatosRegistroFacturacion>" +
+        (responseOptions?.MostrarNombreRazonEmisor === "S" && details
+          ? `<sfRC:NombreRazonEmisor>${escapeXml(details.nombreRazonEmisor)}</sfRC:NombreRazonEmisor>`
+          : "") +
         (s.refExterna !== undefined
           ? `<sf:RefExterna>${escapeXml(s.refExterna)}</sf:RefExterna>`
           : "") +
-        `<sf:Huella>${escapeXml(s.huella)}</sf:Huella><sf:TipoHuella>01</sf:TipoHuella>` +
+        (responseOptions?.MostrarSistemaInformatico === "S" && details
+          ? sistemaConsultaXml(details.sistema)
+          : "") +
+        `<sf:TipoHuella>01</sf:TipoHuella><sf:Huella>${escapeXml(s.huella)}</sf:Huella>` +
         "</sfRC:DatosRegistroFacturacion>" +
         "<sfRC:EstadoRegistro>" +
         "<sf:TimestampUltimaModificacion>2026-07-21T00:00:00+00:00</sf:TimestampUltimaModificacion>" +

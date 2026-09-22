@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakeAeat, keyOf } from "./fake-aeat.js";
 import type { RegistroAlta, RegistroAnulacion } from "../types.js";
+import { serializeConsulta } from "../xml/serialize.js";
 
 const cabecera = { ObligadoEmision: { NombreRazon: "Waitron SL", NIF: "89890001K" } };
 
@@ -287,6 +288,92 @@ describe("fake AEAT — resubmit (error 3000) and consulta", () => {
     expect(r.ResultadoConsulta).toBe("ConDatos");
     expect(r.registros[0].DatosRegistroFacturacion.Huella).toBe("H-A/1");
     expect(r.registros[0].EstadoRegistro).toBe("Correcta");
+  });
+
+  it("narrows consulta by external reference, counterpart, and software identity", async () => {
+    const aeat = createFakeAeat({ consultaPageSize: 10 });
+    const first: RegistroAlta = {
+      ...altaFixture("A/1", "20-07-2026", "ref-one"),
+      Destinatarios: { IDDestinatario: [{ NombreRazon: "Buyer One", NIF: "11111111H" }] },
+    };
+    const second: RegistroAlta = {
+      ...altaFixture("A/2", "20-07-2026", "ref-two"),
+      Destinatarios: {
+        IDDestinatario: [
+          { NombreRazon: "Buyer Two", IDOtro: { CodigoPais: "FR", IDType: "02", ID: "FR123" } },
+        ],
+      },
+      SistemaInformatico: { ...SISTEMA, NumeroInstalacion: "2" },
+    };
+    await aeat.client().submit(cabecera, [{ RegistroAlta: first }, { RegistroAlta: second }]);
+    const base = { Ejercicio: "2026", Periodo: "07" };
+    const serials = async (filter: Parameters<ReturnType<typeof aeat.client>["consultar"]>[1]) =>
+      (await aeat.client().consultar(cabecera, filter)).registros.map(
+        (entry) => entry.IDFactura.NumSerieFactura,
+      );
+    expect(await serials({ ...base, RefExterna: "ref-one" })).toEqual(["A/1"]);
+    expect(
+      await serials({ ...base, Contraparte: { NombreRazon: "Buyer One", NIF: "11111111H" } }),
+    ).toEqual(["A/1"]);
+    expect(
+      await serials({
+        ...base,
+        Contraparte: {
+          NombreRazon: "Buyer Two",
+          IDOtro: { CodigoPais: "FR", IDType: "02", ID: "FR123" },
+        },
+      }),
+    ).toEqual(["A/2"]);
+    expect(
+      await serials({
+        ...base,
+        SistemaInformatico: {
+          NombreRazon: "Waitron SL",
+          NIF: "89890001K",
+          IdSistemaInformatico: "77",
+          NumeroInstalacion: "2",
+        },
+      }),
+    ).toEqual(["A/2"]);
+  });
+
+  it("includes extra response fields only when the consulta requests them", async () => {
+    const aeat = createFakeAeat();
+    await aeat.client().submit(cabecera, [{ RegistroAlta: altaFixture("A/1") }]);
+    const base = { Ejercicio: "2026", Periodo: "07" };
+    const normal = await aeat.client().consultar(cabecera, base);
+    expect(normal.registros[0]?.DatosRegistroFacturacion.NombreRazonEmisor).toBeUndefined();
+    expect(normal.registros[0]?.DatosRegistroFacturacion.SistemaInformatico).toBeUndefined();
+    const expanded = await aeat.client().consultar(cabecera, {
+      ...base,
+      DatosAdicionalesRespuesta: {
+        MostrarNombreRazonEmisor: "S",
+        MostrarSistemaInformatico: "S",
+      },
+    });
+    expect(expanded.registros[0]?.DatosRegistroFacturacion.NombreRazonEmisor).toBe("Waitron SL");
+    expect(expanded.registros[0]?.DatosRegistroFacturacion.SistemaInformatico).toMatchObject(
+      SISTEMA,
+    );
+    const suppressed = await aeat.client().consultar(cabecera, {
+      ...base,
+      DatosAdicionalesRespuesta: {
+        MostrarNombreRazonEmisor: "N",
+        MostrarSistemaInformatico: "N",
+      },
+    });
+    expect(suppressed.registros[0]?.DatosRegistroFacturacion.NombreRazonEmisor).toBeUndefined();
+    expect(suppressed.registros[0]?.DatosRegistroFacturacion.SistemaInformatico).toBeUndefined();
+    const request = serializeConsulta(cabecera, {
+      ...base,
+      DatosAdicionalesRespuesta: {
+        MostrarNombreRazonEmisor: "S",
+        MostrarSistemaInformatico: "S",
+      },
+    });
+    const raw = await (await aeat.fetch("https://fake.aeat.test/soap", { body: request })).text();
+    expect(raw).toContain("<sfRC:NombreRazonEmisor>Waitron SL</sfRC:NombreRazonEmisor>");
+    expect(raw).toContain("<sfRC:SistemaInformatico><sf:NombreRazon>Waitron SL</sf:NombreRazon>");
   });
 
   // handleConsulta must match the FULL identity (obligado NIF + NumSerieFactura +

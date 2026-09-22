@@ -67,6 +67,8 @@ reference API. Keep their existing direct tests. Do not compare SOAP clients by
 sending live requests as part of this suite.
 
 The AEAT consulta schema also permits `Contraparte`, `SistemaInformatico`,
-`RefExterna`, and `DatosAdicionalesRespuesta`. Neither library's shared filter
-adapter covers those fields. Add them through a separate API change with direct
-schema tests; they cannot be established by differential comparison here.
+`RefExterna`, and `DatosAdicionalesRespuesta`. This package exposes them through
+`ConsultaFiltro`. Direct serializer tests pin their XML structure, and request
+variants with Spanish and foreign identities were validated against the
+checked-in `ConsultaLR.xsd` with `xmllint`. The reference's filter adapter
+cannot express them, so the shared comparison does not cover them.

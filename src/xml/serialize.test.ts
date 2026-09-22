@@ -843,6 +843,93 @@ describe("exact document output — pins the complete serialised string, not fra
 });
 
 describe("serializeConsulta", () => {
+  it("emits the remaining filters in AEAT order and response options after the filter", () => {
+    const xml = serializeConsulta(CABECERA, {
+      Ejercicio: "2024",
+      Periodo: "01",
+      NumSerieFactura: "POS/001",
+      Contraparte: { NombreRazon: "Cliente & Co", NIF: "11111111H" },
+      FechaExpedicionFactura: "01-01-2024",
+      SistemaInformatico: {
+        NombreRazon: "Waitron SL",
+        NIF: "89890001K",
+        NombreSistemaInformatico: "Waitron POS",
+        IdSistemaInformatico: "WT",
+        Version: "1.0",
+        NumeroInstalacion: "001",
+        TipoUsoPosibleSoloVerifactu: "S",
+      },
+      RefExterna: "REF & <1>",
+      ClavePaginacion: {
+        IDEmisorFactura: "89890001K",
+        NumSerieFactura: "POS/999",
+        FechaExpedicionFactura: "31-12-2024",
+      },
+      DatosAdicionalesRespuesta: {
+        MostrarNombreRazonEmisor: "S",
+        MostrarSistemaInformatico: "N",
+      },
+    });
+    const names = [
+      "PeriodoImputacion",
+      "NumSerieFactura",
+      "Contraparte",
+      "FechaExpedicionFactura",
+      "SistemaInformatico",
+      "RefExterna",
+      "ClavePaginacion",
+      "DatosAdicionalesRespuesta",
+    ];
+    const positions = names.map((name) => xml.indexOf(`<sfLRC:${name}>`));
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+    expect(xml).toContain(
+      "<sfLRC:Contraparte><sf:NombreRazon>Cliente &amp; Co</sf:NombreRazon><sf:NIF>11111111H</sf:NIF></sfLRC:Contraparte>",
+    );
+    expect(xml).toContain(
+      "<sfLRC:SistemaInformatico><sf:NombreRazon>Waitron SL</sf:NombreRazon><sf:NIF>89890001K</sf:NIF>" +
+        "<sf:NombreSistemaInformatico>Waitron POS</sf:NombreSistemaInformatico><sf:IdSistemaInformatico>WT</sf:IdSistemaInformatico>" +
+        "<sf:Version>1.0</sf:Version><sf:NumeroInstalacion>001</sf:NumeroInstalacion>" +
+        "<sf:TipoUsoPosibleSoloVerifactu>S</sf:TipoUsoPosibleSoloVerifactu></sfLRC:SistemaInformatico>",
+    );
+    expect(xml).toContain("<sfLRC:RefExterna>REF &amp; &lt;1&gt;</sfLRC:RefExterna>");
+    expect(xml).toContain(
+      "</sfLRC:FiltroConsulta><sfLRC:DatosAdicionalesRespuesta>" +
+        "<sfLRC:MostrarNombreRazonEmisor>S</sfLRC:MostrarNombreRazonEmisor>" +
+        "<sfLRC:MostrarSistemaInformatico>N</sfLRC:MostrarSistemaInformatico>" +
+        "</sfLRC:DatosAdicionalesRespuesta>",
+    );
+  });
+
+  it("uses IDOtro for foreign counterpart and software identities", () => {
+    const xml = serializeConsulta(CABECERA, {
+      Ejercicio: "2024",
+      Periodo: "01",
+      Contraparte: {
+        NombreRazon: "Société X",
+        IDOtro: { CodigoPais: "FR", IDType: "02", ID: "FR12345678901" },
+      },
+      SistemaInformatico: {
+        NombreRazon: "Software X",
+        IDOtro: { CodigoPais: "FR", IDType: "02", ID: "FR12345678901" },
+        IdSistemaInformatico: "SX",
+        NumeroInstalacion: "1",
+      },
+    });
+    expect(xml).toContain(
+      "<sfLRC:Contraparte><sf:NombreRazon>Société X</sf:NombreRazon>" +
+        "<sf:IDOtro><sf:CodigoPais>FR</sf:CodigoPais><sf:IDType>02</sf:IDType>" +
+        "<sf:ID>FR12345678901</sf:ID></sf:IDOtro></sfLRC:Contraparte>",
+    );
+    expect(xml).toContain(
+      "<sfLRC:SistemaInformatico><sf:NombreRazon>Software X</sf:NombreRazon>" +
+        "<sf:IDOtro><sf:CodigoPais>FR</sf:CodigoPais><sf:IDType>02</sf:IDType>" +
+        "<sf:ID>FR12345678901</sf:ID></sf:IDOtro>" +
+        "<sf:IdSistemaInformatico>SX</sf:IdSistemaInformatico>" +
+        "<sf:NumeroInstalacion>1</sf:NumeroInstalacion></sfLRC:SistemaInformatico>",
+    );
+  });
+
   it("emits the mandatory PeriodoImputacion, qualified with sf: (declared locally in SI.xsd)", () => {
     // PeriodoImputacionType's Ejercicio and Periodo children are declared locally inside
     // SuministroInformacion.xsd, so — unlike the sfLRC:-owned wrapper elements around them —
@@ -920,8 +1007,12 @@ describe("serializeConsulta", () => {
   it("omits optional filters that were not supplied", () => {
     const xml = serializeConsulta(CABECERA, { Ejercicio: "2024", Periodo: "01" });
     expect(xml).not.toContain("NumSerieFactura");
+    expect(xml).not.toContain("Contraparte");
     expect(xml).not.toContain("ClavePaginacion");
     expect(xml).not.toContain("FechaExpedicionFactura");
+    expect(xml).not.toContain("SistemaInformatico");
+    expect(xml).not.toContain("RefExterna");
+    expect(xml).not.toContain("DatosAdicionalesRespuesta");
   });
 });
 

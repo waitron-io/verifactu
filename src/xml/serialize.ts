@@ -8,6 +8,7 @@ import type {
   IDOtro,
   RegistroAlta,
   RegistroAnulacion,
+  SiNo,
   SistemaInformatico,
 } from "../types.js";
 
@@ -35,16 +36,37 @@ export interface Cabecera {
 export type EnvioRegistro =
   { RegistroAlta: RegistroAlta } | { RegistroAnulacion: RegistroAnulacion };
 
+/** Consulta requires the identity, system ID, and installation number; other software fields are optional. */
+export type SistemaInformaticoConsulta = Destinatario & {
+  NombreSistemaInformatico?: string;
+  IdSistemaInformatico: string;
+  Version?: string;
+  NumeroInstalacion: string;
+  TipoUsoPosibleSoloVerifactu?: SiNo;
+  TipoUsoPosibleMultiOT?: SiNo;
+  IndicadorMultiplesOT?: SiNo;
+};
+
+export interface DatosAdicionalesRespuesta {
+  MostrarNombreRazonEmisor?: SiNo;
+  MostrarSistemaInformatico?: SiNo;
+}
+
 export interface ConsultaFiltro {
   Ejercicio: string;
   Periodo: string;
   NumSerieFactura?: string;
+  Contraparte?: Destinatario;
   FechaExpedicionFactura?: string;
+  SistemaInformatico?: SistemaInformaticoConsulta;
+  RefExterna?: string;
   ClavePaginacion?: {
     IDEmisorFactura: string;
     NumSerieFactura: string;
     FechaExpedicionFactura: string;
   };
+  /** Request-level response options; serialized after FiltroConsulta, as the XSD requires. */
+  DatosAdicionalesRespuesta?: DatosAdicionalesRespuesta;
 }
 
 function el(prefix: string, name: string, value: string | undefined): string {
@@ -153,6 +175,39 @@ function idOtroXml(value: IDOtro): string {
     el("sf", "IDType", value.IDType) +
     el("sf", "ID", value.ID) +
     "</sf:IDOtro>"
+  );
+}
+
+function consultaPersonaXml(value: Destinatario): string {
+  return (
+    el("sf", "NombreRazon", value.NombreRazon) +
+    (value.NIF !== undefined ? el("sf", "NIF", value.NIF) : idOtroXml(value.IDOtro))
+  );
+}
+
+function consultaSistemaXml(value: SistemaInformaticoConsulta | undefined): string {
+  if (value === undefined) return "";
+  return (
+    "<sfLRC:SistemaInformatico>" +
+    consultaPersonaXml(value) +
+    el("sf", "NombreSistemaInformatico", value.NombreSistemaInformatico) +
+    el("sf", "IdSistemaInformatico", value.IdSistemaInformatico) +
+    el("sf", "Version", value.Version) +
+    el("sf", "NumeroInstalacion", value.NumeroInstalacion) +
+    el("sf", "TipoUsoPosibleSoloVerifactu", value.TipoUsoPosibleSoloVerifactu) +
+    el("sf", "TipoUsoPosibleMultiOT", value.TipoUsoPosibleMultiOT) +
+    el("sf", "IndicadorMultiplesOT", value.IndicadorMultiplesOT) +
+    "</sfLRC:SistemaInformatico>"
+  );
+}
+
+function consultaRespuestaOptionsXml(value: DatosAdicionalesRespuesta | undefined): string {
+  if (value === undefined) return "";
+  return (
+    "<sfLRC:DatosAdicionalesRespuesta>" +
+    el("sfLRC", "MostrarNombreRazonEmisor", value.MostrarNombreRazonEmisor) +
+    el("sfLRC", "MostrarSistemaInformatico", value.MostrarSistemaInformatico) +
+    "</sfLRC:DatosAdicionalesRespuesta>"
   );
 }
 
@@ -319,11 +374,16 @@ export function serializeConsulta(cabecera: Cabecera, filtro: ConsultaFiltro): s
     el("sf", "Periodo", filtro.Periodo) +
     "</sfLRC:PeriodoImputacion>" +
     el("sfLRC", "NumSerieFactura", filtro.NumSerieFactura) +
+    (filtro.Contraparte !== undefined
+      ? "<sfLRC:Contraparte>" + consultaPersonaXml(filtro.Contraparte) + "</sfLRC:Contraparte>"
+      : "") +
     (filtro.FechaExpedicionFactura !== undefined
       ? "<sfLRC:FechaExpedicionFactura>" +
         el("sf", "FechaExpedicionFactura", filtro.FechaExpedicionFactura) +
         "</sfLRC:FechaExpedicionFactura>"
       : "") +
+    consultaSistemaXml(filtro.SistemaInformatico) +
+    el("sfLRC", "RefExterna", filtro.RefExterna) +
     (filtro.ClavePaginacion
       ? "<sfLRC:ClavePaginacion>" +
         el("sf", "IDEmisorFactura", filtro.ClavePaginacion.IDEmisorFactura) +
@@ -332,6 +392,7 @@ export function serializeConsulta(cabecera: Cabecera, filtro: ConsultaFiltro): s
         "</sfLRC:ClavePaginacion>"
       : "") +
     "</sfLRC:FiltroConsulta>" +
+    consultaRespuestaOptionsXml(filtro.DatosAdicionalesRespuesta) +
     `</sfLRC:ConsultaFactuSistemaFacturacion>`;
   return envelope(body, `xmlns:sfLRC="${NS_LRC}"`);
 }
