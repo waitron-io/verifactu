@@ -20,7 +20,7 @@ permissions:
 jobs:
   live:
     if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.AEAT_LIVE_TESTS_ENABLED == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: aeat-preproduction
     steps:
       - uses: actions/checkout@v7

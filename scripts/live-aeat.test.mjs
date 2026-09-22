@@ -6,12 +6,14 @@ import {
   assertPaginationAdvanced,
   assertQrPreproductionUrl,
   assertQrLookup,
+  assertStoredRecordAt,
   assertStoredRecord,
   assertSubmission,
   buildTestCancellation,
   buildTestRecord,
   certificateKind,
   issuerConsultaHeader,
+  representativeConsultaHeader,
   submissionHeader,
   waitForNextSubmission,
 } from "./live-aeat.mjs";
@@ -310,11 +312,24 @@ test("the QR check only permits AEAT's preproduction JSON lookup", () => {
   );
 });
 
-test("a representative certificate is declared on consultas, not submissions", () => {
+test("ordinary issuer consultas and submissions do not claim a separate representative role", () => {
   const issuer = { NombreRazon: "Waitron SL", NIF: "89890001K" };
-  assert.deepEqual(issuerConsultaHeader(issuer), {
+  assert.deepEqual(issuerConsultaHeader(issuer), { ObligadoEmision: issuer });
+  assert.deepEqual(submissionHeader(issuer), { ObligadoEmision: issuer });
+  assert.deepEqual(representativeConsultaHeader(issuer), {
     ObligadoEmision: issuer,
     IndicadorRepresentante: "S",
   });
-  assert.deepEqual(submissionHeader(issuer), { ObligadoEmision: issuer });
+});
+
+test("a failed live consulta identifies its stage and response shape", () => {
+  assert.throws(
+    () =>
+      assertStoredRecordAt(
+        "minimal issuer consulta",
+        { ResultadoConsulta: "SinDatos", IndicadorPaginacion: "N", registros: [] },
+        record,
+      ),
+    /minimal issuer consulta: AEAT did not return the submitted test alta \(SinDatos, 0 records\)/,
+  );
 });

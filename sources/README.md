@@ -59,7 +59,7 @@ The certificate must be authorised for the test issuer in AEAT's preproduction s
 is only an encoding, so keep the value in a GitHub secret, never in this repository.
 
 AEAT says its preproduction service is for occasional integration tests and rules out bulk
-testing. This workflow makes eight requests per monthly run and obeys the wait returned before its
+testing. This workflow makes nine requests per monthly run and obeys the wait returned before its
 second submission. It tests the pagination request with a known cursor instead of creating the
 10,001 records needed to force a second response page. If AEAT changes its conditions or the
 certificate expires, pause the live workflow and update the test setup.
