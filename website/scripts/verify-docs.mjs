@@ -68,8 +68,8 @@ try {
     `import assert from "node:assert/strict";
 ${readme[0]}
 ${readme[1]}
-assert.deepEqual(issues.filter((issue) => issue.severity === "error"), []);
-assert.deepEqual(validate(rectificativa).filter((issue) => issue.severity === "error"), []);
+assert.doesNotThrow(() => assertValid(record));
+assert.doesNotThrow(() => assertValid(rectificativa));
 `,
   );
 
@@ -179,7 +179,7 @@ ${recordFixture}
 const outputs: unknown[][] = [];
 const console = { log: (...items: unknown[]) => outputs.push(items) };
 ${validation[0]}
-assert.deepEqual(issues, []);
+assert.doesNotThrow(() => assertValid(record));
 assert.deepEqual(outputs, []);
 `,
     );

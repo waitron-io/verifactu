@@ -29,9 +29,9 @@ functions are named in English.
 
 ```ts
 import {
+  assertValid,
   buildAltaRecord,
   buildQrPayload,
-  validate,
   type SistemaInformatico,
 } from "@waitron/verifactu";
 
@@ -75,9 +75,15 @@ const record = buildAltaRecord({
   offsetMinutes: 120,
 });
 
-const issues = validate(record);
+assertValid(record);
 const qr = buildQrPayload(record, "production");
 ```
+
+Use `validate` when you want to show several issues in a form. Call `assertValid` immediately before
+submission when invalid records should stop the operation. It throws `VerifactuValidationError`
+with a readable message such as `SistemaInformatico.NombreSistemaInformatico: ... at most 30
+characters (NOMBRE_SISTEMA_LENGTH)`. Its `issues` property contains the same structured issues, so
+you can report the exact field without parsing the message.
 
 `validate` now reports `NIF_CONTROL` for malformed nine-character Spanish tax IDs. If you block
 submission on validation errors, review this new issue when updating from an earlier version.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validate } from "./validate.js";
+import { assertValid, validate, VerifactuValidationError } from "./validate.js";
 import type { ValidationCode, ValidationSeverity } from "./validate.js";
 import { buildAltaRecord, buildAnulacionRecord } from "./records.js";
 import { SISTEMA } from "../test/fixtures.js";
@@ -63,6 +63,53 @@ const anulacionCodes = (record: RegistroAnulacion) => validate(record).map((issu
 describe("validate", () => {
   it("returns no issues for a well-formed record", () => {
     expect(validate(valid())).toEqual([]);
+  });
+
+  it("throws a structured error that names every invalid field", () => {
+    const record = valid();
+    record.SistemaInformatico = {
+      ...SISTEMA,
+      IdSistemaInformatico: "WTX",
+      NombreSistemaInformatico: "X".repeat(31),
+    };
+
+    let failure: unknown;
+    try {
+      assertValid(record);
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(VerifactuValidationError);
+    expect((failure as Error).message).toContain(
+      "SistemaInformatico.NombreSistemaInformatico: NombreSistemaInformatico is at most 30 characters (NOMBRE_SISTEMA_LENGTH)",
+    );
+    expect((failure as Error).message).toContain(
+      "IdSistemaInformatico: IdSistemaInformatico is at most 2 characters (ID_SISTEMA_LENGTH)",
+    );
+    expect((failure as VerifactuValidationError).issues).toEqual([
+      {
+        code: "ID_SISTEMA_LENGTH",
+        severity: "error",
+        field: "IdSistemaInformatico",
+        message: "IdSistemaInformatico is at most 2 characters",
+      },
+      {
+        code: "NOMBRE_SISTEMA_LENGTH",
+        severity: "error",
+        field: "SistemaInformatico.NombreSistemaInformatico",
+        message: "NombreSistemaInformatico is at most 30 characters",
+      },
+    ]);
+  });
+
+  it("does not throw for advisory warnings", () => {
+    const record = valid();
+    record.CuotaTotal = "999.00";
+    expect(validate(record)).toContainEqual(
+      expect.objectContaining({ code: "CUOTA_TOTAL_MISMATCH", severity: "warning" }),
+    );
+    expect(() => assertValid(record)).not.toThrow();
   });
 
   it.each([undefined, "01", "02", "03"])("requires ClaveRegimen for tax code %s", (impuesto) => {
@@ -359,6 +406,24 @@ describe("validate", () => {
     const record = valid();
     record.SistemaInformatico = { ...SISTEMA, IdSistemaInformatico: "WTX" };
     expect(codes(record)).toContain("ID_SISTEMA_LENGTH");
+  });
+
+  it("rejects a NombreSistemaInformatico longer than thirty characters", () => {
+    const record = valid();
+    record.SistemaInformatico = {
+      ...SISTEMA,
+      NombreSistemaInformatico: "X".repeat(31),
+    };
+    expect(codes(record)).toContain("NOMBRE_SISTEMA_LENGTH");
+  });
+
+  it("accepts a NombreSistemaInformatico with exactly thirty characters", () => {
+    const record = valid();
+    record.SistemaInformatico = {
+      ...SISTEMA,
+      NombreSistemaInformatico: "X".repeat(30),
+    };
+    expect(codes(record)).not.toContain("NOMBRE_SISTEMA_LENGTH");
   });
 
   it("rejects a SistemaInformatico.NIF that is not exactly nine characters", () => {
@@ -1120,6 +1185,18 @@ describe("validate — pins the exact field, message and severity for every Vali
       message: "IdSistemaInformatico is at most 2 characters",
       mutate: (r) => {
         r.SistemaInformatico = { ...SISTEMA, IdSistemaInformatico: "WTX" };
+      },
+    },
+    {
+      description: "NOMBRE_SISTEMA_LENGTH",
+      code: "NOMBRE_SISTEMA_LENGTH",
+      field: "SistemaInformatico.NombreSistemaInformatico",
+      message: "NombreSistemaInformatico is at most 30 characters",
+      mutate: (r) => {
+        r.SistemaInformatico = {
+          ...SISTEMA,
+          NombreSistemaInformatico: "X".repeat(31),
+        };
       },
     },
     {

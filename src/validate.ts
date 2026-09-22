@@ -15,6 +15,7 @@ export type ValidationCode =
   | "FECHA_HORA_FORMAT"
   | "HUELLA_FORMAT"
   | "ID_SISTEMA_LENGTH"
+  | "NOMBRE_SISTEMA_LENGTH"
   | "CONTROL_CHAR"
   | "HUELLA_ANTERIOR_FORMAT"
   | "HUELLA_ANTERIOR_EQUALS_CURRENT"
@@ -48,6 +49,17 @@ export interface ValidationIssue {
   severity: ValidationSeverity;
   field: string;
   message: string;
+}
+
+export class VerifactuValidationError extends Error {
+  constructor(readonly issues: ValidationIssue[]) {
+    super(
+      `VeriFactu record validation failed: ${issues
+        .map(({ field, message, code }) => `${field}: ${message} (${code})`)
+        .join("; ")}`,
+    );
+    this.name = "VerifactuValidationError";
+  }
 }
 
 const HUELLA_PATTERN = /^[0-9A-F]{64}$/;
@@ -181,6 +193,13 @@ export function validate(record: RegistroAlta | RegistroAnulacion): ValidationIs
       "ID_SISTEMA_LENGTH",
       "IdSistemaInformatico",
       "IdSistemaInformatico is at most 2 characters",
+    );
+  }
+  if (record.SistemaInformatico.NombreSistemaInformatico.length > 30) {
+    add(
+      "NOMBRE_SISTEMA_LENGTH",
+      "SistemaInformatico.NombreSistemaInformatico",
+      "NombreSistemaInformatico is at most 30 characters",
     );
   }
   checkNif("SistemaInformatico.NIF", record.SistemaInformatico.NIF);
@@ -459,4 +478,10 @@ export function validate(record: RegistroAlta | RegistroAnulacion): ValidationIs
   }
 
   return issues;
+}
+
+/** Throws one readable, structured error when a record is unsafe to submit. */
+export function assertValid(record: RegistroAlta | RegistroAnulacion): void {
+  const errors = validate(record).filter(({ severity }) => severity === "error");
+  if (errors.length > 0) throw new VerifactuValidationError(errors);
 }

@@ -15,6 +15,7 @@ the taxpayer whose records you submit. Fill these with the real values for your 
 
 ```ts
 import {
+  assertValid,
   buildAltaRecord,
   buildAnulacionRecord,
   createClient,
@@ -105,13 +106,10 @@ its issuing location's time zone on that date.
 
 ```ts
 for (const record of [first, second]) {
-  const issues = validate(record);
-  for (const issue of issues) {
-    console.log(issue.severity, issue.code, issue.field, issue.message);
+  for (const issue of validate(record).filter(({ severity }) => severity === "warning")) {
+    console.warn(issue.field, issue.message);
   }
-  if (issues.some((issue) => issue.severity === "error")) {
-    throw new Error(`Do not submit ${record.IDFactura.NumSerieFactura}`);
-  }
+  assertValid(record);
 }
 ```
 
@@ -229,9 +227,7 @@ const cancellation = buildAnulacionRecord({
   offsetMinutes: 120,
 });
 
-if (validate(cancellation).some((issue) => issue.severity === "error")) {
-  throw new Error("Do not submit an invalid cancellation");
-}
+assertValid(cancellation);
 const cancellationResponse = await client.submit(cabecera, [
   { RegistroAnulacion: cancellation },
 ]);

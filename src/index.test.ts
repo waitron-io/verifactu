@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  assertValid,
   buildAltaRecord,
   buildQrPayload,
   createClient,
@@ -58,6 +59,7 @@ describe("package public surface (./index.js)", () => {
     });
 
     expect(validate(record)).toEqual([]);
+    expect(() => assertValid(record)).not.toThrow();
 
     const cabecera: Cabecera = {
       ObligadoEmision: { NombreRazon: sistema.NombreRazon, NIF: "B12345674" },
