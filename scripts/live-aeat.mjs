@@ -2,11 +2,11 @@ import { readFile } from "node:fs/promises";
 import { request } from "node:https";
 import { fileURLToPath } from "node:url";
 import {
+  assertValid,
   buildAltaRecord,
   createClient,
   SOAP_ENDPOINTS,
   SOAP_ENDPOINTS_SELLO,
-  validate,
 } from "../dist/index.js";
 
 function required(name) {
@@ -56,7 +56,10 @@ export function assertSubmission(result, record) {
     (entry) => entry.IDFactura.NumSerieFactura === record.IDFactura.NumSerieFactura,
   );
   if (!line || line.EstadoRegistro !== "Correcto") {
-    throw new Error(`AEAT rejected the test alta: code ${line?.CodigoErrorRegistro ?? "unknown"}`);
+    const description = line?.DescripcionErrorRegistro ? `: ${line.DescripcionErrorRegistro}` : "";
+    throw new Error(
+      `AEAT rejected the test alta: code ${line?.CodigoErrorRegistro ?? "unknown"}${description}`,
+    );
   }
   if (result.EstadoEnvio !== "Correcto") {
     throw new Error("AEAT rejected the submission batch");
@@ -136,7 +139,7 @@ export function buildTestRecord({ nif, name, systemNif, systemName, now, runId }
     SistemaInformatico: {
       NombreRazon: systemName,
       NIF: systemNif,
-      NombreSistemaInformatico: "Waitron VeriFactu integration test",
+      NombreSistemaInformatico: "Waitron VeriFactu test",
       IdSistemaInformatico: "WT",
       Version: "0.1.0",
       NumeroInstalacion: `CI-${runId}`,
@@ -149,14 +152,19 @@ export function buildTestRecord({ nif, name, systemNif, systemName, now, runId }
   });
 }
 
+export function certificateKind(value = process.env.AEAT_TEST_CERT_KIND) {
+  const kind = value || "personal";
+  if (!["personal", "sello"].includes(kind)) throw new Error("Invalid certificate kind");
+  return kind;
+}
+
 async function main() {
   const mode = process.argv[2] ?? "consult";
   if (!["consult", "submit"].includes(mode)) throw new Error("Mode must be consult or submit");
   const nif = required("AEAT_TEST_NIF");
   const name = required("AEAT_TEST_NAME");
   const passphrase = required("AEAT_TEST_P12_PASSWORD");
-  const kind = process.env.AEAT_TEST_CERT_KIND ?? "personal";
-  if (!["personal", "sello"].includes(kind)) throw new Error("Invalid certificate kind");
+  const kind = certificateKind();
   const endpoint = (kind === "sello" ? SOAP_ENDPOINTS_SELLO : SOAP_ENDPOINTS).preproduction;
   const client = createClient({
     endpoint,
@@ -186,11 +194,7 @@ async function main() {
     now,
     runId,
   });
-  const issues = validate(record).filter(({ severity }) => severity === "error");
-  if (issues.length)
-    throw new Error(
-      `Test record failed local validation: ${issues.map(({ code }) => code).join(", ")}`,
-    );
+  assertValid(record);
   const submitted = await client.submit(cabecera, [{ RegistroAlta: record }]);
   assertSubmission(submitted, record);
   const consulted = await client.consultar(cabecera, {

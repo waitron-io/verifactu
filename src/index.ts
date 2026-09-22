@@ -9,7 +9,7 @@ export {
   verifyHuella,
 } from "./huella.js";
 export { buildAltaRecord, buildAnulacionRecord } from "./records.js";
-export { validate } from "./validate.js";
+export { assertValid, validate, VerifactuValidationError } from "./validate.js";
 export { buildQrPayload } from "./qr.js";
 export { QR_ENDPOINTS, SOAP_ENDPOINTS, SOAP_ENDPOINTS_SELLO } from "./endpoints.js";
 export { MAX_REGISTROS_POR_ENVIO, serializeConsulta, serializeEnvio } from "./xml/serialize.js";
