@@ -125,12 +125,12 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
       const existing = store.get(key);
       const forced = rejections.get(key);
       const future = fechaToDate(fecha).getTime() > serverNow.getTime();
-      if (existing) {
-        // A resubmit of an identity AEAT already holds a record for. The outer EstadoRegistro
-        // reads Incorrecto (3000 is an Incorrecto line at the envío level) but RegistroDuplicado
-        // reports the ALREADY-STORED state — resolveEstadoEfectivo (parse-suministro.ts) reads
-        // that inner state as authoritative, not the outer Incorrecto. The store is left
-        // untouched: a resubmit never overwrites what AEAT already holds.
+      if (
+        existing &&
+        !(tipo === "anulacion" && existing.tipo === "alta" && existing.estado !== "Anulada")
+      ) {
+        // Anulación of a live alta changes its state; all other resubmissions leave the stored
+        // record untouched and report the already-stored state in RegistroDuplicado.
         anyRejected = true;
         const detail = noDuplicadoDetail.has(key) ? undefined : existing.estado;
         lineas.push(duplicadoLineaXml(idf, detail, ref));
@@ -152,10 +152,7 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
           ),
         );
       } else {
-        // A clean alta lands the record; a clean anulación retires the SAME key instead — the two
-        // share this branch because both were "successfully processed", but they leave the key in
-        // a different final state (Correcta vs Anulada), matching EstadoRegistroDuplicado's
-        // vocabulary that Task 3's consulta path will read back.
+        // A clean alta lands the record; a clean anulación retires the same invoice identity.
         const estado = tipo === "anulacion" ? "Anulada" : "Correcta";
         store.set(key, { key, huella, estado, tipo, refExterna: ref });
         lineas.push(lineaXml(idf, "Correcto", undefined, undefined, ref));

@@ -144,6 +144,28 @@ describe("fake AEAT — submit", () => {
     ]);
   });
 
+  it("accepts an anulación of a stored alta, then treats its resubmission as a duplicate", async () => {
+    const aeat = createFakeAeat();
+    await aeat.client().submit(cabecera, [{ RegistroAlta: altaFixture("A/1") }]);
+
+    const cancelled = await aeat
+      .client()
+      .submit(cabecera, [{ RegistroAnulacion: anulacionFixture("A/1") }]);
+    expect(cancelled.RespuestaLinea[0]?.EstadoRegistro).toBe("Correcto");
+    expect(aeat.stored()[0]).toMatchObject({
+      key: keyOf(altaFixture("A/1")),
+      estado: "Anulada",
+      tipo: "anulacion",
+      huella: "H-ANUL-A/1",
+    });
+
+    const repeated = await aeat
+      .client()
+      .submit(cabecera, [{ RegistroAnulacion: anulacionFixture("A/1") }]);
+    expect(repeated.RespuestaLinea[0]?.CodigoErrorRegistro).toBe(3000);
+    expect(repeated.RespuestaLinea[0]?.RegistroDuplicado?.EstadoRegistroDuplicado).toBe("Anulada");
+  });
+
   it("round-trips RefExterna onto the response line and the stored record", async () => {
     const aeat = createFakeAeat({ serverNow: new Date("2026-07-21T00:00:00Z") });
     const r = await aeat

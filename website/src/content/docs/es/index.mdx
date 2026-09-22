@@ -1,0 +1,65 @@
+---
+title: Registros Veri*Factu para TypeScript
+description: Crea, encadena, valida y envía registros de facturación a la AEAT.
+template: splash
+hero:
+  tagline: Construye los registros que tu sistema de facturación envía a la Agencia Tributaria.
+  actions:
+    - text: Primeros pasos
+      link: /verifactu/es/start/getting-started/
+      icon: right-arrow
+    - text: Enviar registros a la AEAT
+      link: /verifactu/es/guides/submit/
+      variant: minimal
+---
+
+`@waitron/verifactu` crea registros de alta y anulación, calcula sus huellas, los valida, prepara
+el contenido del QR y envía solicitudes SOAP. Tú gestionas la numeración, el almacenamiento
+duradero, el orden de la cadena y el certificado del cliente.
+
+```sh
+npm install @waitron/verifactu
+```
+
+```ts
+import { buildAltaRecord, validate, type SistemaInformatico } from "@waitron/verifactu";
+
+const sistema: SistemaInformatico = {
+  NombreRazon: "Example SL",
+  NIF: "89890001K",
+  NombreSistemaInformatico: "Example POS",
+  IdSistemaInformatico: "01",
+  Version: "1.0",
+  NumeroInstalacion: "001",
+  TipoUsoPosibleSoloVerifactu: "S",
+  TipoUsoPosibleMultiOT: "N",
+  IndicadorMultiplesOT: "N",
+};
+
+const record = buildAltaRecord({
+  IDEmisorFactura: "89890001K",
+  NumSerieFactura: "T01/000123",
+  FechaExpedicionFactura: new Date("2026-07-20T12:00:00Z"),
+  NombreRazonEmisor: "Example SL",
+  TipoFactura: "F2",
+  DescripcionOperacion: "Café y almuerzo",
+  Desglose: [{ CalificacionOperacion: "S1", TipoImpositivo: "21", BaseImponibleOimporteNoSujeto: "10.00", CuotaRepercutida: "2.10" }],
+  CuotaTotal: "2.10",
+  ImporteTotal: "12.10",
+  Encadenamiento: { PrimerRegistro: "S" },
+  SistemaInformatico: sistema,
+  generadoEn: new Date("2026-07-20T12:00:00Z"),
+  offsetMinutes: 120,
+});
+
+if (validate(record).some((issue) => issue.severity === "error")) {
+  throw new Error("El registro no supera la validación");
+}
+```
+
+Sustituye esta identidad por la de tu sistema y sigue [Primeros pasos](/verifactu/es/start/getting-started/).
+Para recorrer todo el proceso, desde la venta hasta la respuesta, lee
+[Enviar y consultar a la AEAT](/verifactu/es/guides/submit/).
+
+Esta biblioteca es **una herramienta para construir un SIF, no un SIF por sí sola**. Tu sistema
+desplegado debe cumplir sus obligaciones legales. [Entiende esa diferencia](/verifactu/es/start/not-a-sif/).

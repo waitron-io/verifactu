@@ -1,7 +1,7 @@
 // @ts-check
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
-import starlightTypeDoc, { typeDocSidebarGroup } from "starlight-typedoc";
+import starlightTypeDoc from "starlight-typedoc";
 
 // Project GitHub Pages: https://waitron-io.github.io/verifactu/
 // Override `site`/`base` here (or via a CNAME) if a custom domain is set up later.
@@ -39,6 +39,7 @@ export default defineConfig({
           typeDoc: {
             entryPointStrategy: "resolve",
             excludeInternal: true,
+            readme: "./api-intro.md",
             skipErrorChecking: true,
           },
         }),
@@ -60,10 +61,20 @@ export default defineConfig({
             { ...t("Validation", "Validación"), slug: "guides/validation" },
             { ...t("QR payloads and images", "Códigos QR"), slug: "guides/qr" },
             { ...t("Submit and query AEAT", "Enviar y consultar a la AEAT"), slug: "guides/submit" },
+            { ...t("Query AEAT", "Consultar a la AEAT"), slug: "guides/consulta" },
             { ...t("Testing with a fake AEAT", "Pruebas con una AEAT falsa"), slug: "guides/testing" },
           ],
         },
-        typeDocSidebarGroup,
+        {
+          ...t("API reference", "Referencia de la API"),
+          items: [
+            // Starlight prefixes manual links with the active locale; one `..` reaches the
+            // shared English reference outside both locale trees.
+            { ...t("Overview", "Índice"), link: "../api/readme/" },
+            { ...t("Public API", "API pública"), link: "../api/index/readme/" },
+            { ...t("Testing API", "API de pruebas"), link: "../api/testing/fake-aeat/readme/" },
+          ],
+        },
       ],
     }),
   ],

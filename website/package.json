@@ -7,6 +7,9 @@
     "dev": "astro dev",
     "start": "astro dev",
     "build": "astro build",
+    "verify:examples": "node scripts/verify-examples.mjs",
+    "verify:types": "node ../node_modules/typescript-7/bin/tsc --ignoreConfig --noEmit --strict --skipLibCheck --target es2022 --module esnext --moduleResolution bundler --types node scripts/verify-types.ts",
+    "verify:links": "node scripts/verify-links.mjs",
     "preview": "astro preview",
     "astro": "astro"
   },
@@ -14,8 +17,13 @@
     "@astrojs/starlight": "^0.42.2",
     "astro": "^7.2.10",
     "sharp": "^0.35.3",
-    "starlight-typedoc": "^0.24.0",
+    "starlight-typedoc": "^0.23.1",
     "typedoc": "^0.28.15",
     "typedoc-plugin-markdown": "^4.9.0"
+  },
+  "devDependencies": {
+    "jsqr": "^1.4.0",
+    "qrcode-generator": "^2.0.4",
+    "undici": "^8.11.0"
   }
 }
