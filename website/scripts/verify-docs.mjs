@@ -12,7 +12,7 @@ const files = [];
 function blocks(locale, page, section = "guides", extension = "md") {
   const path = join(website, "src/content/docs", locale, section, `${page}.${extension}`);
   const markdown = readFileSync(path, "utf8");
-  return [...markdown.matchAll(/^\`\`\`ts\n([\s\S]*?)^\`\`\`/gm)].map((match) =>
+  return [...markdown.matchAll(/^```ts\n([\s\S]*?)^```/gm)].map((match) =>
     match[1]
       .replaceAll('from "@waitron/verifactu/testing"', 'from "../../dist/testing/fake-aeat.js"')
       .replaceAll('from "@waitron/verifactu/facade"', 'from "../../dist/facade.js"')
@@ -28,7 +28,7 @@ function snippetPages(locale) {
       const path = join(dir, entry.name);
       if (entry.isDirectory()) {
         visit(path);
-      } else if (/\.mdx?$/.test(entry.name) && /^\`\`\`ts$/m.test(readFileSync(path, "utf8"))) {
+      } else if (/\.mdx?$/.test(entry.name) && /^```ts$/m.test(readFileSync(path, "utf8"))) {
         pages.push(relative(root, path));
       }
     }

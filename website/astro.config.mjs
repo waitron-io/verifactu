@@ -56,14 +56,26 @@ export default defineConfig({
         {
           ...t("Guides", "Guías"),
           items: [
-            { ...t("Build an alta record", "Crear un registro de alta"), slug: "guides/alta-record" },
-            { ...t("Build and submit with fewer steps", "Crear y enviar con menos pasos"), slug: "guides/facade" },
+            {
+              ...t("Build an alta record", "Crear un registro de alta"),
+              slug: "guides/alta-record",
+            },
+            {
+              ...t("Build and submit with fewer steps", "Crear y enviar con menos pasos"),
+              slug: "guides/facade",
+            },
             { ...t("The huella hash chain", "La cadena de huellas"), slug: "guides/huella-chain" },
             { ...t("Validation", "Validación"), slug: "guides/validation" },
             { ...t("QR payloads and images", "Códigos QR"), slug: "guides/qr" },
-            { ...t("Submit and query AEAT", "Enviar y consultar a la AEAT"), slug: "guides/submit" },
+            {
+              ...t("Submit and query AEAT", "Enviar y consultar a la AEAT"),
+              slug: "guides/submit",
+            },
             { ...t("Query AEAT", "Consultar a la AEAT"), slug: "guides/consulta" },
-            { ...t("Testing with a fake AEAT", "Pruebas con una AEAT falsa"), slug: "guides/testing" },
+            {
+              ...t("Testing with a fake AEAT", "Pruebas con una AEAT falsa"),
+              slug: "guides/testing",
+            },
           ],
         },
         {

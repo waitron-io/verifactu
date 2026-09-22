@@ -34,12 +34,14 @@ const sale = {
   NombreRazonEmisor: sistema.NombreRazon,
   TipoFactura: "F2",
   DescripcionOperacion: "Coffee and lunch",
-  Desglose: [{
-    CalificacionOperacion: "S1",
-    TipoImpositivo: "21",
-    BaseImponibleOimporteNoSujeto: "10.00",
-    CuotaRepercutida: "2.10",
-  }],
+  Desglose: [
+    {
+      CalificacionOperacion: "S1",
+      TipoImpositivo: "21",
+      BaseImponibleOimporteNoSujeto: "10.00",
+      CuotaRepercutida: "2.10",
+    },
+  ],
   CuotaTotal: "2.10",
   ImporteTotal: "12.10",
   SistemaInformatico: sistema,
@@ -65,7 +67,9 @@ assert.match(first.Huella, /^[0-9A-F]{64}$/);
 assert.equal(second.Encadenamiento.RegistroAnterior.Huella, first.Huella);
 
 const fake = createFakeAeat({ serverNow: new Date("2026-07-21T00:00:00Z") });
-const dispatcher = new Agent({ connect: { pfx: Buffer.from("test-only"), passphrase: "test-only" } });
+const dispatcher = new Agent({
+  connect: { pfx: Buffer.from("test-only"), passphrase: "test-only" },
+});
 let dispatched = 0;
 const transport = async (url, init) => {
   assert.equal(init?.dispatcher, dispatcher);
@@ -135,4 +139,6 @@ for (let y = 0; y < width; y += 1) {
   }
 }
 assert.equal(jsQR(pixels, width, width)?.data, payload);
-console.log("Submission, duplicate, consulta, cancellation, certificate adapter, and QR examples pass");
+console.log(
+  "Submission, duplicate, consulta, cancellation, certificate adapter, and QR examples pass",
+);

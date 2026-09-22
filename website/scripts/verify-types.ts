@@ -16,7 +16,8 @@ async function certificateClient() {
   const certificateFetch: typeof globalThis.fetch = (url, init) =>
     fetch(url, { ...init, dispatcher } as RequestInit & { dispatcher: Agent });
   const certificateKind = process.env.AEAT_CERTIFICATE_KIND;
-  const environment = process.env.AEAT_ENVIRONMENT === "production" ? "production" : "preproduction";
+  const environment =
+    process.env.AEAT_ENVIRONMENT === "production" ? "production" : "preproduction";
   const endpoints = certificateKind === "sello" ? SOAP_ENDPOINTS_SELLO : SOAP_ENDPOINTS;
   return createClient({ endpoint: endpoints[environment], fetch: certificateFetch });
 }
