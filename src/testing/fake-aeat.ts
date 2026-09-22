@@ -86,9 +86,13 @@ export interface FakeAeat {
   stored(): StoredRecord[];
   /** Forces the next resubmit of `key` to omit `RegistroDuplicado.EstadoRegistroDuplicado` (the duplicate_unknown case). */
   dropRegistroDuplicadoDetail(key: FacturaKey): void;
-  /** Marks a stored record `Anulado` directly, without going through a RegistroAnulacion submit. */
+  /**
+   * Marks a stored record `Anulado` without synthesizing a RegistroAnulacion. This state-only hook
+   * deliberately retains the existing record kind and hash; submit a real cancellation when a test
+   * needs AEAT's cancellation snapshot.
+   */
   annul(key: FacturaKey): void;
-  /** Overrides a stored record's consulta-reported estado — `annul` is just the `Anulado` special case of this. */
+  /** Overrides only the consulta-reported state; `annul` is its `Anulado` shorthand. */
   setConsultaState(key: FacturaKey, estado: StoredRecord["estado"]): void;
   /** Evicts a stored record entirely, driving the `SinDatos`/no-trace consulta path. */
   forget(key: FacturaKey): void;
@@ -202,7 +206,13 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
           tipo === "anulacion" ? "Anulado" : future ? "AceptadoConErrores" : "Correcto";
         // Consulta exposes the latest record for an invoice identity. This one-row fake therefore
         // replaces an alta snapshot with the accepted anulación's hash, kind, and external reference.
-        store.set(key, { key, huella, estado, tipo, refExterna: ref });
+        store.set(key, {
+          key,
+          huella,
+          estado,
+          tipo,
+          refExterna: ref ?? existing?.refExterna,
+        });
         if (!existing) {
           metadata.set(
             key,

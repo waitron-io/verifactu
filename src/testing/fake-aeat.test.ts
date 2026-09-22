@@ -49,7 +49,11 @@ function altaFixture(numSerie: string, fecha = "20-07-2026", refExterna?: string
 
 // A RegistroAnulacion's own IDFactura identifies the SAME invoice its alta did, just spelled with
 // the ...Anulada field names — this fixture cancels whatever alta was filed under `numSerie`.
-function anulacionFixture(numSerie: string, fecha = "20-07-2026"): RegistroAnulacion {
+function anulacionFixture(
+  numSerie: string,
+  fecha = "20-07-2026",
+  refExterna?: string,
+): RegistroAnulacion {
   return {
     IDVersion: "1.0",
     IDFactura: {
@@ -57,6 +61,7 @@ function anulacionFixture(numSerie: string, fecha = "20-07-2026"): RegistroAnula
       NumSerieFacturaAnulada: numSerie,
       FechaExpedicionFacturaAnulada: fecha,
     },
+    ...(refExterna !== undefined ? { RefExterna: refExterna } : {}),
     Encadenamiento: {
       RegistroAnterior: {
         IDEmisorFactura: "89890001K",
@@ -165,7 +170,7 @@ describe("fake AEAT — submit", () => {
       estado: "Anulado",
       tipo: "anulacion",
       huella: "H-ANUL-A/1",
-      refExterna: undefined,
+      refExterna: "alta-ref",
     });
     const consulted = await aeat.client().consultar(cabecera, {
       Ejercicio: "2026",
@@ -175,12 +180,42 @@ describe("fake AEAT — submit", () => {
     });
     expect(consulted.registros[0]?.DatosRegistroFacturacion.Huella).toBe("H-ANUL-A/1");
     expect(consulted.registros[0]?.EstadoRegistro).toBe("Anulado");
+    const byAltaReference = await aeat.client().consultar(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      RefExterna: "alta-ref",
+    });
+    expect(byAltaReference.registros).toHaveLength(1);
 
     const repeated = await aeat
       .client()
       .submit(cabecera, [{ RegistroAnulacion: anulacionFixture("A/1") }]);
     expect(repeated.RespuestaLinea[0]?.CodigoErrorRegistro).toBe(3000);
     expect(repeated.RespuestaLinea[0]?.RegistroDuplicado?.EstadoRegistroDuplicado).toBe("Anulada");
+  });
+
+  it("an anulación's own external reference replaces the alta reference", async () => {
+    const aeat = createFakeAeat();
+    await aeat
+      .client()
+      .submit(cabecera, [{ RegistroAlta: altaFixture("A/1", "20-07-2026", "alta-ref") }]);
+    await aeat
+      .client()
+      .submit(cabecera, [{ RegistroAnulacion: anulacionFixture("A/1", "20-07-2026", "anul-ref") }]);
+
+    expect(aeat.stored()[0]?.refExterna).toBe("anul-ref");
+    const oldReference = await aeat.client().consultar(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      RefExterna: "alta-ref",
+    });
+    const newReference = await aeat.client().consultar(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      RefExterna: "anul-ref",
+    });
+    expect(oldReference.ResultadoConsulta).toBe("SinDatos");
+    expect(newReference.registros).toHaveLength(1);
   });
 
   it("reports anulación after direct annul as a duplicate without replacing the alta", async () => {
