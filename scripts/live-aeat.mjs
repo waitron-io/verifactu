@@ -285,6 +285,15 @@ export async function waitForNextSubmission(seconds) {
   if (seconds > 0) await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
 }
 
+export async function withLiveStage(stage, operation) {
+  try {
+    return await operation();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`${stage}: ${message}`, { cause: error });
+  }
+}
+
 export function certificateKind(value = process.env.AEAT_TEST_CERT_KIND) {
   const kind = value || "personal";
   if (!["personal", "sello"].includes(kind)) throw new Error("Invalid certificate kind");
@@ -345,11 +354,13 @@ async function main() {
   const { year, month } = madridClock(now);
 
   if (mode === "consult") {
-    const result = await client.consultar(consultaCabecera, {
-      Ejercicio: year,
-      Periodo: month,
-      NumSerieFactura: `CI-CHECK-${year}${month}`,
-    });
+    const result = await withLiveStage("consult-only issuer consulta", () =>
+      client.consultar(consultaCabecera, {
+        Ejercicio: year,
+        Periodo: month,
+        NumSerieFactura: `CI-CHECK-${year}${month}`,
+      }),
+    );
     assertConsultation(result);
     process.stdout.write(`AEAT preproduction consulta succeeded: ${result.ResultadoConsulta}\n`);
     return;
@@ -372,72 +383,78 @@ async function main() {
     runId,
   });
   assertValid(record);
-  const submitted = await client.submit(cabecera, [{ RegistroAlta: record }]);
+  const submitted = await withLiveStage("alta submission", () =>
+    client.submit(cabecera, [{ RegistroAlta: record }]),
+  );
   assertSubmission(submitted, record);
-  const consulted = await client.consultar(
-    consultaCabecera,
-    minimalIssuerConsultaFilter(record, year, month),
+  const consulted = await withLiveStage("minimal issuer consulta", () =>
+    client.consultar(consultaCabecera, minimalIssuerConsultaFilter(record, year, month)),
   );
   assertConsultation(consulted);
   assertStoredRecordAt("minimal issuer consulta", consulted, record);
 
-  const filtered = await client.consultar(
-    consultaCabecera,
-    issuerFilteredConsultaFilter(record, year, month),
+  const filtered = await withLiveStage("issuer exact-date and counterparty consulta", () =>
+    client.consultar(consultaCabecera, issuerFilteredConsultaFilter(record, year, month)),
   );
   assertConsultation(filtered);
   assertStoredRecordAt("issuer exact-date and counterparty consulta", filtered, record);
 
-  const asRepresentative = await client.consultar(consultaRepresentante, {
-    Ejercicio: year,
-    Periodo: month,
-    NumSerieFactura: record.IDFactura.NumSerieFactura,
-  });
+  const asRepresentative = await withLiveStage("representative consulta", () =>
+    client.consultar(consultaRepresentante, {
+      Ejercicio: year,
+      Periodo: month,
+      NumSerieFactura: record.IDFactura.NumSerieFactura,
+    }),
+  );
   assertConsultation(asRepresentative);
   process.stdout.write(`${describeRepresentativeConsulta(asRepresentative, record)}\n`);
 
   const system = record.SistemaInformatico;
-  const expanded = await client.consultar(consultaCabecera, {
-    Ejercicio: year,
-    Periodo: month,
-    NumSerieFactura: record.IDFactura.NumSerieFactura,
-    RangoFechaExpedicion: {
-      Desde: record.IDFactura.FechaExpedicionFactura,
-      Hasta: record.IDFactura.FechaExpedicionFactura,
-    },
-    SistemaInformatico: {
-      NombreRazon: system.NombreRazon,
-      NIF: system.NIF,
-      IdSistemaInformatico: system.IdSistemaInformatico,
-      NombreSistemaInformatico: system.NombreSistemaInformatico,
-      Version: system.Version,
-      NumeroInstalacion: system.NumeroInstalacion,
-      TipoUsoPosibleSoloVerifactu: system.TipoUsoPosibleSoloVerifactu,
-      TipoUsoPosibleMultiOT: system.TipoUsoPosibleMultiOT,
-      IndicadorMultiplesOT: system.IndicadorMultiplesOT,
-    },
-    RefExterna: record.RefExterna,
-    DatosAdicionalesRespuesta: {
-      MostrarNombreRazonEmisor: "S",
-      MostrarSistemaInformatico: "S",
-    },
-  });
-  assertConsultation(expanded);
-  assertExpandedStoredRecord(expanded, record);
-
-  const asRecipient = await client.consultar(
-    { Destinatario: recipient },
-    {
+  const expanded = await withLiveStage("expanded issuer consulta", () =>
+    client.consultar(consultaCabecera, {
       Ejercicio: year,
       Periodo: month,
       NumSerieFactura: record.IDFactura.NumSerieFactura,
-      Contraparte: cabecera.ObligadoEmision,
-      FechaExpedicionFactura: record.IDFactura.FechaExpedicionFactura,
+      RangoFechaExpedicion: {
+        Desde: record.IDFactura.FechaExpedicionFactura,
+        Hasta: record.IDFactura.FechaExpedicionFactura,
+      },
+      SistemaInformatico: {
+        NombreRazon: system.NombreRazon,
+        NIF: system.NIF,
+        IdSistemaInformatico: system.IdSistemaInformatico,
+        NombreSistemaInformatico: system.NombreSistemaInformatico,
+        Version: system.Version,
+        NumeroInstalacion: system.NumeroInstalacion,
+        TipoUsoPosibleSoloVerifactu: system.TipoUsoPosibleSoloVerifactu,
+        TipoUsoPosibleMultiOT: system.TipoUsoPosibleMultiOT,
+        IndicadorMultiplesOT: system.IndicadorMultiplesOT,
+      },
+      RefExterna: record.RefExterna,
       DatosAdicionalesRespuesta: {
         MostrarNombreRazonEmisor: "S",
-        MostrarSistemaInformatico: "N",
+        MostrarSistemaInformatico: "S",
       },
-    },
+    }),
+  );
+  assertConsultation(expanded);
+  assertExpandedStoredRecord(expanded, record);
+
+  const asRecipient = await withLiveStage("recipient consulta", () =>
+    client.consultar(
+      { Destinatario: recipient },
+      {
+        Ejercicio: year,
+        Periodo: month,
+        NumSerieFactura: record.IDFactura.NumSerieFactura,
+        Contraparte: cabecera.ObligadoEmision,
+        FechaExpedicionFactura: record.IDFactura.FechaExpedicionFactura,
+        DatosAdicionalesRespuesta: {
+          MostrarNombreRazonEmisor: "S",
+          MostrarSistemaInformatico: "N",
+        },
+      },
+    ),
   );
   assertConsultation(asRecipient);
   const recipientCopy = assertStoredRecordAt("recipient consulta", asRecipient, record);
@@ -445,27 +462,33 @@ async function main() {
     throw new Error("AEAT recipient consulta did not return the expected issuer name");
   }
 
-  const afterCursor = await client.consultar(consultaCabecera, {
-    Ejercicio: year,
-    Periodo: month,
-    NumSerieFactura: record.IDFactura.NumSerieFactura,
-    ClavePaginacion: record.IDFactura,
-  });
+  const afterCursor = await withLiveStage("cursor pagination consulta", () =>
+    client.consultar(consultaCabecera, {
+      Ejercicio: year,
+      Periodo: month,
+      NumSerieFactura: record.IDFactura.NumSerieFactura,
+      ClavePaginacion: record.IDFactura,
+    }),
+  );
   assertPaginationAdvanced(afterCursor, record);
 
-  await checkQrLookup(record);
+  await withLiveStage("QR lookup", () => checkQrLookup(record));
 
   await waitForNextSubmission(submitted.TiempoEsperaEnvio);
   const cancellation = buildTestCancellation({ record, issuedAt: now, now: new Date() });
   assertValid(cancellation);
-  const cancelled = await client.submit(cabecera, [{ RegistroAnulacion: cancellation }]);
+  const cancelled = await withLiveStage("anulación submission", () =>
+    client.submit(cabecera, [{ RegistroAnulacion: cancellation }]),
+  );
   assertSubmission(cancelled, cancellation, "anulación");
-  const afterCancellation = await client.consultar(consultaCabecera, {
-    Ejercicio: year,
-    Periodo: month,
-    NumSerieFactura: record.IDFactura.NumSerieFactura,
-    FechaExpedicionFactura: record.IDFactura.FechaExpedicionFactura,
-  });
+  const afterCancellation = await withLiveStage("final cancelled-record consulta", () =>
+    client.consultar(consultaCabecera, {
+      Ejercicio: year,
+      Periodo: month,
+      NumSerieFactura: record.IDFactura.NumSerieFactura,
+      FechaExpedicionFactura: record.IDFactura.FechaExpedicionFactura,
+    }),
+  );
   assertConsultation(afterCancellation);
   assertStoredRecordAt("final cancelled-record consulta", afterCancellation, record, "Anulado");
   process.stdout.write(

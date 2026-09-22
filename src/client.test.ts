@@ -24,6 +24,22 @@ const CONSULTA_OK = `<?xml version="1.0"?>
       <IndicadorPaginacion>N</IndicadorPaginacion>
     </RespuestaConsultaFactuSistemaFacturacion></soapenv:Body></soapenv:Envelope>`;
 
+const SOAP_FAULT = `<?xml version="1.0"?>
+  <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body>
+    <soapenv:Fault>
+      <faultcode>soapenv:Client</faultcode>
+      <faultstring>El valor del campo no es válido</faultstring>
+    </soapenv:Fault>
+  </soapenv:Body></soapenv:Envelope>`;
+
+const SOAP_12_FAULT = `<?xml version="1.0"?>
+  <env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope"><env:Body>
+    <env:Fault>
+      <env:Code><env:Value>env:Sender</env:Value></env:Code>
+      <env:Reason><env:Text>Filtro no válido</env:Text></env:Reason>
+    </env:Fault>
+  </env:Body></env:Envelope>`;
+
 function fakeFetch(body: string, init: { status?: number } = {}) {
   return vi.fn<typeof globalThis.fetch>(
     async () => new Response(body, { status: init.status ?? 200 }),
@@ -139,6 +155,56 @@ describe("createClient", () => {
     // hardcoded body.
     const init = fetch.mock.calls[0]?.[1] as RequestInit;
     expect(String(init.body)).toContain("<sf:Ejercicio>2024</sf:Ejercicio>");
+  });
+
+  it("reports a SOAP fault returned with HTTP 200", async () => {
+    const client = createClient({
+      endpoint: "https://example.test/soap",
+      fetch: fakeFetch(SOAP_FAULT),
+    });
+    await expect(client.consultar(CABECERA, { Ejercicio: "2024", Periodo: "01" })).rejects.toThrow(
+      "AEAT SOAP fault (HTTP 200) soapenv:Client: El valor del campo no es válido",
+    );
+  });
+
+  it("reports SOAP 1.2 fault fields and preserves a failing HTTP status", async () => {
+    const client = createClient({
+      endpoint: "https://example.test/soap",
+      fetch: fakeFetch(SOAP_12_FAULT, { status: 500 }),
+    });
+    await expect(client.consultar(CABECERA, { Ejercicio: "2024", Periodo: "01" })).rejects.toThrow(
+      "AEAT SOAP fault (HTTP 500) env:Sender: Filtro no válido",
+    );
+  });
+
+  it("preserves the response excerpt when a SOAP fault has no scalar diagnostic fields", async () => {
+    const body = `<?xml version="1.0"?><Envelope><Body><Fault><detail>bad filter</detail></Fault></Body></Envelope>`;
+    const client = createClient({
+      endpoint: "https://example.test/soap",
+      fetch: fakeFetch(body, { status: 500 }),
+    });
+    await expect(client.consultar(CABECERA, { Ejercicio: "2024", Periodo: "01" })).rejects.toThrow(
+      `AEAT SOAP fault (HTTP 500): ${body}`,
+    );
+  });
+
+  it("detects an empty SOAP fault returned with HTTP 200", async () => {
+    const body = `<?xml version="1.0"?><Envelope><Body><Fault/></Body></Envelope>`;
+    const client = createClient({ endpoint: "https://example.test/soap", fetch: fakeFetch(body) });
+    await expect(client.consultar(CABECERA, { Ejercicio: "2024", Periodo: "01" })).rejects.toThrow(
+      `AEAT SOAP fault (HTTP 200): ${body}`,
+    );
+  });
+
+  it("does not stringify a structured faultstring as an opaque object", async () => {
+    const body = `<?xml version="1.0"?><Envelope><Body><Fault><faultcode>Server</faultcode><faultstring><Text>nested reason</Text></faultstring></Fault></Body></Envelope>`;
+    const client = createClient({ endpoint: "https://example.test/soap", fetch: fakeFetch(body) });
+    const failure = await client
+      .consultar(CABECERA, { Ejercicio: "2024", Periodo: "01" })
+      .catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).not.toContain("[object Object]");
+    expect((failure as Error).message).toContain("nested reason");
   });
 
   it("posts both submit and consultar to the same configured endpoint", async () => {
