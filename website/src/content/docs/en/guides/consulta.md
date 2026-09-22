@@ -41,13 +41,14 @@ console.log(Boolean(detailed.registros[0]?.DatosRegistroFacturacion.SistemaInfor
 `NumSerieFactura` and `FechaExpedicionFactura` narrow the query; omit them to sweep the period.
 Use `RefExterna` when you stored your own reference on the record. Use `Contraparte` with the
 customer's `NombreRazon` and either `NIF` or `IDOtro` when you need that customer's records.
-`SistemaInformatico` narrows the result to one software installation. Its name, identity, system
-ID, and installation number are required; you can also supply its version and use flags.
+`SistemaInformatico` narrows the result to one software installation. Supply `NombreRazon`, either
+`NIF` or `IDOtro`, `IdSistemaInformatico`, and `NumeroInstalacion`. The software name, version, and
+use flags are optional.
 
 Request `DatosAdicionalesRespuesta` only when you need the issuer's name or software details in
-each result. The extra fields can slow AEAT's response. If you query as a recipient, leave
-`MostrarSistemaInformatico` out or set it to `"N"`, as AEAT requires. The client places these
-options after `FiltroConsulta` in the XML request.
+each result. AEAT's `ConsultaLR.xsd` says these fields can slow its response. The same schema
+requires recipient queries to omit `MostrarSistemaInformatico` or set it to `"N"`. The client
+places these options after `FiltroConsulta` in the XML request.
 
 When `IndicadorPaginacion` is `"S"`, send `ClavePaginacion` from the response in your next query.
 Do not try to recover a submission's CSV here: consulta does not return it.

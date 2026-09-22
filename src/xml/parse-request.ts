@@ -71,7 +71,14 @@ interface RawFiltro {
 function consultaPersonaOf(raw: RawConsultaPersona): RawConsultaPersona {
   return raw.NIF !== undefined
     ? { NombreRazon: raw.NombreRazon, NIF: raw.NIF }
-    : { NombreRazon: raw.NombreRazon, IDOtro: raw.IDOtro };
+    : {
+        NombreRazon: raw.NombreRazon,
+        IDOtro: {
+          ...(raw.IDOtro.CodigoPais !== undefined ? { CodigoPais: raw.IDOtro.CodigoPais } : {}),
+          IDType: raw.IDOtro.IDType,
+          ID: raw.IDOtro.ID,
+        },
+      };
 }
 
 function cabeceraOf(raw: RawCabecera): Cabecera {

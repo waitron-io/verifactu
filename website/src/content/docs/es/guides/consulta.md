@@ -41,14 +41,14 @@ console.log(Boolean(detailed.registros[0]?.DatosRegistroFacturacion.SistemaInfor
 `NumSerieFactura` y `FechaExpedicionFactura` acotan la consulta; omítelos para recorrer el
 periodo. Usa `RefExterna` si guardaste una referencia propia en el registro. Usa `Contraparte`
 con `NombreRazon` y el `NIF` o `IDOtro` del cliente para buscar sus facturas.
-`SistemaInformatico` limita el resultado a una instalación. Debes indicar el nombre, la
-identificación, el ID del sistema y el número de instalación; la versión y los indicadores de uso
-son opcionales.
+`SistemaInformatico` limita el resultado a una instalación. Indica `NombreRazon`, `NIF` o
+`IDOtro`, `IdSistemaInformatico` y `NumeroInstalacion`. El nombre del software, la versión y los
+indicadores de uso son opcionales.
 
 Pide `DatosAdicionalesRespuesta` solo cuando necesites el nombre del emisor o los datos del
-software en cada resultado. Estos campos pueden ralentizar la respuesta de la AEAT. Si consultas
-como destinatario, omite `MostrarSistemaInformatico` o usa `"N"`, como exige la AEAT. El cliente
-coloca estas opciones después de `FiltroConsulta` en el XML.
+software en cada resultado. `ConsultaLR.xsd` de la AEAT indica que estos campos pueden ralentizar
+la respuesta. La misma norma exige que omitas `MostrarSistemaInformatico` o uses `"N"` si consultas
+como destinatario. El cliente coloca estas opciones después de `FiltroConsulta` en el XML.
 
 Cuando `IndicadorPaginacion` sea `"S"`, envía la `ClavePaginacion` recibida en la
 siguiente consulta. El CSV del envío no se puede recuperar aquí: la consulta no lo devuelve.

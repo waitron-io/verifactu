@@ -335,6 +335,17 @@ describe("fake AEAT — resubmit (error 3000) and consulta", () => {
         },
       }),
     ).toEqual(["A/2"]);
+    expect(
+      await serials({
+        ...base,
+        SistemaInformatico: {
+          NombreRazon: "Foreign Software",
+          IDOtro: { CodigoPais: "FR", IDType: "02", ID: "FR123" },
+          IdSistemaInformatico: "77",
+          NumeroInstalacion: "2",
+        },
+      }),
+    ).toEqual([]);
   });
 
   it("includes extra response fields only when the consulta requests them", async () => {
@@ -374,6 +385,22 @@ describe("fake AEAT — resubmit (error 3000) and consulta", () => {
     const raw = await (await aeat.fetch("https://fake.aeat.test/soap", { body: request })).text();
     expect(raw).toContain("<sfRC:NombreRazonEmisor>Waitron SL</sfRC:NombreRazonEmisor>");
     expect(raw).toContain("<sfRC:SistemaInformatico><sf:NombreRazon>Waitron SL</sf:NombreRazon>");
+  });
+
+  it("escapes software flags in an expanded fake consulta response", async () => {
+    const aeat = createFakeAeat();
+    const record = altaFixture("A/1");
+    record.SistemaInformatico = { ...SISTEMA, TipoUsoPosibleSoloVerifactu: "S<&" as "S" };
+    await aeat.client().submit(cabecera, [{ RegistroAlta: record }]);
+    const request = serializeConsulta(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      DatosAdicionalesRespuesta: { MostrarSistemaInformatico: "S" },
+    });
+    const raw = await (await aeat.fetch("https://fake.aeat.test/soap", { body: request })).text();
+    expect(raw).toContain(
+      "<sf:TipoUsoPosibleSoloVerifactu>S&lt;&amp;</sf:TipoUsoPosibleSoloVerifactu>",
+    );
   });
 
   // handleConsulta must match the FULL identity (obligado NIF + NumSerieFactura +

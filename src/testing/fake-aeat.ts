@@ -47,6 +47,7 @@ function matchesSistema(
   stored: SistemaInformatico,
   requested: SistemaInformaticoConsulta,
 ): boolean {
+  // Submitted records have NIF-only software identities, so an IDOtro filter cannot match this fake's store.
   return (
     requested.NIF !== undefined &&
     stored.NombreRazon === requested.NombreRazon &&
@@ -427,7 +428,10 @@ function clavePaginacionXml(s: StoredRecord): string {
   );
 }
 
-/** `matches` is the already-paged slice to return; `more` says whether further pages remain beyond it. */
+function sfValueXml(name: string, value: string | undefined): string {
+  return value === undefined ? "" : `<sf:${name}>${escapeXml(value)}</sf:${name}>`;
+}
+
 function sistemaConsultaXml(value: SistemaInformatico): string {
   return (
     "<sfRC:SistemaInformatico>" +
@@ -437,13 +441,14 @@ function sistemaConsultaXml(value: SistemaInformatico): string {
     `<sf:IdSistemaInformatico>${escapeXml(value.IdSistemaInformatico)}</sf:IdSistemaInformatico>` +
     `<sf:Version>${escapeXml(value.Version)}</sf:Version>` +
     `<sf:NumeroInstalacion>${escapeXml(value.NumeroInstalacion)}</sf:NumeroInstalacion>` +
-    `<sf:TipoUsoPosibleSoloVerifactu>${value.TipoUsoPosibleSoloVerifactu}</sf:TipoUsoPosibleSoloVerifactu>` +
-    `<sf:TipoUsoPosibleMultiOT>${value.TipoUsoPosibleMultiOT}</sf:TipoUsoPosibleMultiOT>` +
-    `<sf:IndicadorMultiplesOT>${value.IndicadorMultiplesOT}</sf:IndicadorMultiplesOT>` +
+    sfValueXml("TipoUsoPosibleSoloVerifactu", value.TipoUsoPosibleSoloVerifactu) +
+    sfValueXml("TipoUsoPosibleMultiOT", value.TipoUsoPosibleMultiOT) +
+    sfValueXml("IndicadorMultiplesOT", value.IndicadorMultiplesOT) +
     "</sfRC:SistemaInformatico>"
   );
 }
 
+/** `matches` is the already-paged slice to return; `more` says whether further pages remain beyond it. */
 function consultaEnvelope(
   matches: StoredRecord[],
   more: boolean,

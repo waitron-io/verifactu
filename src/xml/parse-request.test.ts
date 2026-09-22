@@ -304,7 +304,20 @@ describe("parseConsulta", () => {
     expect(parseConsulta(serializeConsulta(cabecera, filtro))).toStrictEqual({ cabecera, filtro });
   });
 
-  it("round-trips all new consulta options without moving response options into FiltroConsulta", () => {
+  it("drops unknown fields inside a consulta counterpart's IDOtro", () => {
+    const identity = {
+      NombreRazon: "Société X",
+      IDOtro: { CodigoPais: "FR", IDType: "02" as const, ID: "FR12345678901" },
+    };
+    const xml = serializeConsulta(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      Contraparte: identity,
+    }).replace("</sf:IDOtro>", "<sf:Unexpected>ignored</sf:Unexpected></sf:IDOtro>");
+    expect(parseConsulta(xml).filtro.Contraparte).toStrictEqual(identity);
+  });
+
+  it("round-trips all new consulta options", () => {
     const filtro: ConsultaFiltro = {
       Ejercicio: "2026",
       Periodo: "07",
