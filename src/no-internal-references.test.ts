@@ -5,7 +5,7 @@ describe("the public repo carries no internal or AI-workflow references", () => 
   it("finds none of the forbidden markers in tracked files", () => {
     // Case-insensitive; scans tracked files only. `git grep` returns exit 1 (no matches) on success.
     const pattern = "claude|codex|superpower|CLAUDE\\.md|docs/(superpowers|compliance|handoffs)";
-    let hits = "";
+    let hits: string;
     try {
       hits = execSync(
         `git grep -In -iE '${pattern}' -- . ':(exclude)src/no-internal-references.test.ts'`,

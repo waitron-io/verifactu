@@ -1,17 +1,26 @@
 import js from "@eslint/js";
+import eslintConfigPrettier from "eslint-config-prettier";
 import globals from "globals";
 import tseslint from "typescript-eslint";
 
-// Minimal flat config for the extracted library: the ESLint and typescript-eslint
-// recommended presets over the TypeScript sources and tests, nothing more. This is
-// a mechanical extraction, so the config imposes no new style policy on the code.
 export default tseslint.config(
-  { ignores: ["dist/", "coverage/", "reports/", "node_modules/", "*.tgz"] },
   {
-    files: ["src/**/*.ts", "test/**/*.ts"],
-    extends: [js.configs.recommended, ...tseslint.configs.recommended],
-    languageOptions: {
-      globals: { ...globals.node },
-    },
+    ignores: [
+      "**/dist/**",
+      "**/node_modules/**",
+      "**/coverage/**",
+      "**/reports/**",
+      "**/.stryker-tmp/**",
+      "**/.astro/**",
+      "**/src/content/docs/api/**",
+      "*.tgz",
+    ],
   },
+  js.configs.recommended,
+  ...tseslint.configs.recommended,
+  {
+    files: ["**/*.{js,mjs,cjs}"],
+    languageOptions: { globals: globals.node },
+  },
+  eslintConfigPrettier,
 );

@@ -4,4 +4,11 @@ coverage/
 reports/
 *.tgz
 schemas/
-website/
+docs/
+website/node_modules/
+website/dist/
+website/.astro/
+website/src/content/docs/
+website/src/pages/
+website/api-intro.md
+website/README.md

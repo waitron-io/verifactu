@@ -40,27 +40,31 @@
   },
   "sideEffects": false,
   "scripts": {
+    "prepare": "husky",
     "build": "node node_modules/typescript-7/bin/tsc -p tsconfig.build.json",
     "typecheck": "node node_modules/typescript-7/bin/tsc --noEmit",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "lint": "eslint .",
     "mutation": "stryker run",
+    "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
   "dependencies": {
     "fast-xml-parser": "^5.11.1"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.5",
+    "@eslint/js": "^10.0.1",
     "@inoguerols/verifactu": "1.5.3",
     "@stryker-mutator/core": "^10.0.0",
     "@stryker-mutator/vitest-runner": "^10.0.0",
     "@types/node": "^26.0.0",
     "@vitest/coverage-v8": "^4.1.11",
-    "eslint": "^9.39.5",
+    "eslint": "^10.11.0",
+    "eslint-config-prettier": "^10.1.8",
     "fast-check": "^4.10.1",
     "globals": "^17.12.0",
+    "husky": "^9.1.7",
     "prettier": "^3.9.8",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "typescript-7": "npm:typescript@^7.0.0",
