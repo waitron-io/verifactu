@@ -697,4 +697,13 @@ describe("fake AEAT — consulta pagination + RefExterna echo + state hooks", ()
     expect(() => aeat.forget("89890001K|A/9|20-07-2026")).not.toThrow();
     expect(aeat.stored()).toEqual([]);
   });
+
+  it("rejects an obsolete consulta state supplied by untyped JavaScript", async () => {
+    const aeat = createFakeAeat();
+    const alta = altaFixture("A/1");
+    await aeat.client().submit(cabecera, [{ RegistroAlta: alta }]);
+    expect(() => aeat.setConsultaState(keyOf(alta), "Correcta" as never)).toThrow(
+      "Invalid consulta record state: Correcta",
+    );
+  });
 });

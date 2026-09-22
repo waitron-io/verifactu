@@ -5,17 +5,25 @@ import type { IDFactura } from "../types.js";
  * The consulta enum. Deliberately NOT shared with the submission response's
  * EstadoRegistroSuministro ("Correcto" / "AceptadoConErrores" / "Incorrecto"):
  *
- *   - No `Incorrecta`, because a rejected record is never stored — AEAT never
+ *   - No `Incorrecto`, because a rejected record is never stored — AEAT never
  *     holds a record it refused, so a query can never come back reporting one.
  *   - Has `Anulado`, which submission never returns.
- *   - Feminine forms throughout (agreeing with "Registro" differently than
- *     the submission side's masculine forms do).
  *
  * A shared type would model states that cannot occur on one side and miss
  * states that can occur on the other.
  */
-/** Values from RespuestaConsultaLR.xsd EstadoRegistroType. */
 export type EstadoRegistroConsulta = "Correcto" | "AceptadoConErrores" | "Anulado";
+
+function estadoRegistroConsultaOf(value: string): EstadoRegistroConsulta {
+  switch (value) {
+    case "Correcto":
+    case "AceptadoConErrores":
+    case "Anulado":
+      return value;
+    default:
+      throw new Error(`Unexpected consulta record state: ${value}`);
+  }
+}
 
 export interface DatosPresentacionConsulta {
   NIFPresentador?: string;
@@ -114,7 +122,7 @@ function parseRegistroConsultado(raw: RawRegistroConsultado): RegistroConsultado
     IDFactura: parseIDFactura(raw.IDFactura),
     DatosRegistroFacturacion: raw.DatosRegistroFacturacion,
     TimestampUltimaModificacion: raw.EstadoRegistro.TimestampUltimaModificacion,
-    EstadoRegistro: raw.EstadoRegistro.EstadoRegistro as EstadoRegistroConsulta,
+    EstadoRegistro: estadoRegistroConsultaOf(raw.EstadoRegistro.EstadoRegistro),
     CodigoErrorRegistro: asNumber(raw.EstadoRegistro.CodigoErrorRegistro, "CodigoErrorRegistro"),
     DescripcionErrorRegistro: raw.EstadoRegistro.DescripcionErrorRegistro,
     DatosPresentacion: raw.DatosPresentacion

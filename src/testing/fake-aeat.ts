@@ -363,6 +363,7 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
       if (s) s.estado = "Anulado";
     },
     setConsultaState: (key, estado) => {
+      assertConsultaState(estado);
       const s = store.get(key);
       if (s) s.estado = estado;
     },
@@ -455,6 +456,12 @@ function duplicateStateOf(estado: EstadoRegistroConsulta): EstadoRegistroDuplica
       return "AceptadaConErrores";
     case "Anulado":
       return "Anulada";
+  }
+}
+
+function assertConsultaState(estado: string): asserts estado is EstadoRegistroConsulta {
+  if (!["Correcto", "AceptadoConErrores", "Anulado"].includes(estado)) {
+    throw new Error(`Invalid consulta record state: ${estado}`);
   }
 }
 

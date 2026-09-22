@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { parseRespuestaConsulta, type EstadoRegistroConsulta } from "./parse-consulta.js";
 
 const RESPONSE = `<?xml version="1.0" encoding="UTF-8"?>
@@ -118,8 +118,9 @@ const WITH_ERROR_DETAIL = `<?xml version="1.0" encoding="UTF-8"?>
 
 describe("parseRespuestaConsulta", () => {
   it("uses the official masculine consulta-state values", () => {
-    const states: EstadoRegistroConsulta[] = ["Correcto", "AceptadoConErrores", "Anulado"];
-    expect(states).toEqual(["Correcto", "AceptadoConErrores", "Anulado"]);
+    expectTypeOf<EstadoRegistroConsulta>().toEqualTypeOf<
+      "Correcto" | "AceptadoConErrores" | "Anulado"
+    >();
   });
 
   it("reports whether the query returned data", () => {
@@ -184,6 +185,16 @@ describe("parseRespuestaConsulta", () => {
       "<EstadoRegistro>Anulado</EstadoRegistro>",
     );
     expect(parseRespuestaConsulta(annulled).registros[0]?.EstadoRegistro).toBe("Anulado");
+  });
+
+  it("rejects a response state outside the official consulta enum", () => {
+    const invalid = RESPONSE.replace(
+      "<EstadoRegistro>Correcto</EstadoRegistro>",
+      "<EstadoRegistro>Correcta</EstadoRegistro>",
+    );
+    expect(() => parseRespuestaConsulta(invalid)).toThrow(
+      "Unexpected consulta record state: Correcta",
+    );
   });
 
   it("exposes no CSV field at all", () => {
