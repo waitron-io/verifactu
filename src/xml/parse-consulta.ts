@@ -7,14 +7,15 @@ import type { IDFactura } from "../types.js";
  *
  *   - No `Incorrecta`, because a rejected record is never stored — AEAT never
  *     holds a record it refused, so a query can never come back reporting one.
- *   - Has `Anulada`, which submission never returns.
+ *   - Has `Anulado`, which submission never returns.
  *   - Feminine forms throughout (agreeing with "Registro" differently than
  *     the submission side's masculine forms do).
  *
  * A shared type would model states that cannot occur on one side and miss
  * states that can occur on the other.
  */
-export type EstadoRegistroConsulta = "Correcta" | "AceptadaConErrores" | "Anulada";
+/** Values from RespuestaConsultaLR.xsd EstadoRegistroType. */
+export type EstadoRegistroConsulta = "Correcto" | "AceptadoConErrores" | "Anulado";
 
 export interface DatosPresentacionConsulta {
   NIFPresentador?: string;

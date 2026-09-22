@@ -1,7 +1,12 @@
 import { createClient, type VerifactuClient } from "../client.js";
 import { escapeXml } from "../xml/escape.js";
 import { parseConsulta, parseEnvio } from "../xml/parse-request.js";
-import type { EstadoEnvio, EstadoRegistroSuministro } from "../xml/parse-suministro.js";
+import type { EstadoRegistroConsulta } from "../xml/parse-consulta.js";
+import type {
+  EstadoEnvio,
+  EstadoRegistroDuplicado,
+  EstadoRegistroSuministro,
+} from "../xml/parse-suministro.js";
 import type {
   ConsultaFiltro,
   EnvioRegistro,
@@ -21,7 +26,7 @@ export type FacturaKey = string;
 export interface StoredRecord {
   key: FacturaKey;
   huella: string;
-  estado: "Correcta" | "AceptadaConErrores" | "Anulada";
+  estado: EstadoRegistroConsulta;
   tipo: "alta" | "anulacion";
   refExterna?: string;
 }
@@ -81,9 +86,9 @@ export interface FakeAeat {
   stored(): StoredRecord[];
   /** Forces the next resubmit of `key` to omit `RegistroDuplicado.EstadoRegistroDuplicado` (the duplicate_unknown case). */
   dropRegistroDuplicadoDetail(key: FacturaKey): void;
-  /** Marks a stored record `Anulada` directly, without going through a RegistroAnulacion submit. */
+  /** Marks a stored record `Anulado` directly, without going through a RegistroAnulacion submit. */
   annul(key: FacturaKey): void;
-  /** Overrides a stored record's consulta-reported estado — `annul` is just the `Anulada` special case of this. */
+  /** Overrides a stored record's consulta-reported estado — `annul` is just the `Anulado` special case of this. */
   setConsultaState(key: FacturaKey, estado: StoredRecord["estado"]): void;
   /** Evicts a stored record entirely, driving the `SinDatos`/no-trace consulta path. */
   forget(key: FacturaKey): void;
@@ -179,13 +184,13 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
       const future = fechaToDate(fecha).getTime() > serverNow.getTime();
       if (
         existing &&
-        !(tipo === "anulacion" && existing.tipo === "alta" && existing.estado !== "Anulada")
+        !(tipo === "anulacion" && existing.tipo === "alta" && existing.estado !== "Anulado")
       ) {
         // Anulación of a live alta changes its state; all other resubmissions leave the stored
         // record untouched. The outer Incorrecto line carries the stored state in
         // RegistroDuplicado; resolveEstadoEfectivo reads that inner state.
         anyRejected = true;
-        const detail = noDuplicadoDetail.has(key) ? undefined : existing.estado;
+        const detail = noDuplicadoDetail.has(key) ? undefined : duplicateStateOf(existing.estado);
         lineas.push(duplicadoLineaXml(idf, detail, ref));
         continue;
       }
@@ -194,7 +199,7 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
         lineas.push(lineaXml(idf, "Incorrecto", forced.code, forced.message, ref));
       } else {
         const estado =
-          tipo === "anulacion" ? "Anulada" : future ? "AceptadaConErrores" : "Correcta";
+          tipo === "anulacion" ? "Anulado" : future ? "AceptadoConErrores" : "Correcto";
         // AEAT retains the original alta when an anulación adds a separate record. This one-row
         // fake updates status while retaining the alta's hash and external reference for consulta.
         store.set(
@@ -355,7 +360,7 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
     },
     annul: (key) => {
       const s = store.get(key);
-      if (s) s.estado = "Anulada";
+      if (s) s.estado = "Anulado";
     },
     setConsultaState: (key, estado) => {
       const s = store.get(key);
@@ -419,7 +424,7 @@ function suministroEnvelope(
  *  duplicate_unknown case: AEAT reporting a duplicate without saying what it holds. */
 function duplicadoLineaXml(
   idf: IDFactura,
-  estadoDuplicado: StoredRecord["estado"] | undefined,
+  estadoDuplicado: EstadoRegistroDuplicado | undefined,
   ref: string | undefined,
 ): string {
   return (
@@ -440,6 +445,17 @@ function duplicadoLineaXml(
     "</sfR:RegistroDuplicado>" +
     "</sfR:RespuestaLinea>"
   );
+}
+
+function duplicateStateOf(estado: EstadoRegistroConsulta): EstadoRegistroDuplicado {
+  switch (estado) {
+    case "Correcto":
+      return "Correcta";
+    case "AceptadoConErrores":
+      return "AceptadaConErrores";
+    case "Anulado":
+      return "Anulada";
+  }
 }
 
 // --- consulta response XML builder (parsed by the unmodified parseRespuestaConsulta) ---------

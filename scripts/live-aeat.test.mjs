@@ -101,7 +101,7 @@ test("the consulted copy must contain the exact submitted hash", () => {
         registros: [
           {
             IDFactura: record.IDFactura,
-            EstadoRegistro: "Correcta",
+            EstadoRegistro: "Correcto",
             DatosRegistroFacturacion: { Huella: record.Huella },
           },
         ],
@@ -116,7 +116,7 @@ test("the consulted copy must contain the exact submitted hash", () => {
           registros: [
             {
               IDFactura: record.IDFactura,
-              EstadoRegistro: "Correcta",
+              EstadoRegistro: "Correcto",
               DatosRegistroFacturacion: { Huella: "B".repeat(64) },
             },
           ],
@@ -132,15 +132,15 @@ test("the consulted copy must contain the exact submitted hash", () => {
           registros: [
             {
               IDFactura: record.IDFactura,
-              EstadoRegistro: "Correcta",
+              EstadoRegistro: "Correcto",
               DatosRegistroFacturacion: { Huella: record.Huella },
             },
           ],
         },
         record,
-        "Anulada",
+        "Anulado",
       ),
-    /expected Anulada.*returned Correcta/,
+    /expected Anulado.*returned Correcto/,
   );
 });
 
@@ -159,7 +159,7 @@ test("an expanded consulta must return the issuer and matching software installa
     registros: [
       {
         IDFactura: fullRecord.IDFactura,
-        EstadoRegistro: "Correcta",
+        EstadoRegistro: "Correcto",
         DatosRegistroFacturacion: {
           Huella: fullRecord.Huella,
           NombreRazonEmisor: fullRecord.NombreRazonEmisor,
