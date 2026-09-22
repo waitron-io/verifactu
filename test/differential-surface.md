@@ -26,6 +26,17 @@ each difference against an AEAT source and keep the resulting regression case.
   namespace prefix and entity spelling may differ. Cases cover single records,
   mixed batches, the 1,000-record limit, rectification fields, a foreign
   recipient, escaped text and an empty optional field.
+- **Consulta request XML:** `src/xml/differential-consulta.test.ts` compares
+  period-only queries and pagination keys after mapping the reference's
+  lowercase filter names to AEAT names. It checks this package's optional
+  invoice serial and issue-date filters against the AEAT schema where the
+  reference cannot produce equivalent XML.
+- **Submission and consulta responses:** The same test compares common status,
+  CSV, invoice serial and error fields for accepted, rejected and duplicate
+  submissions, whole-request rejection, paginated consulta results with two
+  records, and a consulta with no data. This package's typed duplicate detail
+  and pagination key are asserted separately because the reference does not
+  expose them.
 
 The reference's version `1.5.3` does not emit `Subsanacion`, `RechazoPrevio`,
 `Macrodato` or `Cupon` in alta XML, or `RefExterna`, `SinRegistroPrevio`,
@@ -33,19 +44,29 @@ The reference's version `1.5.3` does not emit `Subsanacion`, `RechazoPrevio`,
 by this package's direct serializer and schema tests; do not treat an unequal
 reference output as evidence they should be removed.
 
-## Remaining
+## Reference gaps
 
-- **Consulta request XML:** Compare `serializeConsulta(cabecera, filtro)` with
-  `consultaXml(cabecera, filtro)`. Map the reference's lowercase filter names
-  to this package's AEAT field names, then compare XML structure as above.
-  Include pagination and optional filters.
-- **Submission and consulta responses:** Compare the common fields from
-  `parseRespuestaSuministro` and `parseRespuestaConsulta` with the reference's
-  `parseRespuesta`: status, CSV, invoice serial, record status and error
-  details. The reference result is shallow and includes transport metadata;
-  this package also exposes typed detail and pagination. Test accepted,
-  rejected, duplicate and paginated responses separately.
+- In `consultaXml`, the reference emits the filter's `NumSerieFactura` in the
+  `SuministroInformacion.xsd` namespace. `ConsultaLR.xsd` declares it as a
+  local element of `LRFiltroRegFacturacionType`, so this package emits it in
+  the `ConsultaLR.xsd` namespace. The reference also cannot express this
+  package's `FechaExpedicionFactura` filter.
+- In `parseRespuesta`, the reference lets its XML parser coerce an all-digit
+  invoice serial: `000123` becomes `123`. `SuministroInformacion.xsd` defines
+  `TextoIDFacturaType` as a string, so this package preserves the leading
+  zeroes. Do not normalize invoice serials to obtain agreement.
+- The reference's response type has no consulta result, pagination indicator
+  or key, typed duplicate detail, or complete stored record. Its transport
+  metadata is outside this package's parser API. Compare only fields both
+  libraries expose, and retain direct tests for the rest.
+
+## Still outside the shared surface
 
 `parseEnvio`, `parseConsulta` and `resolveEstadoEfectivo` have no matching
 reference API. Keep their existing direct tests. Do not compare SOAP clients by
 sending live requests as part of this suite.
+
+The AEAT consulta schema also permits `Contraparte`, `SistemaInformatico`,
+`RefExterna`, and `DatosAdicionalesRespuesta`. Neither library's shared filter
+adapter covers those fields. Add them through a separate API change with direct
+schema tests; they cannot be established by differential comparison here.
