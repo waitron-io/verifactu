@@ -28,6 +28,31 @@ export interface VerifactuClient {
   consultar(cabecera: CabeceraConsulta, filtro: ConsultaFiltro): Promise<RespuestaConsulta>;
 }
 
+const SOAP_FAULT_TAG = /<(?:[\w.-]+:)?Fault(?:\s|\/?>)/;
+
+function soapText(value: unknown): string | undefined {
+  if (typeof value === "string") return value || undefined;
+  if (!value || typeof value !== "object") return undefined;
+  const nested = value as Record<string, unknown>;
+  return soapText(nested.Text) ?? soapText(nested.Value);
+}
+
+function soapFaultMessage(text: string, status: number): string | undefined {
+  // Successful consulta pages can contain 10 000 records. Avoid building a
+  // second full object tree unless the wire text contains an actual Fault tag.
+  if (!SOAP_FAULT_TAG.test(text)) return undefined;
+  const body = (parser.parse(text) as { Envelope?: { Body?: Record<string, unknown> } }).Envelope
+    ?.Body;
+  if (!body || !Object.prototype.hasOwnProperty.call(body, "Fault")) return undefined;
+
+  const fault = body.Fault;
+  const fields = fault && typeof fault === "object" ? (fault as Record<string, unknown>) : {};
+  const code = soapText(fields.faultcode) ?? soapText(fields.Code);
+  const reason = soapText(fields.faultstring) ?? soapText(fields.Reason);
+  if (!code && !reason) return `AEAT SOAP fault (HTTP ${status}): ${text.slice(0, 500)}`;
+  return `AEAT SOAP fault (HTTP ${status})${code ? ` ${code}` : ""}${reason ? `: ${reason}` : ""}`;
+}
+
 async function post(options: ClientOptions, xml: string): Promise<string> {
   const response = await options.fetch(options.endpoint, {
     method: "POST",
@@ -40,16 +65,8 @@ async function post(options: ClientOptions, xml: string): Promise<string> {
     body: xml,
   });
   const text = await response.text();
-  const fault = (
-    parser.parse(text) as {
-      Envelope?: { Body?: { Fault?: { faultcode?: string; faultstring?: string } } };
-    }
-  ).Envelope?.Body?.Fault;
-  if (fault) {
-    const code = fault.faultcode ? ` ${fault.faultcode}` : "";
-    const message = fault.faultstring ? `: ${fault.faultstring}` : "";
-    throw new Error(`AEAT SOAP fault${code}${message}`);
-  }
+  const fault = soapFaultMessage(text, response.status);
+  if (fault) throw new Error(fault);
   if (!response.ok) {
     throw new Error(`AEAT request failed with HTTP ${response.status}: ${text.slice(0, 500)}`);
   }

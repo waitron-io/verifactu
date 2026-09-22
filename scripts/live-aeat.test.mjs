@@ -351,14 +351,16 @@ test("a failed live consulta identifies its stage and response shape", () => {
   );
 });
 
-test("a transport or parsing failure identifies the live request stage", async () => {
-  await assert.rejects(
-    () =>
-      withLiveStage("expanded issuer consulta", async () => {
-        throw new Error("AEAT SOAP fault soapenv:Client: invalid filter");
-      }),
+test("a synchronous transport failure identifies its stage and preserves its cause", async () => {
+  const original = new Error("AEAT SOAP fault soapenv:Client: invalid filter");
+  const failure = await withLiveStage("expanded issuer consulta", () => {
+    throw original;
+  }).catch((error) => error);
+  assert.match(
+    failure.message,
     /expanded issuer consulta: AEAT SOAP fault soapenv:Client: invalid filter/,
   );
+  assert.strictEqual(failure.cause, original);
 });
 
 test("the first post-alta consulta stays independent of optional filters", () => {
