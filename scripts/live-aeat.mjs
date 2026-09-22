@@ -75,10 +75,9 @@ export function assertSubmission(result, record, operation = "alta") {
 }
 
 export function assertStoredRecord(result, record, expectedState = "Correcto") {
-  const stored = result.registros.find(
-    (entry) => entry.IDFactura.NumSerieFactura === record.IDFactura.NumSerieFactura,
-  );
-  if (!stored) throw new Error("AEAT did not return the submitted test alta");
+  const serial = recordSerial(record);
+  const stored = result.registros.find((entry) => entry.IDFactura.NumSerieFactura === serial);
+  if (!stored) throw new Error("AEAT did not return the submitted test record");
   if (stored.DatosRegistroFacturacion.Huella !== record.Huella) {
     throw new Error("AEAT's stored hash differs from the submitted hash");
   }
@@ -510,9 +509,14 @@ async function main() {
     }),
   );
   assertConsultation(afterCancellation);
-  assertStoredRecordAt("final cancelled-record consulta", afterCancellation, record, "Anulado");
+  assertStoredRecordAt(
+    "final cancelled-record consulta",
+    afterCancellation,
+    cancellation,
+    "Anulado",
+  );
   process.stdout.write(
-    "AEAT preproduction alta, all consulta filters, representative and recipient consultas, pagination, QR lookup, anulación, and final consulta succeeded; stored hash matches.\n",
+    "AEAT preproduction alta, all consulta filters, representative and recipient consultas, pagination, QR lookup, anulación, and final consulta succeeded; stored cancellation hash matches.\n",
   );
 }
 

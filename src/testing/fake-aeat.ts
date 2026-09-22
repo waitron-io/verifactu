@@ -200,14 +200,9 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
       } else {
         const estado =
           tipo === "anulacion" ? "Anulado" : future ? "AceptadoConErrores" : "Correcto";
-        // AEAT retains the original alta when an anulación adds a separate record. This one-row
-        // fake updates status while retaining the alta's hash and external reference for consulta.
-        store.set(
-          key,
-          existing && tipo === "anulacion"
-            ? { ...existing, estado }
-            : { key, huella, estado, tipo, refExterna: ref },
-        );
+        // Consulta exposes the latest record for an invoice identity. This one-row fake therefore
+        // replaces an alta snapshot with the accepted anulación's hash, kind, and external reference.
+        store.set(key, { key, huella, estado, tipo, refExterna: ref });
         if (!existing) {
           metadata.set(
             key,

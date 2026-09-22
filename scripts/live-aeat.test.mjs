@@ -240,6 +240,21 @@ test("the live anulación chains to the alta and is locally valid", () => {
       "anulación",
     ),
   );
+  assert.doesNotThrow(() =>
+    assertStoredRecord(
+      {
+        registros: [
+          {
+            IDFactura: alta.IDFactura,
+            EstadoRegistro: "Anulado",
+            DatosRegistroFacturacion: { Huella: cancellation.Huella },
+          },
+        ],
+      },
+      cancellation,
+      "Anulado",
+    ),
+  );
 });
 
 test("the pagination check rejects a repeated cursor record", () => {
@@ -342,7 +357,7 @@ test("a failed live consulta identifies its stage and response shape", () => {
         { ResultadoConsulta: "SinDatos", IndicadorPaginacion: "N", registros: [] },
         record,
       ),
-    /minimal issuer consulta: AEAT did not return the submitted test alta \(SinDatos, 0 records\)/,
+    /minimal issuer consulta: AEAT did not return the submitted test record \(SinDatos, 0 records\)/,
   );
   assert.throws(
     () =>

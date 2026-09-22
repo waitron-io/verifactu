@@ -163,9 +163,9 @@ describe("fake AEAT — submit", () => {
     expect(aeat.stored()[0]).toMatchObject({
       key: keyOf(altaFixture("A/1")),
       estado: "Anulado",
-      tipo: "alta",
-      huella: "H-A/1",
-      refExterna: "alta-ref",
+      tipo: "anulacion",
+      huella: "H-ANUL-A/1",
+      refExterna: undefined,
     });
     const consulted = await aeat.client().consultar(cabecera, {
       Ejercicio: "2026",
@@ -173,7 +173,7 @@ describe("fake AEAT — submit", () => {
       NumSerieFactura: "A/1",
       FechaExpedicionFactura: "20-07-2026",
     });
-    expect(consulted.registros[0]?.DatosRegistroFacturacion.Huella).toBe("H-A/1");
+    expect(consulted.registros[0]?.DatosRegistroFacturacion.Huella).toBe("H-ANUL-A/1");
     expect(consulted.registros[0]?.EstadoRegistro).toBe("Anulado");
 
     const repeated = await aeat
@@ -206,7 +206,7 @@ describe("fake AEAT — submit", () => {
     expect(aeat.stored()[0]).toMatchObject({ tipo: "anulacion", huella: "H-ANUL-A/1" });
   });
 
-  it("marks an accepted future-dated cancellation Anulado while retaining the alta", async () => {
+  it("marks an accepted future-dated cancellation Anulado with its cancellation hash", async () => {
     const aeat = createFakeAeat({ serverNow: new Date("2026-07-20T00:00:00Z") });
     await aeat.client().submit(cabecera, [{ RegistroAlta: altaFixture("A/1", "25-07-2026") }]);
 
@@ -217,7 +217,11 @@ describe("fake AEAT — submit", () => {
       EstadoRegistro: "AceptadoConErrores",
       CodigoErrorRegistro: 2004,
     });
-    expect(aeat.stored()[0]).toMatchObject({ estado: "Anulado", tipo: "alta", huella: "H-A/1" });
+    expect(aeat.stored()[0]).toMatchObject({
+      estado: "Anulado",
+      tipo: "anulacion",
+      huella: "H-ANUL-A/1",
+    });
   });
 
   it("round-trips RefExterna onto the response line and the stored record", async () => {
