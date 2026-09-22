@@ -6,21 +6,17 @@ description: Detén los errores locales antes de enviar un registro a la AEAT.
 Comprueba el registro completo antes de añadirlo a un lote:
 
 ```ts
-import { validate } from "@waitron/verifactu";
+import { assertValid } from "@waitron/verifactu";
 
-const issues = validate(record);
-for (const issue of issues) {
-  console.log(issue.severity, issue.code, issue.field, issue.message);
-}
-if (issues.some((issue) => issue.severity === "error")) {
-  throw new Error("No envíes un registro con errores bloqueantes");
-}
+assertValid(record);
 ```
 
-Un `error` impide el envío. Un `warning` requiere revisión, pero puede describir un registro que
-la AEAT aceptaría, como un total que supera la tolerancia de una comprobación cruzada. La
-validación comprueba formatos locales y algunas reglas de la AEAT. La respuesta de la AEAT sigue
-siendo la fuente definitiva; examina cada línea después de enviar.
+`assertValid` lanza `VerifactuValidationError` cuando un `error` impide el envío. El mensaje nombra
+cada campo incorrecto y la propiedad `issues` contiene los errores estructurados. Usa
+`validate(record)` cuando necesites mostrar todos los problemas en un formulario. Un `warning`
+requiere revisión, pero no hace que `assertValid` lance una excepción porque la AEAT puede aceptar
+el registro. La validación comprueba formatos locales y algunas reglas de la AEAT. La respuesta de
+la AEAT sigue siendo la fuente definitiva; examina cada línea después de enviar.
 
 La comprobación de los totales admite una diferencia de 10 €. La AEAT excluye los regímenes `03`,
 `05`, `06`, `08` y `09`. `validate` omite esta comprobación si todas las líneas usan alguno de esos
@@ -38,3 +34,5 @@ los NIF K/L/M con cuerpo numérico. La forma nueva de K/L/M puede tener letras e
 caracteres centrales; la validación solo comprueba su forma. No confirma su letra de control.
 `NIF_LENGTH` sigue señalando longitudes incorrectas. Una comprobación local
 correcta no demuestra que el identificador pertenezca a un contribuyente real.
+`NOMBRE_SISTEMA_LENGTH` señala un `SistemaInformatico.NombreSistemaInformatico` que supera el
+máximo de 30 caracteres del esquema.

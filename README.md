@@ -32,7 +32,6 @@ import {
   assertValid,
   buildAltaRecord,
   buildQrPayload,
-  validate,
   type SistemaInformatico,
 } from "@waitron/verifactu";
 
@@ -76,7 +75,6 @@ const record = buildAltaRecord({
   offsetMinutes: 120,
 });
 
-const issues = validate(record);
 assertValid(record);
 const qr = buildQrPayload(record, "production");
 ```

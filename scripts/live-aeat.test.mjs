@@ -57,6 +57,26 @@ test("a rejected alta fails the live check", () => {
   );
 });
 
+test("a rejected alta without a description reports only its error code", () => {
+  assert.throws(
+    () =>
+      assertSubmission(
+        {
+          EstadoEnvio: "Incorrecto",
+          RespuestaLinea: [
+            {
+              IDFactura: record.IDFactura,
+              EstadoRegistro: "Incorrecto",
+              CodigoErrorRegistro: 4105,
+            },
+          ],
+        },
+        record,
+      ),
+    /^Error: AEAT rejected the test alta: code 4105$/,
+  );
+});
+
 test("the consulted copy must contain the exact submitted hash", () => {
   assert.doesNotThrow(() =>
     assertStoredRecord(

@@ -69,6 +69,7 @@ describe("validate", () => {
     const record = valid();
     record.SistemaInformatico = {
       ...SISTEMA,
+      IdSistemaInformatico: "WTX",
       NombreSistemaInformatico: "X".repeat(31),
     };
 
@@ -83,7 +84,16 @@ describe("validate", () => {
     expect((failure as Error).message).toContain(
       "SistemaInformatico.NombreSistemaInformatico: NombreSistemaInformatico is at most 30 characters (NOMBRE_SISTEMA_LENGTH)",
     );
+    expect((failure as Error).message).toContain(
+      "IdSistemaInformatico: IdSistemaInformatico is at most 2 characters (ID_SISTEMA_LENGTH)",
+    );
     expect((failure as VerifactuValidationError).issues).toEqual([
+      {
+        code: "ID_SISTEMA_LENGTH",
+        severity: "error",
+        field: "IdSistemaInformatico",
+        message: "IdSistemaInformatico is at most 2 characters",
+      },
       {
         code: "NOMBRE_SISTEMA_LENGTH",
         severity: "error",
@@ -405,6 +415,15 @@ describe("validate", () => {
       NombreSistemaInformatico: "X".repeat(31),
     };
     expect(codes(record)).toContain("NOMBRE_SISTEMA_LENGTH");
+  });
+
+  it("accepts a NombreSistemaInformatico with exactly thirty characters", () => {
+    const record = valid();
+    record.SistemaInformatico = {
+      ...SISTEMA,
+      NombreSistemaInformatico: "X".repeat(30),
+    };
+    expect(codes(record)).not.toContain("NOMBRE_SISTEMA_LENGTH");
   });
 
   it("rejects a SistemaInformatico.NIF that is not exactly nine characters", () => {
