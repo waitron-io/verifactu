@@ -48,6 +48,9 @@ export function assertConsultation(result) {
   if (!["S", "N"].includes(result.IndicadorPaginacion)) {
     throw new Error(`Unexpected AEAT pagination flag: ${result.IndicadorPaginacion}`);
   }
+  if (!Array.isArray(result.registros)) {
+    throw new Error("AEAT consultation response did not include a records array");
+  }
   if (result.ResultadoConsulta === "SinDatos" && result.registros.length !== 0) {
     throw new Error("AEAT returned records with a SinDatos result");
   }
@@ -92,8 +95,11 @@ export function assertStoredRecordAt(stage, result, record, expectedState = "Cor
     return assertStoredRecord(result, record, expectedState);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const recordCount = Array.isArray(result?.registros)
+      ? `${result.registros.length} records`
+      : "records unavailable";
     throw new Error(
-      `${stage}: ${message} (${result.ResultadoConsulta}, ${result.registros.length} records)`,
+      `${stage}: ${message} (${result?.ResultadoConsulta ?? "unknown result"}, ${recordCount})`,
       { cause: error },
     );
   }
@@ -297,6 +303,29 @@ export function submissionHeader(obligadoEmision) {
   return { ObligadoEmision: obligadoEmision };
 }
 
+export function minimalIssuerConsultaFilter(record, year, month) {
+  return {
+    Ejercicio: year,
+    Periodo: month,
+    NumSerieFactura: record.IDFactura.NumSerieFactura,
+  };
+}
+
+export function issuerFilteredConsultaFilter(record, year, month) {
+  return {
+    ...minimalIssuerConsultaFilter(record, year, month),
+    Contraparte: record.Destinatarios.IDDestinatario[0],
+    FechaExpedicionFactura: record.IDFactura.FechaExpedicionFactura,
+  };
+}
+
+export function describeRepresentativeConsulta(result, record) {
+  const present = result.registros.some(
+    (entry) => entry.IDFactura.NumSerieFactura === record.IDFactura.NumSerieFactura,
+  );
+  return `AEAT representative consulta returned ${result.ResultadoConsulta}; submitted record ${present ? "present" : "absent"}.`;
+}
+
 async function main() {
   const mode = process.argv[2] ?? "consult";
   if (!["consult", "submit"].includes(mode)) throw new Error("Mode must be consult or submit");
@@ -345,13 +374,19 @@ async function main() {
   assertValid(record);
   const submitted = await client.submit(cabecera, [{ RegistroAlta: record }]);
   assertSubmission(submitted, record);
-  const consulted = await client.consultar(consultaCabecera, {
-    Ejercicio: year,
-    Periodo: month,
-    NumSerieFactura: record.IDFactura.NumSerieFactura,
-  });
+  const consulted = await client.consultar(
+    consultaCabecera,
+    minimalIssuerConsultaFilter(record, year, month),
+  );
   assertConsultation(consulted);
   assertStoredRecordAt("minimal issuer consulta", consulted, record);
+
+  const filtered = await client.consultar(
+    consultaCabecera,
+    issuerFilteredConsultaFilter(record, year, month),
+  );
+  assertConsultation(filtered);
+  assertStoredRecordAt("issuer exact-date and counterparty consulta", filtered, record);
 
   const asRepresentative = await client.consultar(consultaRepresentante, {
     Ejercicio: year,
@@ -359,6 +394,7 @@ async function main() {
     NumSerieFactura: record.IDFactura.NumSerieFactura,
   });
   assertConsultation(asRepresentative);
+  process.stdout.write(`${describeRepresentativeConsulta(asRepresentative, record)}\n`);
 
   const system = record.SistemaInformatico;
   const expanded = await client.consultar(consultaCabecera, {
@@ -433,7 +469,7 @@ async function main() {
   assertConsultation(afterCancellation);
   assertStoredRecordAt("final cancelled-record consulta", afterCancellation, record, "Anulada");
   process.stdout.write(
-    "AEAT preproduction alta, all consulta filters, recipient consulta, pagination, QR lookup, anulación, and final consulta succeeded; stored hash matches.\n",
+    "AEAT preproduction alta, all consulta filters, representative and recipient consultas, pagination, QR lookup, anulación, and final consulta succeeded; stored hash matches.\n",
   );
 }
 

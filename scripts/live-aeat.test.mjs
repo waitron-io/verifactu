@@ -12,7 +12,10 @@ import {
   buildTestCancellation,
   buildTestRecord,
   certificateKind,
+  describeRepresentativeConsulta,
+  issuerFilteredConsultaFilter,
   issuerConsultaHeader,
+  minimalIssuerConsultaFilter,
   representativeConsultaHeader,
   submissionHeader,
   waitForNextSubmission,
@@ -43,6 +46,10 @@ test("a real consulta may return no records but must have valid response fields"
         registros: [{}],
       }),
     /SinDatos/,
+  );
+  assert.throws(
+    () => assertConsultation({ ResultadoConsulta: "ConDatos", IndicadorPaginacion: "N" }),
+    /records array/,
   );
 });
 
@@ -331,5 +338,49 @@ test("a failed live consulta identifies its stage and response shape", () => {
         record,
       ),
     /minimal issuer consulta: AEAT did not return the submitted test alta \(SinDatos, 0 records\)/,
+  );
+  assert.throws(
+    () =>
+      assertStoredRecordAt(
+        "malformed consulta",
+        { ResultadoConsulta: "ConDatos", IndicadorPaginacion: "N" },
+        record,
+      ),
+    /malformed consulta: .* \(ConDatos, records unavailable\)/,
+  );
+});
+
+test("the first post-alta consulta stays independent of optional filters", () => {
+  const fullRecord = buildTestRecord({
+    nif: "89890001K",
+    name: "Waitron SL",
+    systemNif: "89890001K",
+    systemName: "Waitron SL",
+    recipientNif: "11111111H",
+    recipientName: "Cliente Uno",
+    now: new Date("2026-09-22T10:00:00Z"),
+    runId: "12345",
+  });
+  assert.deepEqual(minimalIssuerConsultaFilter(fullRecord, "2026", "09"), {
+    Ejercicio: "2026",
+    Periodo: "09",
+    NumSerieFactura: fullRecord.IDFactura.NumSerieFactura,
+  });
+  assert.deepEqual(issuerFilteredConsultaFilter(fullRecord, "2026", "09"), {
+    Ejercicio: "2026",
+    Periodo: "09",
+    NumSerieFactura: fullRecord.IDFactura.NumSerieFactura,
+    Contraparte: fullRecord.Destinatarios.IDDestinatario[0],
+    FechaExpedicionFactura: fullRecord.IDFactura.FechaExpedicionFactura,
+  });
+});
+
+test("the representative probe reports whether it can see the submitted record", () => {
+  assert.equal(
+    describeRepresentativeConsulta(
+      { ResultadoConsulta: "SinDatos", IndicadorPaginacion: "N", registros: [] },
+      record,
+    ),
+    "AEAT representative consulta returned SinDatos; submitted record absent.",
   );
 });
