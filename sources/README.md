@@ -29,8 +29,10 @@ the new page to `scripts/source-watch.mjs` before refreshing the baseline.
 The `AEAT preproduction integration` workflow runs on the first of each month once you enable it.
 It submits one small test alta and exercises every VERI*FACTU request available with the configured
 personal or representative certificate. The checks cover all consulta filters, issuer and recipient
-headers, both expanded-response options, a pagination cursor, and the JSON QR lookup. It then waits
-for AEAT's next-submission interval, submits a chained anulación, and confirms the final consulta
+headers, both expanded-response options, a pagination cursor, and the JSON QR lookup. The recipient
+header is an authorised probe for the certificate holder and may return `SinDatos`; querying the
+submitted invoice as its configured customer requires that customer's certificate or an AEAT
+authorisation for it. The workflow then waits for AEAT's next-submission interval, submits a chained anulación, and confirms the final consulta
 reports the invoice as `Anulado` with the original stored hash. You can also run its `consult` mode
 manually to check the certificate, connection and response parser without submitting a record. The
 workflow never uses a production or seal-certificate endpoint. It does not call `RequerimientoSOAP`,

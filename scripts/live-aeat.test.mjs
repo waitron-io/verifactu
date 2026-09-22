@@ -12,11 +12,13 @@ import {
   buildTestCancellation,
   buildTestRecord,
   certificateKind,
+  describeRecipientConsulta,
   describeRepresentativeConsulta,
   expandedIssuerConsultaFilter,
   issuerFilteredConsultaFilter,
   issuerConsultaHeader,
   minimalIssuerConsultaFilter,
+  recipientConsultaHeader,
   representativeConsultaHeader,
   submissionHeader,
   waitForNextSubmission,
@@ -329,6 +331,7 @@ test("ordinary issuer consultas and submissions do not claim a separate represen
     ObligadoEmision: issuer,
     IndicadorRepresentante: "S",
   });
+  assert.deepEqual(recipientConsultaHeader(issuer), { Destinatario: issuer });
 });
 
 test("a failed live consulta identifies its stage and response shape", () => {
@@ -414,5 +417,15 @@ test("the representative probe reports whether it can see the submitted record",
       record,
     ),
     "AEAT representative consulta returned SinDatos; submitted record absent.",
+  );
+});
+
+test("the recipient probe reports whether it can see the submitted record", () => {
+  assert.equal(
+    describeRecipientConsulta(
+      { ResultadoConsulta: "SinDatos", IndicadorPaginacion: "N", registros: [] },
+      record,
+    ),
+    "AEAT recipient consulta returned SinDatos; submitted record absent.",
   );
 });
