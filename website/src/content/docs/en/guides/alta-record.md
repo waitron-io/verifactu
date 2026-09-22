@@ -14,7 +14,7 @@ const fullInvoice = buildAltaRecord({
   ...saleInput,
   TipoFactura: "F1",
   Destinatarios: {
-    IDDestinatario: [{ NombreRazon: "Customer SL", NIF: "B12345678" }],
+    IDDestinatario: [{ NombreRazon: "Customer SL", NIF: "B12345674" }],
   },
 });
 ```

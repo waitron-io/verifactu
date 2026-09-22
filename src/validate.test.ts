@@ -27,7 +27,7 @@ const INPUT: AltaInput = {
   // spreading it (which override TipoFactura for the rectificativa/Destinatarios
   // cases) start from a genuinely valid F1, not one already carrying that issue.
   Destinatarios: {
-    IDDestinatario: [{ NombreRazon: "Cliente Factura SL", NIF: "B99999999" }],
+    IDDestinatario: [{ NombreRazon: "Cliente Factura SL", NIF: "B99999997" }],
   },
   Desglose: [
     {
@@ -68,6 +68,76 @@ describe("validate", () => {
     const record = valid();
     record.IDFactura.IDEmisorFactura = "8989001K";
     expect(codes(record)).toContain("NIF_LENGTH");
+  });
+
+  it.each([
+    ["DNI", "00000000T", "00000000R"],
+    ["DNI nonzero", "12345678Z", "12345678T"],
+    ["NIE X", "X0000000T", "X0000000R"],
+    ["NIE Y", "Y0000000Z", "Y0000000T"],
+    ["NIE Z", "Z0000000M", "Z0000000T"],
+    ["entity with digit control", "B00000000", "B00000001"],
+    ["entity with nonzero digits", "B12345674", "B12345678"],
+    ["entity with letter control", "P0000000J", "P00000000"],
+    ["entity with nonzero letter", "P1234567D", "P12345674"],
+    ["entity with either control", "C0000000J", "C0000000A"],
+    ["entity with digit alternative", "C12345674", "C12345678"],
+    ["tax-assigned K", "K0000000T", "K0000000R"],
+    ["tax-assigned L", "L0000000T", "L0000000R"],
+    ["tax-assigned M", "M0000000T", "M0000000R"],
+    ["tax-assigned nonzero", "K1234567L", "K1234567T"],
+    ["unknown nine-character form", "00000000T", "I0000000T"],
+  ])("checks the %s control character", (_kind, good, bad) => {
+    const record = valid();
+    record.IDFactura.IDEmisorFactura = good;
+    expect(codes(record)).not.toContain("NIF_CONTROL");
+    record.IDFactura.IDEmisorFactura = bad;
+    expect(validate(record)).toContainEqual({
+      code: "NIF_CONTROL",
+      severity: "error",
+      field: "IDEmisorFactura",
+      message: "NIF has an invalid format or control character",
+    });
+  });
+
+  it("checks system and recipient NIFs but not a foreign IDOtro", () => {
+    const record = valid();
+    record.SistemaInformatico = { ...SISTEMA, NIF: "B00000001" };
+    record.Destinatarios = {
+      IDDestinatario: [
+        { NombreRazon: "Domestic", NIF: "B00000001" },
+        { NombreRazon: "Foreign", IDOtro: { IDType: "07", ID: "INVALID" } },
+      ],
+    };
+    expect(
+      validate(record)
+        .filter((issue) => issue.code === "NIF_CONTROL")
+        .map((issue) => issue.field),
+    ).toEqual(["SistemaInformatico.NIF", "Destinatarios.IDDestinatario[0].NIF"]);
+  });
+
+  it("reports an invalid annulment issuer using its actual field name", () => {
+    const record = validAnulacion();
+    record.IDFactura.IDEmisorFacturaAnulada = "00000000R";
+    expect(validate(record)).toContainEqual({
+      code: "NIF_CONTROL",
+      severity: "error",
+      field: "IDEmisorFacturaAnulada",
+      message: "NIF has an invalid format or control character",
+    });
+  });
+
+  it("retains NIF_LENGTH without adding a control issue for a short ID", () => {
+    const record = valid();
+    record.IDFactura.IDEmisorFactura = "SHORT";
+    expect(codes(record)).toContain("NIF_LENGTH");
+    expect(codes(record)).not.toContain("NIF_CONTROL");
+  });
+
+  it("accepts the alphanumeric K/L/M body without guessing its check algorithm", () => {
+    const record = valid();
+    record.IDFactura.IDEmisorFactura = "K12AB34QZ";
+    expect(codes(record)).not.toContain("NIF_CONTROL");
   });
 
   it("rejects an empty NumSerieFactura", () => {
@@ -697,7 +767,7 @@ describe("validate — rectificativa rules (AEAT 1114/1115/1118)", () => {
 
 describe("validate — Destinatarios rules (F1/F3 require, F2 forbids)", () => {
   const DESTINATARIOS = {
-    IDDestinatario: [{ NombreRazon: "Cliente Factura SL", NIF: "B99999999" }],
+    IDDestinatario: [{ NombreRazon: "Cliente Factura SL", NIF: "B99999997" }],
   } satisfies NonNullable<AltaInput["Destinatarios"]>;
 
   // buildAltaRecord omits Destinatarios when it is undefined, so this yields a
@@ -763,21 +833,21 @@ describe("validate — the recipient's own name and NIF", () => {
     // The exact shape the run-it review reproduced against real PostgreSQL: a Spanish business
     // customer whose pasted name carried U+0007. Before this rule the sale COMMITTED and the bell
     // character was stored in the append-only record.
-    const record = withRecipients([{ NombreRazon: "Cliente\x07SL", NIF: "B12345678" }]);
+    const record = withRecipients([{ NombreRazon: "Cliente\x07SL", NIF: "B12345674" }]);
     expect(codes(record)).toContain("CONTROL_CHAR");
   });
 
   it("names WHICH recipient carries the control character", () => {
     const record = withRecipients([
-      { NombreRazon: "Cliente Uno SL", NIF: "B12345678" },
-      { NombreRazon: "Cliente\x07Dos SL", NIF: "B99999999" },
+      { NombreRazon: "Cliente Uno SL", NIF: "B12345674" },
+      { NombreRazon: "Cliente\x07Dos SL", NIF: "B99999997" },
     ]);
     const issue = validate(record).find((i) => i.code === "CONTROL_CHAR");
     expect(issue?.field).toBe("Destinatarios.IDDestinatario[1].NombreRazon");
   });
 
   it("accepts an ordinary recipient name", () => {
-    expect(codes(withRecipients([{ NombreRazon: "Cliente SL", NIF: "B12345678" }]))).not.toContain(
+    expect(codes(withRecipients([{ NombreRazon: "Cliente SL", NIF: "B12345674" }]))).not.toContain(
       "CONTROL_CHAR",
     );
   });
@@ -792,7 +862,7 @@ describe("validate — the recipient's own name and NIF", () => {
   });
 
   it("accepts a 9-character recipient NIF", () => {
-    expect(codes(withRecipients([{ NombreRazon: "Cliente SL", NIF: "B12345678" }]))).not.toContain(
+    expect(codes(withRecipients([{ NombreRazon: "Cliente SL", NIF: "B12345674" }]))).not.toContain(
       "NIF_LENGTH",
     );
   });
@@ -916,7 +986,7 @@ describe("validate — pins the exact field, message and severity for every Vali
     mutate: (record: RegistroAlta) => void;
   }
 
-  const cases: Case[] = [
+  const cases = [
     {
       description: "NIF_LENGTH on the emisor NIF",
       code: "NIF_LENGTH",
@@ -933,6 +1003,15 @@ describe("validate — pins the exact field, message and severity for every Vali
       message: "NIF must be exactly 9 characters",
       mutate: (r) => {
         r.SistemaInformatico = { ...SISTEMA, NIF: "SHORT" };
+      },
+    },
+    {
+      description: "NIF_CONTROL",
+      code: "NIF_CONTROL",
+      field: "IDEmisorFactura",
+      message: "NIF has an invalid format or control character",
+      mutate: (r) => {
+        r.IDFactura.IDEmisorFactura = "00000000R";
       },
     },
     {
@@ -1103,7 +1182,7 @@ describe("validate — pins the exact field, message and severity for every Vali
       message:
         "Destinatarios.IDDestinatario[0].NombreRazon must not contain XML control characters",
       mutate: (r) => {
-        r.Destinatarios = { IDDestinatario: [{ NombreRazon: "Clien\x07te SL", NIF: "B99999999" }] };
+        r.Destinatarios = { IDDestinatario: [{ NombreRazon: "Clien\x07te SL", NIF: "B99999997" }] };
       },
     },
     {
@@ -1129,6 +1208,33 @@ describe("validate — pins the exact field, message and severity for every Vali
       message: "NIF must be exactly 9 characters",
       mutate: (r) => {
         r.Destinatarios = { IDDestinatario: [{ NombreRazon: "Cliente SL", NIF: "B9999999" }] };
+      },
+    },
+    {
+      description: "DESTINATARIOS_REQUIRED",
+      code: "DESTINATARIOS_REQUIRED",
+      field: "Destinatarios",
+      message: "Destinatarios is mandatory when TipoFactura is F1 or F3",
+      mutate: (r) => {
+        delete r.Destinatarios;
+      },
+    },
+    {
+      description: "DESTINATARIOS_FORBIDDEN",
+      code: "DESTINATARIOS_FORBIDDEN",
+      field: "Destinatarios",
+      message: "Destinatarios must not be set when TipoFactura is F2 (simplified ticket)",
+      mutate: (r) => {
+        r.TipoFactura = "F2";
+      },
+    },
+    {
+      description: "DESTINATARIOS_EMPTY",
+      code: "DESTINATARIOS_EMPTY",
+      field: "Destinatarios",
+      message: "Destinatarios, when present, must carry at least one IDDestinatario",
+      mutate: (r) => {
+        r.Destinatarios = { IDDestinatario: [] };
       },
     },
     {
@@ -1249,14 +1355,22 @@ describe("validate — pins the exact field, message and severity for every Vali
         r.ImporteTotal = "999.00";
       },
     },
-  ];
+  ] as const satisfies readonly Case[];
 
-  it.each(cases)("$description", ({ code, field, message, severity, mutate }) => {
+  it("covers every ValidationCode in the exact-issue table", () => {
+    const everyCodeCovered: Exclude<ValidationCode, (typeof cases)[number]["code"]> extends never
+      ? true
+      : never = true;
+    expect(everyCodeCovered).toBe(true);
+  });
+
+  it.each(cases)("$description", (testCase) => {
+    const { code, field, message, mutate } = testCase;
     const record = valid();
     mutate(record);
     const issue = validate(record).find((i) => i.code === code && i.field === field);
     expect(issue).toBeDefined();
     expect(issue?.message).toBe(message);
-    expect(issue?.severity).toBe(severity ?? "error");
+    expect(issue?.severity).toBe("severity" in testCase ? testCase.severity : "error");
   });
 });

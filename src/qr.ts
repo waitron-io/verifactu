@@ -16,10 +16,9 @@ import type { RegistroAlta } from "./types.js";
  *    are the only producers of these literals and never emit a space or any
  *    other character where the two encodings differ, independent of
  *    whether validate() runs.
- *  - nif (IDEmisorFactura): validate() only length-checks it (=== 9), with
- *    no charset restriction, so this one is not provably safe the way the
- *    other three are — it merely relies on NIF/NIE values not containing
- *    such characters in practice.
+ *  - nif (IDEmisorFactura): validate() checks the Spanish identifier shape
+ *    and control character. Call it before building a QR; buildQrPayload
+ *    itself accepts any record, including one that was never validated.
  */
 function encodeParam(value: string): string {
   return encodeURIComponent(value);

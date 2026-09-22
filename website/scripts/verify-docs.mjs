@@ -15,6 +15,7 @@ function blocks(locale, page, section = "guides", extension = "md") {
   return [...markdown.matchAll(/^\`\`\`ts\n([\s\S]*?)^\`\`\`/gm)].map((match) =>
     match[1]
       .replaceAll('from "@waitron/verifactu/testing"', 'from "../../dist/testing/fake-aeat.js"')
+      .replaceAll('from "@waitron/verifactu/facade"', 'from "../../dist/facade.js"')
       .replaceAll('from "@waitron/verifactu"', 'from "../../dist/index.js"'),
   );
 }
@@ -62,6 +63,7 @@ try {
     assert.deepEqual(snippetPages(locale), [
       "guides/alta-record.md",
       "guides/consulta.md",
+      "guides/facade.md",
       "guides/huella-chain.md",
       "guides/qr.md",
       "guides/submit.md",
@@ -73,6 +75,7 @@ try {
     const home = blocks(locale, "index", "", "mdx");
     const submit = blocks(locale, "submit");
     const qr = blocks(locale, "qr");
+    const facade = blocks(locale, "facade");
     const testing = blocks(locale, "testing");
     const gettingStarted = blocks(locale, "getting-started", "start");
     const alta = blocks(locale, "alta-record");
@@ -89,6 +92,7 @@ try {
       ["huella-chain", chain],
       ["validation", validation],
       ["consulta", consulta],
+      ["facade", facade],
     ]) {
       assert.equal(snippets.length, 1, `${locale} ${page} must have one TypeScript block`);
     }
@@ -103,6 +107,18 @@ assert.match(record.Huella, /^[0-9A-F]{64}$/);
 `,
     );
     const saleSetup = `${submit[0]}\n${submit[1].split("\nconst first =")[0]}`;
+    save(
+      `${locale}-facade`,
+      `import assert from "node:assert/strict";
+import { createFakeAeat } from "../../dist/testing/fake-aeat.js";
+${saleSetup}
+const fake = createFakeAeat({ serverNow: new Date("2026-07-21T00:00:00Z") });
+const certificateFetch = fake.fetch;
+${facade[0]}
+assert.equal(response.RespuestaLinea.length, 2);
+assert.equal(second.Encadenamiento.RegistroAnterior?.Huella, first.Huella);
+`,
+    );
     const starterOutputs = [
       ...gettingStarted[0].matchAll(/^console\.log\(.*\);\s*\/\/\s*(.+)$/gm),
     ].map((match) => match[1]);

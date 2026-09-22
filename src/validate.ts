@@ -1,4 +1,5 @@
 import { MAX_OFFSET_MINUTES } from "./format.js";
+import { hasValidNifControl } from "./nif.js";
 import { isAlta } from "./types.js";
 import type { RegistroAlta, RegistroAnulacion } from "./types.js";
 
@@ -7,6 +8,7 @@ export type ValidationSeverity = "error" | "warning";
 /** The closed set of issue codes this module produces. */
 export type ValidationCode =
   | "NIF_LENGTH"
+  | "NIF_CONTROL"
   | "NUMSERIE_LENGTH"
   | "NUMSERIE_CHARSET"
   | "FECHA_FORMAT"
@@ -129,6 +131,13 @@ export function validate(record: RegistroAlta | RegistroAnulacion): ValidationIs
     message: string,
     severity: ValidationSeverity = "error",
   ) => issues.push({ code, severity, field, message });
+  const checkNif = (field: string, value: string) => {
+    if (value.length !== 9) {
+      add("NIF_LENGTH", field, "NIF must be exactly 9 characters");
+    } else if (!hasValidNifControl(value)) {
+      add("NIF_CONTROL", field, "NIF has an invalid format or control character");
+    }
+  };
 
   const emisor = isAlta(record)
     ? record.IDFactura.IDEmisorFactura
@@ -146,9 +155,7 @@ export function validate(record: RegistroAlta | RegistroAnulacion): ValidationIs
   const numSerieField = isAlta(record) ? "NumSerieFactura" : "NumSerieFacturaAnulada";
   const fechaField = isAlta(record) ? "FechaExpedicionFactura" : "FechaExpedicionFacturaAnulada";
 
-  if (emisor.length !== 9) {
-    add("NIF_LENGTH", emisorField, "NIF must be exactly 9 characters");
-  }
+  checkNif(emisorField, emisor);
   if (numSerie.length < 1 || numSerie.length > 60) {
     add("NUMSERIE_LENGTH", numSerieField, "NumSerieFactura must be 1 to 60 characters");
   } else if (!NUMSERIE_PATTERN.test(numSerie)) {
@@ -175,9 +182,7 @@ export function validate(record: RegistroAlta | RegistroAnulacion): ValidationIs
       "IdSistemaInformatico is at most 2 characters",
     );
   }
-  if (record.SistemaInformatico.NIF.length !== 9) {
-    add("NIF_LENGTH", "SistemaInformatico.NIF", "NIF must be exactly 9 characters");
-  }
+  checkNif("SistemaInformatico.NIF", record.SistemaInformatico.NIF);
 
   // A control character makes the serialised document not well-formed XML —
   // not merely schema-invalid, but unparseable — so it is rejected rather
@@ -298,7 +303,8 @@ export function validate(record: RegistroAlta | RegistroAnulacion): ValidationIs
   //
   // NIF: sf:NIFType, which is `<restriction base="string"><length value="9"/>`
   // (SuministroInformacion.xsd:677-683) — EXACTLY 9 characters, the identical restriction
-  // IDEmisorFactura and SistemaInformatico.NIF carry, so it earns the identical NIF_LENGTH rule.
+  // IDEmisorFactura and SistemaInformatico.NIF carry, so it earns the same
+  // length and control-character checks.
   // The IDOtro branch of the xsd:choice is a different type (TextMax20Type, up to 15 characters per
   // its own documentation) and is deliberately NOT length-checked here.
   //
@@ -311,9 +317,7 @@ export function validate(record: RegistroAlta | RegistroAnulacion): ValidationIs
   record.Destinatarios?.IDDestinatario.forEach((destinatario, index) => {
     const field = `Destinatarios.IDDestinatario[${index}]`;
     checkNoControlChars(`${field}.NombreRazon`, destinatario.NombreRazon);
-    if (destinatario.NIF !== undefined && destinatario.NIF.length !== 9) {
-      add("NIF_LENGTH", `${field}.NIF`, "NIF must be exactly 9 characters");
-    }
+    if (destinatario.NIF !== undefined) checkNif(`${field}.NIF`, destinatario.NIF);
     checkNoControlChars(`${field}.IDOtro.ID`, destinatario.IDOtro?.ID);
   });
 
