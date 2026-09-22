@@ -1,5 +1,11 @@
 import { asArray, parser } from "./parse-common.js";
-import type { Cabecera, ConsultaFiltro, EnvioRegistro } from "./serialize.js";
+import type {
+  Cabecera,
+  ConsultaFiltro,
+  DatosAdicionalesRespuesta,
+  EnvioRegistro,
+  SistemaInformaticoConsulta,
+} from "./serialize.js";
 import type {
   DesgloseRectificacion,
   Destinatario,
@@ -25,6 +31,7 @@ interface RawEnvelope {
       ConsultaFactuSistemaFacturacion?: {
         Cabecera?: RawCabecera;
         FiltroConsulta?: RawFiltro;
+        DatosAdicionalesRespuesta?: DatosAdicionalesRespuesta | "";
       };
     };
   };
@@ -35,15 +42,43 @@ interface RawCabecera {
 }
 type RawRegistroFactura = { RegistroAlta: RawRecord } | { RegistroAnulacion: RawRecord };
 type RawRecord = Record<string, unknown>;
+type RawConsultaPersona =
+  | { NombreRazon: string; NIF: string; IDOtro?: never }
+  | { NombreRazon: string; IDOtro: IDOtro; NIF?: never };
+type RawSistemaInformaticoConsulta = RawConsultaPersona & {
+  NombreSistemaInformatico?: string;
+  IdSistemaInformatico: string;
+  Version?: string;
+  NumeroInstalacion: string;
+  TipoUsoPosibleSoloVerifactu?: "S" | "N";
+  TipoUsoPosibleMultiOT?: "S" | "N";
+  IndicadorMultiplesOT?: "S" | "N";
+};
 interface RawFiltro {
   PeriodoImputacion: { Ejercicio: string; Periodo: string };
   NumSerieFactura?: string;
+  Contraparte?: RawConsultaPersona;
   FechaExpedicionFactura?: { FechaExpedicionFactura: string };
+  SistemaInformatico?: RawSistemaInformaticoConsulta;
+  RefExterna?: string;
   ClavePaginacion?: {
     IDEmisorFactura: string;
     NumSerieFactura: string;
     FechaExpedicionFactura: string;
   };
+}
+
+function consultaPersonaOf(raw: RawConsultaPersona): RawConsultaPersona {
+  return raw.NIF !== undefined
+    ? { NombreRazon: raw.NombreRazon, NIF: raw.NIF }
+    : {
+        NombreRazon: raw.NombreRazon,
+        IDOtro: {
+          ...(raw.IDOtro.CodigoPais !== undefined ? { CodigoPais: raw.IDOtro.CodigoPais } : {}),
+          IDType: raw.IDOtro.IDType,
+          ID: raw.IDOtro.ID,
+        },
+      };
 }
 
 function cabeceraOf(raw: RawCabecera): Cabecera {
@@ -235,8 +270,39 @@ export function parseConsulta(xml: string): { cabecera: Cabecera; filtro: Consul
     Periodo: f.PeriodoImputacion.Periodo,
   };
   if (f.NumSerieFactura !== undefined) filtro.NumSerieFactura = f.NumSerieFactura;
+  if (f.Contraparte !== undefined) filtro.Contraparte = consultaPersonaOf(f.Contraparte);
   if (f.FechaExpedicionFactura !== undefined)
     filtro.FechaExpedicionFactura = f.FechaExpedicionFactura.FechaExpedicionFactura;
+  if (f.SistemaInformatico !== undefined) {
+    const raw = f.SistemaInformatico;
+    const sistema: SistemaInformaticoConsulta = {
+      ...consultaPersonaOf(raw),
+      IdSistemaInformatico: raw.IdSistemaInformatico,
+      NumeroInstalacion: raw.NumeroInstalacion,
+    };
+    if (raw.NombreSistemaInformatico !== undefined)
+      sistema.NombreSistemaInformatico = raw.NombreSistemaInformatico;
+    if (raw.Version !== undefined) sistema.Version = raw.Version;
+    if (raw.TipoUsoPosibleSoloVerifactu !== undefined)
+      sistema.TipoUsoPosibleSoloVerifactu = raw.TipoUsoPosibleSoloVerifactu;
+    if (raw.TipoUsoPosibleMultiOT !== undefined)
+      sistema.TipoUsoPosibleMultiOT = raw.TipoUsoPosibleMultiOT;
+    if (raw.IndicadorMultiplesOT !== undefined)
+      sistema.IndicadorMultiplesOT = raw.IndicadorMultiplesOT;
+    filtro.SistemaInformatico = sistema;
+  }
+  if (f.RefExterna !== undefined) filtro.RefExterna = f.RefExterna;
   if (f.ClavePaginacion !== undefined) filtro.ClavePaginacion = f.ClavePaginacion;
+  if (body.DatosAdicionalesRespuesta !== undefined) {
+    const raw = body.DatosAdicionalesRespuesta;
+    const options: DatosAdicionalesRespuesta = {};
+    if (typeof raw === "object") {
+      if (raw.MostrarNombreRazonEmisor !== undefined)
+        options.MostrarNombreRazonEmisor = raw.MostrarNombreRazonEmisor;
+      if (raw.MostrarSistemaInformatico !== undefined)
+        options.MostrarSistemaInformatico = raw.MostrarSistemaInformatico;
+    }
+    filtro.DatosAdicionalesRespuesta = options;
+  }
   return { cabecera: cabeceraOf(body.Cabecera), filtro };
 }

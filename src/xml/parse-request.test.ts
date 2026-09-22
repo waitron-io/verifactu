@@ -285,6 +285,59 @@ describe("parseEnvio", () => {
 });
 
 describe("parseConsulta", () => {
+  it("round-trips foreign identities and an empty response-options block", () => {
+    const identity = {
+      NombreRazon: "Société X",
+      IDOtro: { CodigoPais: "FR", IDType: "02" as const, ID: "FR12345678901" },
+    };
+    const filtro: ConsultaFiltro = {
+      Ejercicio: "2026",
+      Periodo: "07",
+      Contraparte: identity,
+      SistemaInformatico: {
+        ...identity,
+        IdSistemaInformatico: "SX",
+        NumeroInstalacion: "1",
+      },
+      DatosAdicionalesRespuesta: {},
+    };
+    expect(parseConsulta(serializeConsulta(cabecera, filtro))).toStrictEqual({ cabecera, filtro });
+  });
+
+  it("drops unknown fields inside a consulta counterpart's IDOtro", () => {
+    const identity = {
+      NombreRazon: "Société X",
+      IDOtro: { CodigoPais: "FR", IDType: "02" as const, ID: "FR12345678901" },
+    };
+    const xml = serializeConsulta(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      Contraparte: identity,
+    }).replace("</sf:IDOtro>", "<sf:Unexpected>ignored</sf:Unexpected></sf:IDOtro>");
+    expect(parseConsulta(xml).filtro.Contraparte).toStrictEqual(identity);
+  });
+
+  it("round-trips all new consulta options", () => {
+    const filtro: ConsultaFiltro = {
+      Ejercicio: "2026",
+      Periodo: "07",
+      Contraparte: { NombreRazon: "Cliente X", NIF: "11111111H" },
+      SistemaInformatico: {
+        NombreRazon: "Waitron SL",
+        NIF: "89890001K",
+        IdSistemaInformatico: "WT",
+        NumeroInstalacion: "001",
+      },
+      RefExterna: "external-1",
+      DatosAdicionalesRespuesta: {
+        MostrarNombreRazonEmisor: "S",
+        MostrarSistemaInformatico: "N",
+      },
+    };
+    const xml = serializeConsulta(cabecera, filtro);
+    expect(parseConsulta(xml)).toStrictEqual({ cabecera, filtro });
+  });
+
   it("round-trips a consulta filtro (period + serie + clave de paginación)", () => {
     const filtro: ConsultaFiltro = {
       Ejercicio: "2026",

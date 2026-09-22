@@ -25,7 +25,13 @@ export { createClient } from "./client.js";
 export type * from "./types.js";
 export type { Environment } from "./endpoints.js";
 export type { ValidationCode, ValidationIssue, ValidationSeverity } from "./validate.js";
-export type { Cabecera, ConsultaFiltro, EnvioRegistro } from "./xml/serialize.js";
+export type {
+  Cabecera,
+  ConsultaFiltro,
+  DatosAdicionalesRespuesta,
+  EnvioRegistro,
+  SistemaInformaticoConsulta,
+} from "./xml/serialize.js";
 export type {
   EstadoEfectivo,
   EstadoEnvio,

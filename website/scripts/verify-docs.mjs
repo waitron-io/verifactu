@@ -185,6 +185,8 @@ assert.equal(result.registros.length, 1);
 assert.equal(result.registros[0]?.DatosRegistroFacturacion.Huella, record.Huella);
 assert.equal(outputs[0]?.[1], "Correcta");
 assert.equal(outputs[1]?.[0], record.Huella);
+assert.equal(outputs[2]?.[0], record.NombreRazonEmisor);
+assert.equal(outputs[3]?.[0], true);
 `,
     );
     save(
