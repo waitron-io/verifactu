@@ -843,6 +843,43 @@ describe("exact document output — pins the complete serialised string, not fra
 });
 
 describe("serializeConsulta", () => {
+  it("serializes a recipient consulta header and representative flag", () => {
+    const xml = serializeConsulta(
+      {
+        Destinatario: { NombreRazon: "Cliente Uno", NIF: "11111111H" },
+      },
+      { Ejercicio: "2024", Periodo: "01" },
+    );
+    expect(xml).toContain(
+      "<sf:Destinatario><sf:NombreRazon>Cliente Uno</sf:NombreRazon><sf:NIF>11111111H</sf:NIF></sf:Destinatario>",
+    );
+    expect(xml).not.toContain("<sf:ObligadoEmision>");
+
+    const represented = serializeConsulta(
+      {
+        ObligadoEmision: { NombreRazon: "Waitron SL", NIF: "89890001K" },
+        IndicadorRepresentante: "S",
+      },
+      { Ejercicio: "2024", Periodo: "01" },
+    );
+    expect(represented).toContain(
+      "</sf:ObligadoEmision><sf:IndicadorRepresentante>S</sf:IndicadorRepresentante>",
+    );
+  });
+
+  it("serializes the alternative invoice-date range", () => {
+    const xml = serializeConsulta(CABECERA, {
+      Ejercicio: "2024",
+      Periodo: "01",
+      RangoFechaExpedicion: { Desde: "01-01-2024", Hasta: "31-01-2024" },
+    });
+    expect(xml).toContain(
+      "<sfLRC:FechaExpedicionFactura><sf:RangoFechaExpedicion>" +
+        "<sf:Desde>01-01-2024</sf:Desde><sf:Hasta>31-01-2024</sf:Hasta>" +
+        "</sf:RangoFechaExpedicion></sfLRC:FechaExpedicionFactura>",
+    );
+  });
+
   it("emits the remaining filters in AEAT order and response options after the filter", () => {
     const xml = serializeConsulta(CABECERA, {
       Ejercicio: "2024",

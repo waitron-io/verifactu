@@ -36,10 +36,22 @@ const detailed = await client.consultar(cabecera, {
 });
 console.log(detailed.registros[0]?.DatosRegistroFacturacion.NombreRazonEmisor); // Example SL
 console.log(Boolean(detailed.registros[0]?.DatosRegistroFacturacion.SistemaInformatico)); // true
+
+const recibidas = await client.consultar(
+  { Destinatario: { NombreRazon: "Cliente SL", NIF: "B12345674" } },
+  {
+    Ejercicio: "2026",
+    Periodo: "07",
+    Contraparte: cabecera.ObligadoEmision,
+    RangoFechaExpedicion: { Desde: "01-07-2026", Hasta: "31-07-2026" },
+  },
+);
 ```
 
 `NumSerieFactura` y `FechaExpedicionFactura` acotan la consulta; omítelos para recorrer el
-periodo. Usa `RefExterna` si guardaste una referencia propia en el registro. Usa `Contraparte`
+periodo. Usa `RangoFechaExpedicion` con `Desde` y `Hasta` para acotar un intervalo de fechas. Es
+una alternativa a `FechaExpedicionFactura`, por lo que TypeScript impide que envíes ambos.
+Usa `RefExterna` si guardaste una referencia propia en el registro. Usa `Contraparte`
 con `NombreRazon` y el `NIF` o `IDOtro` del cliente para buscar sus facturas.
 `SistemaInformatico` limita el resultado a una instalación. Indica `NombreRazon`, `NIF` o
 `IDOtro`, `IdSistemaInformatico` y `NumeroInstalacion`. El nombre del software, la versión y los
@@ -49,6 +61,12 @@ Pide `DatosAdicionalesRespuesta` solo cuando necesites el nombre del emisor o lo
 software en cada resultado. `ConsultaLR.xsd` de la AEAT indica que estos campos pueden ralentizar
 la respuesta. La misma norma exige que omitas `MostrarSistemaInformatico` o uses `"N"` si consultas
 como destinatario. El cliente coloca estas opciones después de `FiltroConsulta` en el XML.
+
+El destinatario usa otra cabecera de consulta e identifica al emisor como contraparte, como muestra
+la consulta `recibidas` anterior.
+
+Indica `IndicadorRepresentante: "S"` junto a `ObligadoEmision` cuando el titular del certificado
+consulta como representante del emisor.
 
 Cuando `IndicadorPaginacion` sea `"S"`, envía la `ClavePaginacion` recibida en la
 siguiente consulta. El CSV del envío no se puede recuperar aquí: la consulta no lo devuelve.

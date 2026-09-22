@@ -51,7 +51,11 @@ describe("differential consulta request XML", () => {
   });
 
   it("emits the optional issue-date filter that the reference cannot express", () => {
-    const filtro: ConsultaFiltro = { ...periodo, FechaExpedicionFactura: "01-01-2024" };
+    const filtro: ConsultaFiltro = {
+      Ejercicio: periodo.Ejercicio,
+      Periodo: periodo.Periodo,
+      FechaExpedicionFactura: "01-01-2024",
+    };
     const ours = parseXml(serializeConsulta(CABECERA, filtro));
     const date = ours.getElementsByTagNameNS(NS_LRC, "FechaExpedicionFactura").item(0);
     expect(date?.textContent).toBe("01-01-2024");

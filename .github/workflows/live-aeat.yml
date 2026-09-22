@@ -39,5 +39,7 @@ jobs:
           AEAT_TEST_CERT_KIND: ${{ vars.AEAT_TEST_CERT_KIND || 'personal' }}
           AEAT_TEST_SYSTEM_NIF: ${{ secrets.AEAT_TEST_SYSTEM_NIF }}
           AEAT_TEST_SYSTEM_NAME: ${{ secrets.AEAT_TEST_SYSTEM_NAME }}
+          AEAT_TEST_RECIPIENT_NIF: ${{ secrets.AEAT_TEST_RECIPIENT_NIF }}
+          AEAT_TEST_RECIPIENT_NAME: ${{ secrets.AEAT_TEST_RECIPIENT_NAME }}
           TEST_MODE: ${{ github.event_name == 'schedule' && 'submit' || inputs.mode }}
         run: node scripts/live-aeat.mjs "$TEST_MODE"

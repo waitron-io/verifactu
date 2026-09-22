@@ -474,6 +474,32 @@ describe("fake AEAT — resubmit (error 3000) and consulta", () => {
 });
 
 describe("fake AEAT — consulta pagination + RefExterna echo + state hooks", () => {
+  it("supports issuer date ranges and recipient-side consultas", async () => {
+    const aeat = createFakeAeat();
+    const recipient = { NombreRazon: "Cliente Uno", NIF: "11111111H" };
+    const record = {
+      ...altaFixture("A/1", "20-07-2026"),
+      TipoFactura: "F1" as const,
+      Destinatarios: { IDDestinatario: [recipient] },
+    };
+    await aeat.client().submit(cabecera, [{ RegistroAlta: record }]);
+
+    const byRange = await aeat.client().consultar(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      RangoFechaExpedicion: { Desde: "19-07-2026", Hasta: "21-07-2026" },
+    });
+    expect(byRange.registros.map((entry) => entry.IDFactura.NumSerieFactura)).toEqual(["A/1"]);
+
+    const asRecipient = await aeat
+      .client()
+      .consultar(
+        { Destinatario: recipient },
+        { Ejercicio: "2026", Periodo: "07", Contraparte: cabecera.ObligadoEmision },
+      );
+    expect(asRecipient.registros.map((entry) => entry.IDFactura.NumSerieFactura)).toEqual(["A/1"]);
+  });
+
   it("paginates consulta results via ClavePaginacion, ordered by insertion (presentation-date stand-in)", async () => {
     const aeat = createFakeAeat({ consultaPageSize: 2 });
     for (const numSerie of ["A/1", "A/2", "A/3"]) {

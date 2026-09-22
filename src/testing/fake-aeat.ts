@@ -257,22 +257,50 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
     // neither is supplied and every in-NIF record is a candidate). All stored records are
     // in-period for the fake's fixtures, so PeriodoImputacion itself is not re-derived here — the
     // fixtures control which records exist.
-    let all = [...store.values()].filter(
-      (s) => s.key.split("|")[0] === cabecera.ObligadoEmision.NIF,
-    );
+    const queryingIssuer = cabecera.ObligadoEmision;
+    let all = [...store.values()].filter((s) => {
+      if (queryingIssuer !== undefined) return s.key.split("|")[0] === queryingIssuer.NIF;
+      return (metadata.get(s.key)?.destinatarios ?? []).some((recipient) =>
+        samePersona(recipient, cabecera.Destinatario),
+      );
+    });
     if (filtro.NumSerieFactura !== undefined) {
       all = all.filter((s) => s.key.split("|")[1] === filtro.NumSerieFactura);
     }
     if (filtro.FechaExpedicionFactura !== undefined) {
       all = all.filter((s) => s.key.split("|")[2] === filtro.FechaExpedicionFactura);
     }
+    if (filtro.RangoFechaExpedicion !== undefined) {
+      const sortableDate = (value: string) => {
+        const [day, month, year] = value.split("-");
+        return `${year}-${month}-${day}`;
+      };
+      const desde = filtro.RangoFechaExpedicion.Desde;
+      const hasta = filtro.RangoFechaExpedicion.Hasta;
+      all = all.filter((s) => {
+        const date = sortableDate(s.key.split("|")[2] ?? "");
+        return (
+          (desde === undefined || date >= sortableDate(desde)) &&
+          (hasta === undefined || date <= sortableDate(hasta))
+        );
+      });
+    }
     const contraparte = filtro.Contraparte;
     if (contraparte !== undefined) {
-      all = all.filter((s) =>
-        (metadata.get(s.key)?.destinatarios ?? []).some((recipient) =>
-          samePersona(recipient, contraparte),
-        ),
-      );
+      all = all.filter((s) => {
+        if (queryingIssuer !== undefined) {
+          return (metadata.get(s.key)?.destinatarios ?? []).some((recipient) =>
+            samePersona(recipient, contraparte),
+          );
+        }
+        return samePersona(
+          {
+            NombreRazon: metadata.get(s.key)?.nombreRazonEmisor ?? "",
+            NIF: s.key.split("|")[0] ?? "",
+          },
+          contraparte,
+        );
+      });
     }
     const sistemaFiltro = filtro.SistemaInformatico;
     if (sistemaFiltro !== undefined) {

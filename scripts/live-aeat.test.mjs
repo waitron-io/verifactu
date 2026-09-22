@@ -2,8 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   assertConsultation,
+  assertExpandedStoredRecord,
+  assertPaginationAdvanced,
+  assertQrLookup,
   assertStoredRecord,
   assertSubmission,
+  buildTestCancellation,
   buildTestRecord,
   certificateKind,
 } from "./live-aeat.mjs";
@@ -82,7 +86,11 @@ test("the consulted copy must contain the exact submitted hash", () => {
     assertStoredRecord(
       {
         registros: [
-          { IDFactura: record.IDFactura, DatosRegistroFacturacion: { Huella: record.Huella } },
+          {
+            IDFactura: record.IDFactura,
+            EstadoRegistro: "Correcta",
+            DatosRegistroFacturacion: { Huella: record.Huella },
+          },
         ],
       },
       record,
@@ -93,13 +101,63 @@ test("the consulted copy must contain the exact submitted hash", () => {
       assertStoredRecord(
         {
           registros: [
-            { IDFactura: record.IDFactura, DatosRegistroFacturacion: { Huella: "B".repeat(64) } },
+            {
+              IDFactura: record.IDFactura,
+              EstadoRegistro: "Correcta",
+              DatosRegistroFacturacion: { Huella: "B".repeat(64) },
+            },
           ],
         },
         record,
       ),
     /stored hash differs/,
   );
+  assert.throws(
+    () =>
+      assertStoredRecord(
+        {
+          registros: [
+            {
+              IDFactura: record.IDFactura,
+              EstadoRegistro: "Correcta",
+              DatosRegistroFacturacion: { Huella: record.Huella },
+            },
+          ],
+        },
+        record,
+        "Anulada",
+      ),
+    /expected Anulada.*returned Correcta/,
+  );
+});
+
+test("an expanded consulta must return the issuer and matching software installation", () => {
+  const fullRecord = buildTestRecord({
+    nif: "89890001K",
+    name: "Waitron SL",
+    systemNif: "89890001K",
+    systemName: "Waitron SL",
+    recipientNif: "11111111H",
+    recipientName: "Cliente Uno",
+    now: new Date("2026-09-22T10:00:00Z"),
+    runId: "12345",
+  });
+  const result = {
+    registros: [
+      {
+        IDFactura: fullRecord.IDFactura,
+        EstadoRegistro: "Correcta",
+        DatosRegistroFacturacion: {
+          Huella: fullRecord.Huella,
+          NombreRazonEmisor: fullRecord.NombreRazonEmisor,
+          SistemaInformatico: fullRecord.SistemaInformatico,
+        },
+      },
+    ],
+  };
+  assert.doesNotThrow(() => assertExpandedStoredRecord(result, fullRecord));
+  delete result.registros[0].DatosRegistroFacturacion.SistemaInformatico;
+  assert.throws(() => assertExpandedStoredRecord(result, fullRecord), /software installation/);
 });
 
 test("the live alta is locally valid before a request is sent", () => {
@@ -108,13 +166,117 @@ test("the live alta is locally valid before a request is sent", () => {
     name: "Waitron SL",
     systemNif: "89890001K",
     systemName: "Waitron SL",
+    recipientNif: "11111111H",
+    recipientName: "Cliente Uno",
     now: new Date("2026-09-22T10:00:00Z"),
     runId: "12345",
   });
   assert.equal(record.Desglose[0]?.ClaveRegimen, "01");
+  assert.equal(record.TipoFactura, "F1");
+  assert.equal(record.RefExterna, "CI-12345");
+  assert.deepEqual(record.Destinatarios.IDDestinatario, [
+    { NombreRazon: "Cliente Uno", NIF: "11111111H" },
+  ]);
   assert.ok(record.SistemaInformatico.NombreSistemaInformatico.length <= 30);
   assert.deepEqual(
     validate(record).filter(({ severity }) => severity === "error"),
     [],
+  );
+});
+
+test("the live anulación chains to the alta and is locally valid", () => {
+  const issuedAt = new Date("2026-09-22T10:00:00Z");
+  const alta = buildTestRecord({
+    nif: "89890001K",
+    name: "Waitron SL",
+    systemNif: "89890001K",
+    systemName: "Waitron SL",
+    recipientNif: "11111111H",
+    recipientName: "Cliente Uno",
+    now: issuedAt,
+    runId: "12345",
+  });
+  const cancellation = buildTestCancellation({
+    record: alta,
+    issuedAt,
+    now: new Date("2026-09-22T10:01:00Z"),
+  });
+  assert.deepEqual(cancellation.Encadenamiento, {
+    RegistroAnterior: { ...alta.IDFactura, Huella: alta.Huella },
+  });
+  assert.deepEqual(
+    validate(cancellation).filter(({ severity }) => severity === "error"),
+    [],
+  );
+  assert.doesNotThrow(() =>
+    assertSubmission(
+      {
+        EstadoEnvio: "Correcto",
+        RespuestaLinea: [
+          {
+            IDFactura: alta.IDFactura,
+            EstadoRegistro: "Correcto",
+          },
+        ],
+      },
+      cancellation,
+      "anulación",
+    ),
+  );
+});
+
+test("the pagination check rejects a repeated cursor record", () => {
+  assert.doesNotThrow(() =>
+    assertPaginationAdvanced(
+      { ResultadoConsulta: "SinDatos", IndicadorPaginacion: "N", registros: [] },
+      record,
+    ),
+  );
+  assert.throws(
+    () =>
+      assertPaginationAdvanced(
+        {
+          ResultadoConsulta: "ConDatos",
+          IndicadorPaginacion: "N",
+          registros: [{ IDFactura: record.IDFactura }],
+        },
+        record,
+      ),
+    /repeated the cursor/,
+  );
+});
+
+test("the QR lookup must confirm the exact submitted invoice", () => {
+  assert.doesNotThrow(() =>
+    assertQrLookup(
+      {
+        status: "OK",
+        mensaje: "Encontrada",
+        respuesta: {
+          resultado: "00",
+          nif: "89890001K",
+          numserie: "CI/123",
+          fecha: "22-09-2026",
+          importe: "1.21",
+        },
+      },
+      {
+        ...record,
+        IDFactura: {
+          IDEmisorFactura: "89890001K",
+          NumSerieFactura: "CI/123",
+          FechaExpedicionFactura: "22-09-2026",
+        },
+        ImporteTotal: "1.21",
+      },
+    ),
+  );
+  assert.throws(
+    () =>
+      assertQrLookup(
+        { status: "OK", mensaje: "No encontrada", respuesta: { resultado: "01" } },
+        record,
+      ),
+    /did not find/,
   );
 });

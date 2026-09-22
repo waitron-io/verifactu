@@ -284,6 +284,23 @@ describe("parseEnvio", () => {
   });
 });
 
+describe("parseConsulta full header and date choice", () => {
+  it("round-trips a recipient header and date range", () => {
+    const consultaCabecera = {
+      Destinatario: { NombreRazon: "Cliente Uno", NIF: "11111111H" },
+    } as const;
+    const filtro: ConsultaFiltro = {
+      Ejercicio: "2026",
+      Periodo: "07",
+      RangoFechaExpedicion: { Desde: "01-07-2026", Hasta: "31-07-2026" },
+    };
+    expect(parseConsulta(serializeConsulta(consultaCabecera, filtro))).toStrictEqual({
+      cabecera: consultaCabecera,
+      filtro,
+    });
+  });
+});
+
 describe("parseConsulta", () => {
   it("round-trips foreign identities and an empty response-options block", () => {
     const identity = {

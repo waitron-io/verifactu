@@ -27,6 +27,7 @@ export type { Environment } from "./endpoints.js";
 export type { ValidationCode, ValidationIssue, ValidationSeverity } from "./validate.js";
 export type {
   Cabecera,
+  CabeceraConsulta,
   ConsultaFiltro,
   DatosAdicionalesRespuesta,
   EnvioRegistro,
