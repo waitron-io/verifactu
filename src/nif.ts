@@ -34,8 +34,8 @@ export function hasValidNifControl(value: string): boolean {
   const numericTaxAssigned = /^[KLM](\d{7})([A-Z])$/.exec(value);
   if (numericTaxAssigned) return numericTaxAssigned[2] === personalLetter(numericTaxAssigned[1]!);
 
-  // AEAT permits seven alphanumeric body characters for K/L/M. Their newer
-  // alphabetic-body control cannot be derived from the published numeric rule.
+  // AEAT permits seven alphanumeric body characters for K/L/M. The numeric
+  // control rule does not cover that form, so check its shape without guessing.
   if (/^[KLM][A-Z0-9]{7}[A-Z]$/.test(value)) return true;
 
   const entity = /^([ABCDEFGHJNPQRSUVW])(\d{7})([0-9A-J])$/.exec(value);

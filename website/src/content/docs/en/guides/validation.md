@@ -24,6 +24,6 @@ line after submission.
 
 For a nine character Spanish taxpayer ID, `NIF_CONTROL` reports a wrong check character or an
 unknown format. It covers DNI, X/Y/Z NIE, company IDs, and numeric K/L/M IDs. The newer K/L/M form
-can contain letters in its seven character body; validation checks that form's shape but cannot
-confirm its check letter locally. `NIF_LENGTH` still reports IDs with the wrong length. A passing
+can contain letters in its seven character body; validation checks that form's shape only. It does
+not confirm that form's check letter. `NIF_LENGTH` still reports IDs with the wrong length. A passing
 local check does not prove that an ID was issued to a real taxpayer.

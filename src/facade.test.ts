@@ -61,5 +61,8 @@ describe("facade", () => {
     const body = String((fetch.mock.calls[0]?.[1] as RequestInit).body);
     expect(body).toContain(`<sf:Huella>${alta.Huella}</sf:Huella>`);
     expect(body).toContain(`<sf:Huella>${anulacion.Huella}</sf:Huella>`);
+    expect(body.indexOf(`<sf:Huella>${alta.Huella}</sf:Huella>`)).toBeLessThan(
+      body.indexOf(`<sf:Huella>${anulacion.Huella}</sf:Huella>`),
+    );
   });
 });

@@ -986,7 +986,7 @@ describe("validate — pins the exact field, message and severity for every Vali
     mutate: (record: RegistroAlta) => void;
   }
 
-  const cases: Case[] = [
+  const cases = [
     {
       description: "NIF_LENGTH on the emisor NIF",
       code: "NIF_LENGTH",
@@ -1003,6 +1003,15 @@ describe("validate — pins the exact field, message and severity for every Vali
       message: "NIF must be exactly 9 characters",
       mutate: (r) => {
         r.SistemaInformatico = { ...SISTEMA, NIF: "SHORT" };
+      },
+    },
+    {
+      description: "NIF_CONTROL",
+      code: "NIF_CONTROL",
+      field: "IDEmisorFactura",
+      message: "NIF has an invalid format or control character",
+      mutate: (r) => {
+        r.IDFactura.IDEmisorFactura = "00000000R";
       },
     },
     {
@@ -1202,6 +1211,33 @@ describe("validate — pins the exact field, message and severity for every Vali
       },
     },
     {
+      description: "DESTINATARIOS_REQUIRED",
+      code: "DESTINATARIOS_REQUIRED",
+      field: "Destinatarios",
+      message: "Destinatarios is mandatory when TipoFactura is F1 or F3",
+      mutate: (r) => {
+        delete r.Destinatarios;
+      },
+    },
+    {
+      description: "DESTINATARIOS_FORBIDDEN",
+      code: "DESTINATARIOS_FORBIDDEN",
+      field: "Destinatarios",
+      message: "Destinatarios must not be set when TipoFactura is F2 (simplified ticket)",
+      mutate: (r) => {
+        r.TipoFactura = "F2";
+      },
+    },
+    {
+      description: "DESTINATARIOS_EMPTY",
+      code: "DESTINATARIOS_EMPTY",
+      field: "Destinatarios",
+      message: "Destinatarios, when present, must carry at least one IDDestinatario",
+      mutate: (r) => {
+        r.Destinatarios = { IDDestinatario: [] };
+      },
+    },
+    {
       description: "DESCRIPCION_LENGTH",
       code: "DESCRIPCION_LENGTH",
       field: "DescripcionOperacion",
@@ -1319,14 +1355,22 @@ describe("validate — pins the exact field, message and severity for every Vali
         r.ImporteTotal = "999.00";
       },
     },
-  ];
+  ] as const satisfies readonly Case[];
 
-  it.each(cases)("$description", ({ code, field, message, severity, mutate }) => {
+  it("covers every ValidationCode in the exact-issue table", () => {
+    const everyCodeCovered: Exclude<ValidationCode, (typeof cases)[number]["code"]> extends never
+      ? true
+      : never = true;
+    expect(everyCodeCovered).toBe(true);
+  });
+
+  it.each(cases)("$description", (testCase) => {
+    const { code, field, message, mutate } = testCase;
     const record = valid();
     mutate(record);
     const issue = validate(record).find((i) => i.code === code && i.field === field);
     expect(issue).toBeDefined();
     expect(issue?.message).toBe(message);
-    expect(issue?.severity).toBe(severity ?? "error");
+    expect(issue?.severity).toBe("severity" in testCase ? testCase.severity : "error");
   });
 });

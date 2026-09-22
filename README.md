@@ -78,6 +78,10 @@ const issues = validate(record);
 const qr = buildQrPayload(record, "production");
 ```
 
+`validate` now reports `NIF_CONTROL` for malformed nine-character Spanish tax IDs. If you block
+submission on validation errors, review this new issue when updating from an earlier version.
+For K/L/M IDs with letters in their seven-character body, the check covers the shape only.
+
 A rectificativa (`R1`-`R5`) is built the same way, with `TipoRectificativa` set to say whether it
 substitutes (`S`) or adjusts (`I`) the original invoice. AEAT rule 1114 makes `TipoRectificativa`
 mandatory whenever `TipoFactura` is `R1`-`R5` (and rule 1115 forbids it otherwise); `FacturasRectificadas`
