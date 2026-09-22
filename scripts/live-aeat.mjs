@@ -48,6 +48,9 @@ export function assertConsultation(result) {
   if (!["S", "N"].includes(result.IndicadorPaginacion)) {
     throw new Error(`Unexpected AEAT pagination flag: ${result.IndicadorPaginacion}`);
   }
+  if (!Array.isArray(result.registros)) {
+    throw new Error("AEAT consultation response did not include a records array");
+  }
   if (result.ResultadoConsulta === "SinDatos" && result.registros.length !== 0) {
     throw new Error("AEAT returned records with a SinDatos result");
   }
@@ -87,8 +90,23 @@ export function assertStoredRecord(result, record, expectedState = "Correcta") {
   return stored;
 }
 
+export function assertStoredRecordAt(stage, result, record, expectedState = "Correcta") {
+  try {
+    return assertStoredRecord(result, record, expectedState);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const recordCount = Array.isArray(result?.registros)
+      ? `${result.registros.length} records`
+      : "records unavailable";
+    throw new Error(
+      `${stage}: ${message} (${result?.ResultadoConsulta ?? "unknown result"}, ${recordCount})`,
+      { cause: error },
+    );
+  }
+}
+
 export function assertExpandedStoredRecord(result, record) {
-  const stored = assertStoredRecord(result, record);
+  const stored = assertStoredRecordAt("expanded issuer consulta", result, record);
   if (stored.DatosRegistroFacturacion.NombreRazonEmisor !== record.NombreRazonEmisor) {
     throw new Error("AEAT expanded consulta did not return the expected issuer name");
   }
@@ -274,11 +292,38 @@ export function certificateKind(value = process.env.AEAT_TEST_CERT_KIND) {
 }
 
 export function issuerConsultaHeader(obligadoEmision) {
+  return { ObligadoEmision: obligadoEmision };
+}
+
+export function representativeConsultaHeader(obligadoEmision) {
   return { ObligadoEmision: obligadoEmision, IndicadorRepresentante: "S" };
 }
 
 export function submissionHeader(obligadoEmision) {
   return { ObligadoEmision: obligadoEmision };
+}
+
+export function minimalIssuerConsultaFilter(record, year, month) {
+  return {
+    Ejercicio: year,
+    Periodo: month,
+    NumSerieFactura: record.IDFactura.NumSerieFactura,
+  };
+}
+
+export function issuerFilteredConsultaFilter(record, year, month) {
+  return {
+    ...minimalIssuerConsultaFilter(record, year, month),
+    Contraparte: record.Destinatarios.IDDestinatario[0],
+    FechaExpedicionFactura: record.IDFactura.FechaExpedicionFactura,
+  };
+}
+
+export function describeRepresentativeConsulta(result, record) {
+  const present = result.registros.some(
+    (entry) => entry.IDFactura.NumSerieFactura === record.IDFactura.NumSerieFactura,
+  );
+  return `AEAT representative consulta returned ${result.ResultadoConsulta}; submitted record ${present ? "present" : "absent"}.`;
 }
 
 async function main() {
@@ -295,6 +340,7 @@ async function main() {
   });
   const obligadoEmision = { NombreRazon: name, NIF: nif };
   const consultaCabecera = issuerConsultaHeader(obligadoEmision);
+  const consultaRepresentante = representativeConsultaHeader(obligadoEmision);
   const now = new Date();
   const { year, month } = madridClock(now);
 
@@ -328,15 +374,27 @@ async function main() {
   assertValid(record);
   const submitted = await client.submit(cabecera, [{ RegistroAlta: record }]);
   assertSubmission(submitted, record);
-  const consulted = await client.consultar(consultaCabecera, {
+  const consulted = await client.consultar(
+    consultaCabecera,
+    minimalIssuerConsultaFilter(record, year, month),
+  );
+  assertConsultation(consulted);
+  assertStoredRecordAt("minimal issuer consulta", consulted, record);
+
+  const filtered = await client.consultar(
+    consultaCabecera,
+    issuerFilteredConsultaFilter(record, year, month),
+  );
+  assertConsultation(filtered);
+  assertStoredRecordAt("issuer exact-date and counterparty consulta", filtered, record);
+
+  const asRepresentative = await client.consultar(consultaRepresentante, {
     Ejercicio: year,
     Periodo: month,
     NumSerieFactura: record.IDFactura.NumSerieFactura,
-    Contraparte: record.Destinatarios.IDDestinatario[0],
-    FechaExpedicionFactura: record.IDFactura.FechaExpedicionFactura,
   });
-  assertConsultation(consulted);
-  assertStoredRecord(consulted, record);
+  assertConsultation(asRepresentative);
+  process.stdout.write(`${describeRepresentativeConsulta(asRepresentative, record)}\n`);
 
   const system = record.SistemaInformatico;
   const expanded = await client.consultar(consultaCabecera, {
@@ -382,7 +440,7 @@ async function main() {
     },
   );
   assertConsultation(asRecipient);
-  const recipientCopy = assertStoredRecord(asRecipient, record);
+  const recipientCopy = assertStoredRecordAt("recipient consulta", asRecipient, record);
   if (recipientCopy.DatosRegistroFacturacion.NombreRazonEmisor !== record.NombreRazonEmisor) {
     throw new Error("AEAT recipient consulta did not return the expected issuer name");
   }
@@ -409,9 +467,9 @@ async function main() {
     FechaExpedicionFactura: record.IDFactura.FechaExpedicionFactura,
   });
   assertConsultation(afterCancellation);
-  assertStoredRecord(afterCancellation, record, "Anulada");
+  assertStoredRecordAt("final cancelled-record consulta", afterCancellation, record, "Anulada");
   process.stdout.write(
-    "AEAT preproduction alta, all consulta filters, recipient consulta, pagination, QR lookup, anulación, and final consulta succeeded; stored hash matches.\n",
+    "AEAT preproduction alta, all consulta filters, representative and recipient consultas, pagination, QR lookup, anulación, and final consulta succeeded; stored hash matches.\n",
   );
 }
 
