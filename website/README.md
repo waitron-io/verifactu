@@ -25,7 +25,8 @@ Open the preview at `/verifactu/`; the root page sends you to the English homepa
 Español in the language menu for the full Spanish translation. The generated API reference uses
 English descriptions in both languages.
 
-When you change an example in the submission, QR, or testing guides, run `npm run verify:docs`.
-It compiles and runs the published English and Spanish code blocks, including the documented
-output values and QR image round trip. `verify:examples` also checks the record chain,
-fake-AEAT submission, consulta, cancellation, and certificate-fetch adapter.
+When you change a TypeScript example in either language, run `npm run verify:docs`. It checks every
+published code block in the guides and homepages, and fails if a new page with a TypeScript block
+is not covered. It compiles every block and runs all except the certificate setup, which needs a
+real PFX file. `verify:examples` checks the certificate-fetch adapter against the fake AEAT along
+with the record chain, submission, consulta, cancellation, and QR image round trip.
