@@ -19,6 +19,7 @@ import {
   representativeConsultaHeader,
   submissionHeader,
   waitForNextSubmission,
+  withLiveStage,
 } from "./live-aeat.mjs";
 import { validate } from "../dist/index.js";
 
@@ -347,6 +348,16 @@ test("a failed live consulta identifies its stage and response shape", () => {
         record,
       ),
     /malformed consulta: .* \(ConDatos, records unavailable\)/,
+  );
+});
+
+test("a transport or parsing failure identifies the live request stage", async () => {
+  await assert.rejects(
+    () =>
+      withLiveStage("expanded issuer consulta", async () => {
+        throw new Error("AEAT SOAP fault soapenv:Client: invalid filter");
+      }),
+    /expanded issuer consulta: AEAT SOAP fault soapenv:Client: invalid filter/,
   );
 });
 

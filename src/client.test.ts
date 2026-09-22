@@ -24,6 +24,14 @@ const CONSULTA_OK = `<?xml version="1.0"?>
       <IndicadorPaginacion>N</IndicadorPaginacion>
     </RespuestaConsultaFactuSistemaFacturacion></soapenv:Body></soapenv:Envelope>`;
 
+const SOAP_FAULT = `<?xml version="1.0"?>
+  <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body>
+    <soapenv:Fault>
+      <faultcode>soapenv:Client</faultcode>
+      <faultstring>El valor del campo no es válido</faultstring>
+    </soapenv:Fault>
+  </soapenv:Body></soapenv:Envelope>`;
+
 function fakeFetch(body: string, init: { status?: number } = {}) {
   return vi.fn<typeof globalThis.fetch>(
     async () => new Response(body, { status: init.status ?? 200 }),
@@ -139,6 +147,16 @@ describe("createClient", () => {
     // hardcoded body.
     const init = fetch.mock.calls[0]?.[1] as RequestInit;
     expect(String(init.body)).toContain("<sf:Ejercicio>2024</sf:Ejercicio>");
+  });
+
+  it("reports a SOAP fault returned with HTTP 200", async () => {
+    const client = createClient({
+      endpoint: "https://example.test/soap",
+      fetch: fakeFetch(SOAP_FAULT),
+    });
+    await expect(client.consultar(CABECERA, { Ejercicio: "2024", Periodo: "01" })).rejects.toThrow(
+      "AEAT SOAP fault soapenv:Client: El valor del campo no es válido",
+    );
   });
 
   it("posts both submit and consultar to the same configured endpoint", async () => {

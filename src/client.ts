@@ -1,5 +1,6 @@
 import { parseRespuestaConsulta, type RespuestaConsulta } from "./xml/parse-consulta.js";
 import { parseRespuestaSuministro, type RespuestaSuministro } from "./xml/parse-suministro.js";
+import { parser } from "./xml/parse-common.js";
 import {
   serializeConsulta,
   serializeEnvio,
@@ -39,6 +40,16 @@ async function post(options: ClientOptions, xml: string): Promise<string> {
     body: xml,
   });
   const text = await response.text();
+  const fault = (
+    parser.parse(text) as {
+      Envelope?: { Body?: { Fault?: { faultcode?: string; faultstring?: string } } };
+    }
+  ).Envelope?.Body?.Fault;
+  if (fault) {
+    const code = fault.faultcode ? ` ${fault.faultcode}` : "";
+    const message = fault.faultstring ? `: ${fault.faultstring}` : "";
+    throw new Error(`AEAT SOAP fault${code}${message}`);
+  }
   if (!response.ok) {
     throw new Error(`AEAT request failed with HTTP ${response.status}: ${text.slice(0, 500)}`);
   }
