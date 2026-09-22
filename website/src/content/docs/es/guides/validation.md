@@ -22,9 +22,9 @@ la AEAT aceptaría, como un total que supera la tolerancia de una comprobación 
 validación comprueba formatos locales y algunas reglas de la AEAT. La respuesta de la AEAT sigue
 siendo la fuente definitiva; examina cada línea después de enviar.
 
-La comprobación de los totales admite una diferencia de 10 €. La AEAT no la aplica cuando una
-línea de impuestos lleva `ClaveRegimen` `03`, `05`, `06`, `08` o `09`, por lo que `validate` también
-la omite.
+La comprobación de los totales admite una diferencia de 10 €. La AEAT excluye los regímenes `03`,
+`05`, `06`, `08` y `09`. `validate` omite esta comprobación si todas las líneas usan alguno de esos
+regímenes; conserva un aviso para los registros que mezclan regímenes y cuyos totales no cuadran.
 
 `validate` también comprueba que el tipo de factura corresponda con la presencia de
 `Destinatarios` y que las líneas de IVA, IPSI e IGIC incluyan `ClaveRegimen`, mientras que las de

@@ -32,73 +32,75 @@ const hashCases = JSON.parse(
 const qrCases = JSON.parse(
   readFileSync(new URL("../test/upstream/qr.json", import.meta.url), "utf8"),
 ) as { casos: QrCase[] };
+const officialHashCases = hashCases.casos.filter((entry) => entry.procedencia === "oficial");
+const supportedOfficialQrCases = qrCases.casos.filter(
+  (entry) =>
+    entry.procedencia === "oficial" && entry.valido && !entry.id.includes("no-verificable"),
+);
 
 describe("borjamrd conformance fixtures", () => {
-  it.each(hashCases.casos.filter((entry) => entry.procedencia === "oficial"))(
-    "builds and hashes $id from AEAT's published fields",
-    (entry) => {
-      const fields = Object.fromEntries(entry.campos.map(({ nombre, valor }) => [nombre, valor]));
-      const cadena =
+  it("keeps the published cases selected by the fixture filters", () => {
+    expect(officialHashCases).toHaveLength(3);
+    expect(supportedOfficialQrCases).toHaveLength(3);
+  });
+
+  it.each(officialHashCases)("builds and hashes $id from AEAT's published fields", (entry) => {
+    const fields = Object.fromEntries(entry.campos.map(({ nombre, valor }) => [nombre, valor]));
+    const cadena =
+      entry.tipo === "alta"
+        ? buildCadenaAlta({
+            IDEmisorFactura: fields.IDEmisorFactura ?? "",
+            NumSerieFactura: fields.NumSerieFactura ?? "",
+            FechaExpedicionFactura: fields.FechaExpedicionFactura ?? "",
+            TipoFactura: fields.TipoFactura ?? "",
+            CuotaTotal: fields.CuotaTotal ?? "",
+            ImporteTotal: fields.ImporteTotal ?? "",
+            huellaAnterior: fields.Huella ?? "",
+            FechaHoraHusoGenRegistro: fields.FechaHoraHusoGenRegistro ?? "",
+          } satisfies CadenaAltaInput)
+        : buildCadenaAnulacion({
+            IDEmisorFacturaAnulada: fields.IDEmisorFacturaAnulada ?? "",
+            NumSerieFacturaAnulada: fields.NumSerieFacturaAnulada ?? "",
+            FechaExpedicionFacturaAnulada: fields.FechaExpedicionFacturaAnulada ?? "",
+            huellaAnterior: fields.Huella ?? "",
+            FechaHoraHusoGenRegistro: fields.FechaHoraHusoGenRegistro ?? "",
+          } satisfies CadenaAnulacionInput);
+
+    expect(cadena).toBe(entry.cadena);
+    expect(createHash("sha256").update(cadena, "utf8").digest("hex").toUpperCase()).toBe(
+      entry.huella,
+    );
+
+    const record = {
+      IDFactura:
         entry.tipo === "alta"
-          ? buildCadenaAlta({
-              IDEmisorFactura: fields.IDEmisorFactura ?? "",
-              NumSerieFactura: fields.NumSerieFactura ?? "",
-              FechaExpedicionFactura: fields.FechaExpedicionFactura ?? "",
-              TipoFactura: fields.TipoFactura ?? "",
-              CuotaTotal: fields.CuotaTotal ?? "",
-              ImporteTotal: fields.ImporteTotal ?? "",
-              huellaAnterior: fields.Huella ?? "",
-              FechaHoraHusoGenRegistro: fields.FechaHoraHusoGenRegistro ?? "",
-            } satisfies CadenaAltaInput)
-          : buildCadenaAnulacion({
-              IDEmisorFacturaAnulada: fields.IDEmisorFacturaAnulada ?? "",
-              NumSerieFacturaAnulada: fields.NumSerieFacturaAnulada ?? "",
-              FechaExpedicionFacturaAnulada: fields.FechaExpedicionFacturaAnulada ?? "",
-              huellaAnterior: fields.Huella ?? "",
-              FechaHoraHusoGenRegistro: fields.FechaHoraHusoGenRegistro ?? "",
-            } satisfies CadenaAnulacionInput);
-
-      expect(cadena).toBe(entry.cadena);
-      expect(createHash("sha256").update(cadena, "utf8").digest("hex").toUpperCase()).toBe(
-        entry.huella,
-      );
-
-      const record = {
-        IDFactura:
-          entry.tipo === "alta"
-            ? {
-                IDEmisorFactura: fields.IDEmisorFactura,
-                NumSerieFactura: fields.NumSerieFactura,
-                FechaExpedicionFactura: fields.FechaExpedicionFactura,
-              }
-            : {
-                IDEmisorFacturaAnulada: fields.IDEmisorFacturaAnulada,
-                NumSerieFacturaAnulada: fields.NumSerieFacturaAnulada,
-                FechaExpedicionFacturaAnulada: fields.FechaExpedicionFacturaAnulada,
-              },
-        ...(entry.tipo === "alta"
           ? {
-              TipoFactura: fields.TipoFactura,
-              CuotaTotal: fields.CuotaTotal,
-              ImporteTotal: fields.ImporteTotal,
+              IDEmisorFactura: fields.IDEmisorFactura,
+              NumSerieFactura: fields.NumSerieFactura,
+              FechaExpedicionFactura: fields.FechaExpedicionFactura,
             }
-          : {}),
-        FechaHoraHusoGenRegistro: fields.FechaHoraHusoGenRegistro,
-        Encadenamiento: fields.Huella
-          ? { RegistroAnterior: { Huella: fields.Huella } }
-          : { PrimerRegistro: "S" },
-      } as RegistroAlta | RegistroAnulacion;
-      expect(buildCadena(record)).toBe(entry.cadena);
-      expect(computeHuella(record)).toBe(entry.huella);
-    },
-  );
+          : {
+              IDEmisorFacturaAnulada: fields.IDEmisorFacturaAnulada,
+              NumSerieFacturaAnulada: fields.NumSerieFacturaAnulada,
+              FechaExpedicionFacturaAnulada: fields.FechaExpedicionFacturaAnulada,
+            },
+      ...(entry.tipo === "alta"
+        ? {
+            TipoFactura: fields.TipoFactura,
+            CuotaTotal: fields.CuotaTotal,
+            ImporteTotal: fields.ImporteTotal,
+          }
+        : {}),
+      FechaHoraHusoGenRegistro: fields.FechaHoraHusoGenRegistro,
+      Encadenamiento: fields.Huella
+        ? { RegistroAnterior: { Huella: fields.Huella } }
+        : { PrimerRegistro: "S" },
+    } as RegistroAlta | RegistroAnulacion;
+    expect(buildCadena(record)).toBe(entry.cadena);
+    expect(computeHuella(record)).toBe(entry.huella);
+  });
 
-  it.each(
-    qrCases.casos.filter(
-      (entry) =>
-        entry.procedencia === "oficial" && entry.valido && !entry.id.includes("no-verificable"),
-    ),
-  )("builds $id as published", (entry) => {
+  it.each(supportedOfficialQrCases)("builds $id as published", (entry) => {
     const expected = new URL(entry.url);
     const environment = expected.hostname.startsWith("pre") ? "preproduction" : "production";
     const record = {

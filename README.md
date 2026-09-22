@@ -56,6 +56,7 @@ const record = buildAltaRecord({
   DescripcionOperacion: "Venta en establecimiento",
   Desglose: [
     {
+      ClaveRegimen: "01",
       CalificacionOperacion: "S1",
       BaseImponibleOimporteNoSujeto: "10",
       CuotaRepercutida: "2.1",
@@ -96,6 +97,9 @@ const rectificativa = buildAltaRecord({
   NombreRazonEmisor: "Example SL",
   TipoFactura: "R1",
   TipoRectificativa: "S",
+  Destinatarios: {
+    IDDestinatario: [{ NombreRazon: "Customer SL", NIF: "B12345674" }],
+  },
   FacturasRectificadas: [
     {
       IDEmisorFactura: "89890001K",
@@ -107,6 +111,7 @@ const rectificativa = buildAltaRecord({
   DescripcionOperacion: "Rectificación de T01/000123",
   Desglose: [
     {
+      ClaveRegimen: "01",
       CalificacionOperacion: "S1",
       BaseImponibleOimporteNoSujeto: "10",
       CuotaRepercutida: "2.1",

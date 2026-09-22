@@ -62,6 +62,7 @@ const sale = {
   TipoFactura: "F2" as const,
   DescripcionOperacion: "Café y almuerzo",
   Desglose: [{
+    ClaveRegimen: "01",
     CalificacionOperacion: "S1",
     TipoImpositivo: "21",
     BaseImponibleOimporteNoSujeto: "10.00",

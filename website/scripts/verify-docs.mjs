@@ -59,6 +59,20 @@ function run(command, args) {
 }
 
 try {
+  const readme = [
+    ...readFileSync(join(website, "..", "README.md"), "utf8").matchAll(/^```ts\n([\s\S]*?)^```/gm),
+  ].map((match) => match[1].replaceAll('from "@waitron/verifactu"', 'from "../../dist/index.js"'));
+  assert.equal(readme.length, 3, "README must keep its three TypeScript examples");
+  save(
+    "readme",
+    `import assert from "node:assert/strict";
+${readme[0]}
+${readme[1]}
+assert.deepEqual(issues.filter((issue) => issue.severity === "error"), []);
+assert.deepEqual(validate(rectificativa).filter((issue) => issue.severity === "error"), []);
+`,
+  );
+
   for (const locale of ["en", "es"]) {
     assert.deepEqual(snippetPages(locale), [
       "guides/alta-record.md",

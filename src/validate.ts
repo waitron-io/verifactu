@@ -75,7 +75,7 @@ const TIPO_FACTURA_RECTIFICATIVA_PATTERN = /^R[1-5]$/;
 const NUMSERIE_PATTERN = /^[A-Za-z0-9/_.-]+$/;
 /** AEAT applies a +/- 10.00 euro tolerance on the total cross-checks. */
 const TOTAL_TOLERANCE = 10;
-/** AEAT omits both total cross-checks for these special regime codes. */
+/** AEAT validation §3.1.3.16–17 omits both total cross-checks for these regimes. */
 const TOTAL_CHECK_EXEMPT_REGIMES = new Set(["03", "05", "06", "08", "09"]);
 /**
  * AEAT's schema type for these fields is `(\+|-)?\d{1,12}(\.\d{0,2})?`, but
@@ -353,6 +353,8 @@ export function validate(record: RegistroAlta | RegistroAnulacion): ValidationIs
 
   let desgloseAmountsValid = true;
   record.Desglose.forEach((detalle, index) => {
+    // AEAT validation §3.1.3.15.6 requires ClaveRegimen for IVA, IPSI and
+    // IGIC (including omitted Impuesto, which means IVA) and forbids it otherwise.
     const claveRegimenAllowed = [undefined, "01", "02", "03"].includes(detalle.Impuesto);
     if (claveRegimenAllowed && !detalle.ClaveRegimen) {
       add(
@@ -423,9 +425,11 @@ export function validate(record: RegistroAlta | RegistroAnulacion): ValidationIs
   const cuotas = sum(record.Desglose.map((d) => d.CuotaRepercutida));
   const recargos = sum(record.Desglose.map((d) => d.CuotaRecargoEquivalencia));
   const bases = sum(record.Desglose.map((d) => d.BaseImponibleOimporteNoSujeto));
-  const crossCheckTotals = !record.Desglose.some((detail) =>
-    TOTAL_CHECK_EXEMPT_REGIMES.has(detail.ClaveRegimen ?? ""),
-  );
+  // The rule compares record totals. For a mixed-regime record, keep the
+  // advisory cross-check rather than let one exempt line silence every line.
+  const crossCheckTotals =
+    record.Desglose.length === 0 ||
+    !record.Desglose.every((detail) => TOTAL_CHECK_EXEMPT_REGIMES.has(detail.ClaveRegimen ?? ""));
 
   if (
     crossCheckTotals &&

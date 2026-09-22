@@ -284,6 +284,15 @@ describe("validate", () => {
     },
   );
 
+  it("keeps total mismatch warnings when only one of several tax lines has an exempt regime", () => {
+    const record = valid();
+    record.Desglose.push({ ...record.Desglose[0]!, ClaveRegimen: "03" });
+    record.CuotaTotal = "999.00";
+    record.ImporteTotal = "999.00";
+    expect(codes(record)).toContain("CUOTA_TOTAL_MISMATCH");
+    expect(codes(record)).toContain("IMPORTE_TOTAL_MISMATCH");
+  });
+
   it("marks total mismatches as warnings, not errors", () => {
     // AEAT accepts these with errors rather than rejecting, so treating them
     // as fatal locally would block records AEAT would have taken.

@@ -34,7 +34,7 @@ const record = buildAltaRecord({
   NombreRazonEmisor: sistema.NombreRazon,
   TipoFactura: "F2",
   DescripcionOperacion: "Café y almuerzo",
-  Desglose: [{ CalificacionOperacion: "S1", TipoImpositivo: "21", BaseImponibleOimporteNoSujeto: "10.00", CuotaRepercutida: "2.10" }],
+  Desglose: [{ ClaveRegimen: "01", CalificacionOperacion: "S1", TipoImpositivo: "21", BaseImponibleOimporteNoSujeto: "10.00", CuotaRepercutida: "2.10" }],
   CuotaTotal: "2.10",
   ImporteTotal: "12.10",
   Encadenamiento: { PrimerRegistro: "S" },

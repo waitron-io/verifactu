@@ -22,8 +22,9 @@ accept, such as a total outside a recommended cross-check tolerance. Validation 
 format and selected AEAT rules; AEAT's response remains authoritative. Inspect every returned
 line after submission.
 
-The total cross-check allows a €10 difference. AEAT does not apply it when a tax line uses
-`ClaveRegimen` `03`, `05`, `06`, `08`, or `09`, so `validate` skips it too.
+The total cross-check allows a €10 difference. AEAT exempts regimes `03`, `05`, `06`, `08`, and
+`09`. `validate` skips the cross-check when every tax line uses one of those regimes; it keeps an
+advisory warning for a mixed-regime record with mismatched totals.
 
 `validate` also checks that the invoice type agrees with the presence of `Destinatarios` and that
 IVA, IPSI, and IGIC tax lines include `ClaveRegimen`, while other tax lines omit it. It does not
