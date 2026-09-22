@@ -3,6 +3,10 @@
 TypeScript implementation of Spain's Veri\*Factu invoicing records: construction, hashing,
 chaining, validation, QR payloads, SOAP submission and consulta.
 
+Read the [English documentation](https://waitron-io.github.io/verifactu/en/) or
+[Spanish documentation](https://waitron-io.github.io/verifactu/es/) for a complete submission
+walkthrough and API reference.
+
 > **This library is a tool for building SIFs. It is not itself a SIF.**
 > A _sistema informático de facturación_ is a deployed system, and its obligations —
 > conservation, inalterability and accessibility of records — are properties of a deployment,
@@ -143,9 +147,8 @@ Every release after that uses npm's **Trusted Publishing**: pushing a `v*` tag (
 `v0.1.0`) runs the release workflow, which builds, re-runs the pack-smoke check, and publishes the
 package to npm. There is no npm token and no stored secret anywhere in this repository — the
 workflow proves who it is to npm using a short-lived identity token that GitHub Actions issues for
-the run (OIDC), and npm generates and attaches
-[provenance](https://docs.npmjs.com/generating-provenance-statements) automatically as part of
-that same publish.
+the run (OIDC). It passes `--provenance` so npm attaches a
+[provenance statement](https://docs.npmjs.com/generating-provenance-statements) to the release.
 
 For this to work, the package's Trusted Publisher is configured on npmjs.com to trust this exact
 workflow: organisation `waitron-io`, repository `verifactu`, workflow file `release.yml`. Only a
