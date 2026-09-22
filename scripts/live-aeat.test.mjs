@@ -13,6 +13,7 @@ import {
   buildTestRecord,
   certificateKind,
   describeRepresentativeConsulta,
+  expandedIssuerConsultaFilter,
   issuerFilteredConsultaFilter,
   issuerConsultaHeader,
   minimalIssuerConsultaFilter,
@@ -385,6 +386,24 @@ test("the first post-alta consulta stays independent of optional filters", () =>
     NumSerieFactura: fullRecord.IDFactura.NumSerieFactura,
     Contraparte: fullRecord.Destinatarios.IDDestinatario[0],
     FechaExpedicionFactura: fullRecord.IDFactura.FechaExpedicionFactura,
+  });
+});
+
+test("the expanded consulta uses a strict date range across a month boundary", () => {
+  const fullRecord = buildTestRecord({
+    nif: "89890001K",
+    name: "Waitron SL",
+    systemNif: "89890001K",
+    systemName: "Waitron SL",
+    recipientNif: "11111111H",
+    recipientName: "Cliente Uno",
+    now: new Date("2024-03-01T10:00:00Z"),
+    runId: "12345",
+  });
+  const filter = expandedIssuerConsultaFilter(fullRecord, "2024", "03");
+  assert.deepEqual(filter.RangoFechaExpedicion, {
+    Desde: "29-02-2024",
+    Hasta: "01-03-2024",
   });
 });
 

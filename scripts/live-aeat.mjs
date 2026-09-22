@@ -328,6 +328,45 @@ export function issuerFilteredConsultaFilter(record, year, month) {
   };
 }
 
+function previousSpanishCalendarDate(value) {
+  const [day, month, year] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() - 1);
+  return [date.getUTCDate(), date.getUTCMonth() + 1, date.getUTCFullYear()]
+    .map((part, index) => (index < 2 ? String(part).padStart(2, "0") : String(part)))
+    .join("-");
+}
+
+export function expandedIssuerConsultaFilter(record, year, month) {
+  const system = record.SistemaInformatico;
+  return {
+    Ejercicio: year,
+    Periodo: month,
+    NumSerieFactura: record.IDFactura.NumSerieFactura,
+    // AEAT rejects equal endpoints: Desde must be strictly earlier than Hasta.
+    RangoFechaExpedicion: {
+      Desde: previousSpanishCalendarDate(record.IDFactura.FechaExpedicionFactura),
+      Hasta: record.IDFactura.FechaExpedicionFactura,
+    },
+    SistemaInformatico: {
+      NombreRazon: system.NombreRazon,
+      NIF: system.NIF,
+      IdSistemaInformatico: system.IdSistemaInformatico,
+      NombreSistemaInformatico: system.NombreSistemaInformatico,
+      Version: system.Version,
+      NumeroInstalacion: system.NumeroInstalacion,
+      TipoUsoPosibleSoloVerifactu: system.TipoUsoPosibleSoloVerifactu,
+      TipoUsoPosibleMultiOT: system.TipoUsoPosibleMultiOT,
+      IndicadorMultiplesOT: system.IndicadorMultiplesOT,
+    },
+    RefExterna: record.RefExterna,
+    DatosAdicionalesRespuesta: {
+      MostrarNombreRazonEmisor: "S",
+      MostrarSistemaInformatico: "S",
+    },
+  };
+}
+
 export function describeRepresentativeConsulta(result, record) {
   const present = result.registros.some(
     (entry) => entry.IDFactura.NumSerieFactura === record.IDFactura.NumSerieFactura,
@@ -409,33 +448,8 @@ async function main() {
   assertConsultation(asRepresentative);
   process.stdout.write(`${describeRepresentativeConsulta(asRepresentative, record)}\n`);
 
-  const system = record.SistemaInformatico;
   const expanded = await withLiveStage("expanded issuer consulta", () =>
-    client.consultar(consultaCabecera, {
-      Ejercicio: year,
-      Periodo: month,
-      NumSerieFactura: record.IDFactura.NumSerieFactura,
-      RangoFechaExpedicion: {
-        Desde: record.IDFactura.FechaExpedicionFactura,
-        Hasta: record.IDFactura.FechaExpedicionFactura,
-      },
-      SistemaInformatico: {
-        NombreRazon: system.NombreRazon,
-        NIF: system.NIF,
-        IdSistemaInformatico: system.IdSistemaInformatico,
-        NombreSistemaInformatico: system.NombreSistemaInformatico,
-        Version: system.Version,
-        NumeroInstalacion: system.NumeroInstalacion,
-        TipoUsoPosibleSoloVerifactu: system.TipoUsoPosibleSoloVerifactu,
-        TipoUsoPosibleMultiOT: system.TipoUsoPosibleMultiOT,
-        IndicadorMultiplesOT: system.IndicadorMultiplesOT,
-      },
-      RefExterna: record.RefExterna,
-      DatosAdicionalesRespuesta: {
-        MostrarNombreRazonEmisor: "S",
-        MostrarSistemaInformatico: "S",
-      },
-    }),
+    client.consultar(consultaCabecera, expandedIssuerConsultaFilter(record, year, month)),
   );
   assertConsultation(expanded);
   assertExpandedStoredRecord(expanded, record);
