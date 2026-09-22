@@ -50,7 +50,7 @@ const recibidas = await client.consultar(
 
 `NumSerieFactura` y `FechaExpedicionFactura` acotan la consulta; omítelos para recorrer el
 periodo. Usa `RangoFechaExpedicion` con `Desde` y `Hasta` para acotar un intervalo de fechas. Es
-una alternativa a `FechaExpedicionFactura`, por lo que TypeScript impide que envíes ambos.
+una alternativa a `FechaExpedicionFactura`; el serializador rechaza una solicitud que envíe ambos.
 Usa `RefExterna` si guardaste una referencia propia en el registro. Usa `Contraparte`
 con `NombreRazon` y el `NIF` o `IDOtro` del cliente para buscar sus facturas.
 `SistemaInformatico` limita el resultado a una instalación. Indica `NombreRazon`, `NIF` o

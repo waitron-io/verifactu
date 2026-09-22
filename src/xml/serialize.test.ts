@@ -880,6 +880,17 @@ describe("serializeConsulta", () => {
     );
   });
 
+  it("rejects both exact date and date range in one JavaScript request", () => {
+    expect(() =>
+      serializeConsulta(CABECERA, {
+        Ejercicio: "2024",
+        Periodo: "01",
+        FechaExpedicionFactura: "01-01-2024",
+        RangoFechaExpedicion: { Desde: "01-01-2024", Hasta: "31-01-2024" },
+      }),
+    ).toThrow(/either FechaExpedicionFactura or RangoFechaExpedicion/);
+  });
+
   it("emits the remaining filters in AEAT order and response options after the filter", () => {
     const xml = serializeConsulta(CABECERA, {
       Ejercicio: "2024",

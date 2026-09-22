@@ -4,12 +4,16 @@ import {
   assertConsultation,
   assertExpandedStoredRecord,
   assertPaginationAdvanced,
+  assertQrPreproductionUrl,
   assertQrLookup,
   assertStoredRecord,
   assertSubmission,
   buildTestCancellation,
   buildTestRecord,
   certificateKind,
+  issuerConsultaHeader,
+  submissionHeader,
+  waitForNextSubmission,
 } from "./live-aeat.mjs";
 import { validate } from "../dist/index.js";
 
@@ -279,4 +283,38 @@ test("the QR lookup must confirm the exact submitted invoice", () => {
       ),
     /did not find/,
   );
+});
+
+test("the submission wait rejects values outside AEAT's integer domain", async () => {
+  await assert.rejects(() => waitForNextSubmission(-1), /invalid submission wait/);
+  await assert.rejects(() => waitForNextSubmission(1.5), /invalid submission wait/);
+  await assert.doesNotReject(() => waitForNextSubmission(0));
+});
+
+test("the QR check only permits AEAT's preproduction JSON lookup", () => {
+  assert.doesNotThrow(() =>
+    assertQrPreproductionUrl(
+      new URL("https://prewww2.aeat.es/wlpl/TIKE-CONT/ValidarQR?nif=89890001K"),
+    ),
+  );
+  assert.throws(
+    () =>
+      assertQrPreproductionUrl(
+        new URL("https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR"),
+      ),
+    /preproduction QR endpoint/,
+  );
+  assert.throws(
+    () => assertQrPreproductionUrl(new URL("https://prewww2.aeat.es/unrelated")),
+    /preproduction QR endpoint/,
+  );
+});
+
+test("a representative certificate is declared on consultas, not submissions", () => {
+  const issuer = { NombreRazon: "Waitron SL", NIF: "89890001K" };
+  assert.deepEqual(issuerConsultaHeader(issuer), {
+    ObligadoEmision: issuer,
+    IndicadorRepresentante: "S",
+  });
+  assert.deepEqual(submissionHeader(issuer), { ObligadoEmision: issuer });
 });

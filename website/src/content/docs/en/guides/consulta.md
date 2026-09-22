@@ -50,7 +50,7 @@ const received = await client.consultar(
 
 `NumSerieFactura` and `FechaExpedicionFactura` narrow the query; omit them to sweep the period.
 Use `RangoFechaExpedicion` with `Desde` and `Hasta` when you need a date range. It is an
-alternative to `FechaExpedicionFactura`, so TypeScript prevents you from sending both.
+alternative to `FechaExpedicionFactura`; the serializer rejects a request that sends both.
 Use `RefExterna` when you stored your own reference on the record. Use `Contraparte` with the
 customer's `NombreRazon` and either `NIF` or `IDOtro` when you need that customer's records.
 `SistemaInformatico` narrows the result to one software installation. Supply `NombreRazon`, either

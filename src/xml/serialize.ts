@@ -65,7 +65,7 @@ export interface DatosAdicionalesRespuesta {
   MostrarSistemaInformatico?: SiNo;
 }
 
-interface ConsultaFiltroBase {
+export interface ConsultaFiltro {
   Ejercicio: string;
   Periodo: string;
   NumSerieFactura?: string;
@@ -79,20 +79,10 @@ interface ConsultaFiltroBase {
   };
   /** Request-level response options; serialized after FiltroConsulta, as the XSD requires. */
   DatosAdicionalesRespuesta?: DatosAdicionalesRespuesta;
+  /** Exact date and date range are mutually exclusive; serializeConsulta rejects both together. */
+  FechaExpedicionFactura?: string;
+  RangoFechaExpedicion?: { Desde?: string; Hasta?: string };
 }
-
-/** The schema models exact date and date range as an exclusive choice. */
-export type ConsultaFiltro = ConsultaFiltroBase &
-  (
-    | {
-        FechaExpedicionFactura?: string;
-        RangoFechaExpedicion?: never;
-      }
-    | {
-        FechaExpedicionFactura?: never;
-        RangoFechaExpedicion?: { Desde?: string; Hasta?: string };
-      }
-  );
 
 function el(prefix: string, name: string, value: string | undefined): string {
   return value === undefined ? "" : `<${prefix}:${name}>${escapeXml(value)}</${prefix}:${name}>`;
@@ -402,6 +392,9 @@ export function serializeEnvio(cabecera: Cabecera, registros: EnvioRegistro[]): 
 
 /** Serialises a consulta. PeriodoImputacion is mandatory even for one invoice. */
 export function serializeConsulta(cabecera: CabeceraConsulta, filtro: ConsultaFiltro): string {
+  if (filtro.FechaExpedicionFactura !== undefined && filtro.RangoFechaExpedicion !== undefined) {
+    throw new Error("Use either FechaExpedicionFactura or RangoFechaExpedicion, not both");
+  }
   const body =
     `<sfLRC:ConsultaFactuSistemaFacturacion>` +
     "<sfLRC:Cabecera>" +

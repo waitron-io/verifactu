@@ -38,18 +38,19 @@ which belongs to non-VERI*FACTU submissions made in response to an AEAT requirem
 
 Create the `aeat-preproduction` GitHub environment and add these environment secrets:
 
-| Secret                     | Value                                                                    |
-| -------------------------- | ------------------------------------------------------------------------ |
-| `AEAT_TEST_P12_BASE64`     | Base64 encoding of the authorized certificate's `.p12`/`.pfx` bytes      |
-| `AEAT_TEST_P12_PASSWORD`   | Password for that certificate                                            |
-| `AEAT_TEST_NIF`            | Test issuer NIF accepted by AEAT for that certificate                    |
-| `AEAT_TEST_NAME`           | Test issuer's registered name                                            |
-| `AEAT_TEST_SYSTEM_NIF`     | NIF of the software producer represented in `SistemaInformatico`         |
-| `AEAT_TEST_SYSTEM_NAME`    | Registered name of that software producer                                |
-| `AEAT_TEST_RECIPIENT_NIF`  | Spanish NIF of the test invoice recipient and certificate representative |
-| `AEAT_TEST_RECIPIENT_NAME` | Registered name matching `AEAT_TEST_RECIPIENT_NIF`                       |
+| Secret                     | Value                                                               |
+| -------------------------- | ------------------------------------------------------------------- |
+| `AEAT_TEST_P12_BASE64`     | Base64 encoding of the authorized certificate's `.p12`/`.pfx` bytes |
+| `AEAT_TEST_P12_PASSWORD`   | Password for that certificate                                       |
+| `AEAT_TEST_NIF`            | Test issuer NIF accepted by AEAT for that certificate               |
+| `AEAT_TEST_NAME`           | Test issuer's registered name                                       |
+| `AEAT_TEST_SYSTEM_NIF`     | NIF of the software producer represented in `SistemaInformatico`    |
+| `AEAT_TEST_SYSTEM_NAME`    | Registered name of that software producer                           |
+| `AEAT_TEST_RECIPIENT_NIF`  | Spanish NIF of the test invoice recipient                           |
+| `AEAT_TEST_RECIPIENT_NAME` | Registered name matching `AEAT_TEST_RECIPIENT_NIF`                  |
 
-Set the repository variable `AEAT_TEST_CERT_KIND` to `personal` or `sello` (defaults to
+When configuring another repository or environment, set the repository variable
+`AEAT_TEST_CERT_KIND` to `personal` or `sello` (defaults to
 `personal`). Run `consult` manually to check authentication and response parsing, then run `submit`
 manually to check the full alta, consulta and anulación sequence. Once both pass, set the repository
 variable `AEAT_LIVE_TESTS_ENABLED` to `true` for the monthly job. Manual runs on `main` work while

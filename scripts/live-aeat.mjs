@@ -133,9 +133,16 @@ export function assertQrLookup(result, record) {
   }
 }
 
+export function assertQrPreproductionUrl(url) {
+  if (url.origin !== "https://prewww2.aeat.es" || url.pathname !== "/wlpl/TIKE-CONT/ValidarQR") {
+    throw new Error("Live AEAT QR tests can only call the preproduction QR endpoint");
+  }
+}
+
 async function checkQrLookup(record) {
   const url = new URL(buildQrPayload(record, "preproduction"));
   url.searchParams.set("formato", "json");
+  assertQrPreproductionUrl(url);
   const response = await fetch(url, {
     headers: { Accept: "application/json", "User-Agent": "waitron-verifactu-live-test" },
     signal: AbortSignal.timeout(30_000),
@@ -154,7 +161,7 @@ async function checkQrLookup(record) {
 function certificateFetch(endpoint, pfx, passphrase) {
   return async (url, init) => {
     if (url !== endpoint || !url.startsWith("https://prewww")) {
-      throw new Error("Live AEAT tests can only call the configured preproduction endpoint");
+      throw new Error("Live AEAT SOAP tests can only call the configured preproduction endpoint");
     }
     return new Promise((resolve, reject) => {
       const req = request(
@@ -253,7 +260,7 @@ export function buildTestCancellation({ record, issuedAt, now }) {
   });
 }
 
-async function waitForNextSubmission(seconds) {
+export async function waitForNextSubmission(seconds) {
   if (!Number.isInteger(seconds) || seconds < 0) {
     throw new Error(`AEAT returned an invalid submission wait: ${seconds}`);
   }
@@ -264,6 +271,14 @@ export function certificateKind(value = process.env.AEAT_TEST_CERT_KIND) {
   const kind = value || "personal";
   if (!["personal", "sello"].includes(kind)) throw new Error("Invalid certificate kind");
   return kind;
+}
+
+export function issuerConsultaHeader(obligadoEmision) {
+  return { ObligadoEmision: obligadoEmision, IndicadorRepresentante: "S" };
+}
+
+export function submissionHeader(obligadoEmision) {
+  return { ObligadoEmision: obligadoEmision };
 }
 
 async function main() {
@@ -279,18 +294,16 @@ async function main() {
     fetch: certificateFetch(endpoint, await loadCertificate(), passphrase),
   });
   const obligadoEmision = { NombreRazon: name, NIF: nif };
+  const consultaCabecera = issuerConsultaHeader(obligadoEmision);
   const now = new Date();
   const { year, month } = madridClock(now);
 
   if (mode === "consult") {
-    const result = await client.consultar(
-      { ObligadoEmision: obligadoEmision },
-      {
-        Ejercicio: year,
-        Periodo: month,
-        NumSerieFactura: `CI-CHECK-${year}${month}`,
-      },
-    );
+    const result = await client.consultar(consultaCabecera, {
+      Ejercicio: year,
+      Periodo: month,
+      NumSerieFactura: `CI-CHECK-${year}${month}`,
+    });
     assertConsultation(result);
     process.stdout.write(`AEAT preproduction consulta succeeded: ${result.ResultadoConsulta}\n`);
     return;
@@ -300,7 +313,7 @@ async function main() {
     NombreRazon: required("AEAT_TEST_RECIPIENT_NAME"),
     NIF: required("AEAT_TEST_RECIPIENT_NIF"),
   };
-  const cabecera = { ObligadoEmision: obligadoEmision, Representante: recipient };
+  const cabecera = submissionHeader(obligadoEmision);
   const runId = process.env.GITHUB_RUN_ID ?? String(now.getTime());
   const record = buildTestRecord({
     nif,
@@ -315,7 +328,7 @@ async function main() {
   assertValid(record);
   const submitted = await client.submit(cabecera, [{ RegistroAlta: record }]);
   assertSubmission(submitted, record);
-  const consulted = await client.consultar(cabecera, {
+  const consulted = await client.consultar(consultaCabecera, {
     Ejercicio: year,
     Periodo: month,
     NumSerieFactura: record.IDFactura.NumSerieFactura,
@@ -326,34 +339,31 @@ async function main() {
   assertStoredRecord(consulted, record);
 
   const system = record.SistemaInformatico;
-  const expanded = await client.consultar(
-    { ObligadoEmision: cabecera.ObligadoEmision, IndicadorRepresentante: "S" },
-    {
-      Ejercicio: year,
-      Periodo: month,
-      NumSerieFactura: record.IDFactura.NumSerieFactura,
-      RangoFechaExpedicion: {
-        Desde: record.IDFactura.FechaExpedicionFactura,
-        Hasta: record.IDFactura.FechaExpedicionFactura,
-      },
-      SistemaInformatico: {
-        NombreRazon: system.NombreRazon,
-        NIF: system.NIF,
-        IdSistemaInformatico: system.IdSistemaInformatico,
-        NombreSistemaInformatico: system.NombreSistemaInformatico,
-        Version: system.Version,
-        NumeroInstalacion: system.NumeroInstalacion,
-        TipoUsoPosibleSoloVerifactu: system.TipoUsoPosibleSoloVerifactu,
-        TipoUsoPosibleMultiOT: system.TipoUsoPosibleMultiOT,
-        IndicadorMultiplesOT: system.IndicadorMultiplesOT,
-      },
-      RefExterna: record.RefExterna,
-      DatosAdicionalesRespuesta: {
-        MostrarNombreRazonEmisor: "S",
-        MostrarSistemaInformatico: "S",
-      },
+  const expanded = await client.consultar(consultaCabecera, {
+    Ejercicio: year,
+    Periodo: month,
+    NumSerieFactura: record.IDFactura.NumSerieFactura,
+    RangoFechaExpedicion: {
+      Desde: record.IDFactura.FechaExpedicionFactura,
+      Hasta: record.IDFactura.FechaExpedicionFactura,
     },
-  );
+    SistemaInformatico: {
+      NombreRazon: system.NombreRazon,
+      NIF: system.NIF,
+      IdSistemaInformatico: system.IdSistemaInformatico,
+      NombreSistemaInformatico: system.NombreSistemaInformatico,
+      Version: system.Version,
+      NumeroInstalacion: system.NumeroInstalacion,
+      TipoUsoPosibleSoloVerifactu: system.TipoUsoPosibleSoloVerifactu,
+      TipoUsoPosibleMultiOT: system.TipoUsoPosibleMultiOT,
+      IndicadorMultiplesOT: system.IndicadorMultiplesOT,
+    },
+    RefExterna: record.RefExterna,
+    DatosAdicionalesRespuesta: {
+      MostrarNombreRazonEmisor: "S",
+      MostrarSistemaInformatico: "S",
+    },
+  });
   assertConsultation(expanded);
   assertExpandedStoredRecord(expanded, record);
 
@@ -377,7 +387,7 @@ async function main() {
     throw new Error("AEAT recipient consulta did not return the expected issuer name");
   }
 
-  const afterCursor = await client.consultar(cabecera, {
+  const afterCursor = await client.consultar(consultaCabecera, {
     Ejercicio: year,
     Periodo: month,
     NumSerieFactura: record.IDFactura.NumSerieFactura,
@@ -392,7 +402,7 @@ async function main() {
   assertValid(cancellation);
   const cancelled = await client.submit(cabecera, [{ RegistroAnulacion: cancellation }]);
   assertSubmission(cancelled, cancellation, "anulación");
-  const afterCancellation = await client.consultar(cabecera, {
+  const afterCancellation = await client.consultar(consultaCabecera, {
     Ejercicio: year,
     Periodo: month,
     NumSerieFactura: record.IDFactura.NumSerieFactura,
