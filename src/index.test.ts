@@ -22,7 +22,7 @@ import type { Cabecera, SistemaInformatico } from "./index.js";
 describe("package public surface (./index.js)", () => {
   const sistema: SistemaInformatico = {
     NombreRazon: "Example SL",
-    NIF: "B12345678",
+    NIF: "B12345674",
     NombreSistemaInformatico: "Example POS",
     IdSistemaInformatico: "01",
     Version: "1.0",
@@ -59,7 +59,7 @@ describe("package public surface (./index.js)", () => {
     expect(validate(record)).toEqual([]);
 
     const cabecera: Cabecera = {
-      ObligadoEmision: { NombreRazon: sistema.NombreRazon, NIF: "B12345678" },
+      ObligadoEmision: { NombreRazon: sistema.NombreRazon, NIF: "B12345674" },
     };
     const xml = serializeEnvio(cabecera, [{ RegistroAlta: record }]);
     expect(xml).toContain("<sf:RegistroAlta>");
@@ -86,7 +86,7 @@ describe("package public surface (./index.js)", () => {
 
   it("serialises and parses a consulta via the package root", () => {
     const cabecera: Cabecera = {
-      ObligadoEmision: { NombreRazon: sistema.NombreRazon, NIF: "B12345678" },
+      ObligadoEmision: { NombreRazon: sistema.NombreRazon, NIF: "B12345674" },
     };
     const filtro = { Ejercicio: "2024", Periodo: "01" };
     const xml = serializeConsulta(cabecera, filtro);

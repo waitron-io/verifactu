@@ -6,6 +6,8 @@ chaining, validation, QR payloads, SOAP submission and consulta.
 Read the [English documentation](https://waitron-io.github.io/verifactu/en/) or
 [Spanish documentation](https://waitron-io.github.io/verifactu/es/) for a complete submission
 walkthrough and API reference.
+For a shorter stateless build and submit flow, see the
+[facade guide](https://waitron-io.github.io/verifactu/en/guides/facade/).
 
 > **This library is a tool for building SIFs. It is not itself a SIF.**
 > A _sistema informático de facturación_ is a deployed system, and its obligations —
@@ -35,7 +37,7 @@ import {
 
 const sistema: SistemaInformatico = {
   NombreRazon: "Example SL",
-  NIF: "B12345678",
+  NIF: "B12345674",
   NombreSistemaInformatico: "Example POS",
   IdSistemaInformatico: "01",
   Version: "1.0",
@@ -55,13 +57,13 @@ const record = buildAltaRecord({
   Desglose: [
     {
       CalificacionOperacion: "S1",
-      BaseImponibleOimporteNoSujeto: 10,
-      CuotaRepercutida: 2.1,
-      TipoImpositivo: 21,
+      BaseImponibleOimporteNoSujeto: "10",
+      CuotaRepercutida: "2.1",
+      TipoImpositivo: "21",
     },
   ],
-  CuotaTotal: 2.1,
-  ImporteTotal: 12.1,
+  CuotaTotal: "2.1",
+  ImporteTotal: "12.1",
   Encadenamiento: { PrimerRegistro: "S" },
   SistemaInformatico: sistema,
   generadoEn: new Date(),
@@ -97,18 +99,18 @@ const rectificativa = buildAltaRecord({
       FechaExpedicionFactura: new Date("2024-01-01"),
     },
   ],
-  ImporteRectificacion: { BaseRectificada: 10, CuotaRectificada: 2.1 },
+  ImporteRectificacion: { BaseRectificada: "10", CuotaRectificada: "2.1" },
   DescripcionOperacion: "Rectificación de T01/000123",
   Desglose: [
     {
       CalificacionOperacion: "S1",
-      BaseImponibleOimporteNoSujeto: 10,
-      CuotaRepercutida: 2.1,
-      TipoImpositivo: 21,
+      BaseImponibleOimporteNoSujeto: "10",
+      CuotaRepercutida: "2.1",
+      TipoImpositivo: "21",
     },
   ],
-  CuotaTotal: 2.1,
-  ImporteTotal: 12.1,
+  CuotaTotal: "2.1",
+  ImporteTotal: "12.1",
   Encadenamiento: { PrimerRegistro: "S" },
   SistemaInformatico: sistema,
   generadoEn: new Date(),
@@ -126,7 +128,7 @@ import { createClient, SOAP_ENDPOINTS } from "@waitron/verifactu";
 const client = createClient({ endpoint: SOAP_ENDPOINTS.production, fetch });
 
 const respuesta = await client.submit(
-  { ObligadoEmision: { NombreRazon: sistema.NombreRazon, NIF: "B12345678" } },
+  { ObligadoEmision: { NombreRazon: sistema.NombreRazon, NIF: "B12345674" } },
   [{ RegistroAlta: record }],
 );
 ```

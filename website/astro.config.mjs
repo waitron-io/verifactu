@@ -32,7 +32,7 @@ export default defineConfig({
         // English in both locales (it comes from the code's English identifiers); the guides
         // are what get translated.
         starlightTypeDoc({
-          entryPoints: ["../src/index.ts", "../src/testing/fake-aeat.ts"],
+          entryPoints: ["../src/index.ts", "../src/facade.ts", "../src/testing/fake-aeat.ts"],
           tsconfig: "../tsconfig.json",
           output: "api",
           sidebar: { label: "API reference", collapsed: true },
@@ -57,6 +57,7 @@ export default defineConfig({
           ...t("Guides", "Guías"),
           items: [
             { ...t("Build an alta record", "Crear un registro de alta"), slug: "guides/alta-record" },
+            { ...t("Build and submit with fewer steps", "Crear y enviar con menos pasos"), slug: "guides/facade" },
             { ...t("The huella hash chain", "La cadena de huellas"), slug: "guides/huella-chain" },
             { ...t("Validation", "Validación"), slug: "guides/validation" },
             { ...t("QR payloads and images", "Códigos QR"), slug: "guides/qr" },
@@ -72,6 +73,7 @@ export default defineConfig({
             // shared English reference outside both locale trees.
             { ...t("Overview", "Índice"), link: "../api/readme/" },
             { ...t("Public API", "API pública"), link: "../api/index/readme/" },
+            { ...t("Facade API", "API de la fachada"), link: "../api/facade/readme/" },
             { ...t("Testing API", "API de pruebas"), link: "../api/testing/fake-aeat/readme/" },
           ],
         },

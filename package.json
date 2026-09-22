@@ -22,6 +22,10 @@
     "./testing": {
       "types": "./dist/testing/fake-aeat.d.ts",
       "default": "./dist/testing/fake-aeat.js"
+    },
+    "./facade": {
+      "types": "./dist/facade.d.ts",
+      "default": "./dist/facade.js"
     }
   },
   "files": [
