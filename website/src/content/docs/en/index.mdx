@@ -1,0 +1,64 @@
+---
+title: Veri*Factu records for TypeScript
+description: Build, chain, validate, and send invoicing records to AEAT.
+template: splash
+hero:
+  tagline: Build the records your invoicing system sends to Spain's tax agency.
+  actions:
+    - text: Get started
+      link: /verifactu/en/start/getting-started/
+      icon: right-arrow
+    - text: Send records to AEAT
+      link: /verifactu/en/guides/submit/
+      variant: minimal
+---
+
+`@waitron/verifactu` builds alta and cancellation records, calculates their huella hashes, checks
+them, prepares QR payloads, and sends SOAP requests. You own invoice numbering, durable storage,
+chain order, and the client certificate.
+
+```sh
+npm install @waitron/verifactu
+```
+
+```ts
+import { buildAltaRecord, validate, type SistemaInformatico } from "@waitron/verifactu";
+
+const sistema: SistemaInformatico = {
+  NombreRazon: "Example SL",
+  NIF: "89890001K",
+  NombreSistemaInformatico: "Example POS",
+  IdSistemaInformatico: "01",
+  Version: "1.0",
+  NumeroInstalacion: "001",
+  TipoUsoPosibleSoloVerifactu: "S",
+  TipoUsoPosibleMultiOT: "N",
+  IndicadorMultiplesOT: "N",
+};
+
+const record = buildAltaRecord({
+  IDEmisorFactura: "89890001K",
+  NumSerieFactura: "T01/000123",
+  FechaExpedicionFactura: new Date("2026-07-20T12:00:00Z"),
+  NombreRazonEmisor: "Example SL",
+  TipoFactura: "F2",
+  DescripcionOperacion: "Coffee and lunch",
+  Desglose: [{ CalificacionOperacion: "S1", TipoImpositivo: "21", BaseImponibleOimporteNoSujeto: "10.00", CuotaRepercutida: "2.10" }],
+  CuotaTotal: "2.10",
+  ImporteTotal: "12.10",
+  Encadenamiento: { PrimerRegistro: "S" },
+  SistemaInformatico: sistema,
+  generadoEn: new Date("2026-07-20T12:00:00Z"),
+  offsetMinutes: 120,
+});
+
+if (validate(record).some((issue) => issue.severity === "error")) {
+  throw new Error("Record failed validation");
+}
+```
+
+Use your own system identity, then follow [Getting started](/verifactu/en/start/getting-started/)
+or the complete [sale-to-response walkthrough](/verifactu/en/guides/submit/).
+
+This library is **a tool for building a SIF, not a SIF itself**. A deployed invoicing system must
+meet its own legal obligations. [Understand the boundary](/verifactu/en/start/not-a-sif/).

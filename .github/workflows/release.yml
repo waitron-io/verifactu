@@ -4,7 +4,7 @@ on:
     tags: ["v*"]
 permissions:
   contents: read
-  id-token: write # OIDC token for npm Trusted Publishing (generates provenance automatically)
+  id-token: write # npm uses OIDC for Trusted Publishing and the explicit provenance flag below.
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -18,4 +18,4 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: node scripts/pack-smoke.mjs
-      - run: npm publish --access public
+      - run: npm publish --access public --provenance

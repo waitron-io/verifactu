@@ -125,12 +125,13 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
       const existing = store.get(key);
       const forced = rejections.get(key);
       const future = fechaToDate(fecha).getTime() > serverNow.getTime();
-      if (existing) {
-        // A resubmit of an identity AEAT already holds a record for. The outer EstadoRegistro
-        // reads Incorrecto (3000 is an Incorrecto line at the envío level) but RegistroDuplicado
-        // reports the ALREADY-STORED state — resolveEstadoEfectivo (parse-suministro.ts) reads
-        // that inner state as authoritative, not the outer Incorrecto. The store is left
-        // untouched: a resubmit never overwrites what AEAT already holds.
+      if (
+        existing &&
+        !(tipo === "anulacion" && existing.tipo === "alta" && existing.estado !== "Anulada")
+      ) {
+        // Anulación of a live alta changes its state; all other resubmissions leave the stored
+        // record untouched. The outer Incorrecto line carries the stored state in
+        // RegistroDuplicado; resolveEstadoEfectivo reads that inner state.
         anyRejected = true;
         const detail = noDuplicadoDetail.has(key) ? undefined : existing.estado;
         lineas.push(duplicadoLineaXml(idf, detail, ref));
@@ -139,26 +140,31 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
       if (forced) {
         anyRejected = true;
         lineas.push(lineaXml(idf, "Incorrecto", forced.code, forced.message, ref));
-      } else if (future) {
-        // 2004 is non-rejecting: the record is still stored and the line reads AceptadoConErrores.
-        store.set(key, { key, huella, estado: "AceptadaConErrores", tipo, refExterna: ref });
-        lineas.push(
-          lineaXml(
-            idf,
-            "AceptadoConErrores",
-            2004,
-            "Fecha de expedición posterior a la fecha del sistema",
-            ref,
-          ),
-        );
       } else {
-        // A clean alta lands the record; a clean anulación retires the SAME key instead — the two
-        // share this branch because both were "successfully processed", but they leave the key in
-        // a different final state (Correcta vs Anulada), matching EstadoRegistroDuplicado's
-        // vocabulary that Task 3's consulta path will read back.
-        const estado = tipo === "anulacion" ? "Anulada" : "Correcta";
-        store.set(key, { key, huella, estado, tipo, refExterna: ref });
-        lineas.push(lineaXml(idf, "Correcto", undefined, undefined, ref));
+        const estado =
+          tipo === "anulacion" ? "Anulada" : future ? "AceptadaConErrores" : "Correcta";
+        // AEAT retains the original alta when an anulación adds a separate record. This one-row
+        // fake updates status while retaining the alta's hash and external reference for consulta.
+        store.set(
+          key,
+          existing && tipo === "anulacion"
+            ? { ...existing, estado }
+            : { key, huella, estado, tipo, refExterna: ref },
+        );
+        if (future) {
+          // 2004 is non-rejecting: the record is stored and the line reads AceptadoConErrores.
+          lineas.push(
+            lineaXml(
+              idf,
+              "AceptadoConErrores",
+              2004,
+              "Fecha de expedición posterior a la fecha del sistema",
+              ref,
+            ),
+          );
+        } else {
+          lineas.push(lineaXml(idf, "Correcto", undefined, undefined, ref));
+        }
       }
     }
     // Hands back the CURRENT wait time (what this response is telling the caller to honour before
