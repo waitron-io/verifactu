@@ -74,7 +74,7 @@ export function assertSubmission(result, record, operation = "alta") {
   }
 }
 
-export function assertStoredRecord(result, record, expectedState = "Correcta") {
+export function assertStoredRecord(result, record, expectedState = "Correcto") {
   const stored = result.registros.find(
     (entry) => entry.IDFactura.NumSerieFactura === record.IDFactura.NumSerieFactura,
   );
@@ -90,7 +90,7 @@ export function assertStoredRecord(result, record, expectedState = "Correcta") {
   return stored;
 }
 
-export function assertStoredRecordAt(stage, result, record, expectedState = "Correcta") {
+export function assertStoredRecordAt(stage, result, record, expectedState = "Correcto") {
   try {
     return assertStoredRecord(result, record, expectedState);
   } catch (error) {
@@ -467,7 +467,7 @@ async function main() {
     FechaExpedicionFactura: record.IDFactura.FechaExpedicionFactura,
   });
   assertConsultation(afterCancellation);
-  assertStoredRecordAt("final cancelled-record consulta", afterCancellation, record, "Anulada");
+  assertStoredRecordAt("final cancelled-record consulta", afterCancellation, record, "Anulado");
   process.stdout.write(
     "AEAT preproduction alta, all consulta filters, representative and recipient consultas, pagination, QR lookup, anulación, and final consulta succeeded; stored hash matches.\n",
   );

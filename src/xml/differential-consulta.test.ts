@@ -137,13 +137,13 @@ describe("differential response parsing", () => {
       <RegistroRespuestaConsultaFactuSistemaFacturacion>
         ${factura("POS/004")}<DatosRegistroFacturacion><Huella>ABC</Huella></DatosRegistroFacturacion>
         <EstadoRegistro><TimestampUltimaModificacion>2024-06-15T08:45:12+02:00</TimestampUltimaModificacion>
-          <EstadoRegistro>AceptadaConErrores</EstadoRegistro><CodigoErrorRegistro>1180</CodigoErrorRegistro>
+          <EstadoRegistro>AceptadoConErrores</EstadoRegistro><CodigoErrorRegistro>1180</CodigoErrorRegistro>
           <DescripcionErrorRegistro>Detalle</DescripcionErrorRegistro></EstadoRegistro>
       </RegistroRespuestaConsultaFactuSistemaFacturacion>
       <RegistroRespuestaConsultaFactuSistemaFacturacion>
         ${factura("POS/005")}<DatosRegistroFacturacion><Huella>DEF</Huella></DatosRegistroFacturacion>
         <EstadoRegistro><TimestampUltimaModificacion>2024-06-16T08:45:12+02:00</TimestampUltimaModificacion>
-          <EstadoRegistro>Correcta</EstadoRegistro></EstadoRegistro>
+          <EstadoRegistro>Correcto</EstadoRegistro></EstadoRegistro>
       </RegistroRespuestaConsultaFactuSistemaFacturacion>
       <ClavePaginacion>${facturaFields("POS/999")}</ClavePaginacion>
     </RespuestaConsultaFactuSistemaFacturacion>`);

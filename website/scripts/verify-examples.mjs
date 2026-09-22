@@ -115,7 +115,7 @@ const cancellation = buildAnulacionRecord({
 assert.deepEqual(validate(cancellation), []);
 const cancelled = await client.submit(cabecera, [{ RegistroAnulacion: cancellation }]);
 assert.equal(resolveEstadoEfectivo(cancelled.RespuestaLinea[0]), "accepted");
-assert.equal(fake.stored().find((item) => item.key.includes("T01/000123"))?.estado, "Anulada");
+assert.equal(fake.stored().find((item) => item.key.includes("T01/000123"))?.estado, "Anulado");
 assert.equal(dispatched, 4);
 await dispatcher.close();
 

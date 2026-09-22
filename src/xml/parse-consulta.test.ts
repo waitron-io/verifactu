@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { parseRespuestaConsulta } from "./parse-consulta.js";
+import { describe, expect, expectTypeOf, it } from "vitest";
+import { parseRespuestaConsulta, type EstadoRegistroConsulta } from "./parse-consulta.js";
 
 const RESPONSE = `<?xml version="1.0" encoding="UTF-8"?>
   <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
@@ -19,7 +19,7 @@ const RESPONSE = `<?xml version="1.0" encoding="UTF-8"?>
           </DatosRegistroFacturacion>
           <EstadoRegistro>
             <TimestampUltimaModificacion>2024-06-15T08:45:12+02:00</TimestampUltimaModificacion>
-            <EstadoRegistro>Correcta</EstadoRegistro>
+            <EstadoRegistro>Correcto</EstadoRegistro>
           </EstadoRegistro>
         </RegistroRespuestaConsultaFactuSistemaFacturacion>
       </RespuestaConsultaFactuSistemaFacturacion>
@@ -42,7 +42,7 @@ const MULTI_RECORD = `<?xml version="1.0" encoding="UTF-8"?>
           <DatosRegistroFacturacion><Huella>AAA</Huella></DatosRegistroFacturacion>
           <EstadoRegistro>
             <TimestampUltimaModificacion>2024-06-15T08:45:12+02:00</TimestampUltimaModificacion>
-            <EstadoRegistro>Correcta</EstadoRegistro>
+            <EstadoRegistro>Correcto</EstadoRegistro>
           </EstadoRegistro>
         </RegistroRespuestaConsultaFactuSistemaFacturacion>
         <RegistroRespuestaConsultaFactuSistemaFacturacion>
@@ -52,7 +52,7 @@ const MULTI_RECORD = `<?xml version="1.0" encoding="UTF-8"?>
           <DatosRegistroFacturacion><Huella>BBB</Huella></DatosRegistroFacturacion>
           <EstadoRegistro>
             <TimestampUltimaModificacion>2024-06-16T09:10:05+02:00</TimestampUltimaModificacion>
-            <EstadoRegistro>AceptadaConErrores</EstadoRegistro>
+            <EstadoRegistro>AceptadoConErrores</EstadoRegistro>
           </EstadoRegistro>
         </RegistroRespuestaConsultaFactuSistemaFacturacion>
       </RespuestaConsultaFactuSistemaFacturacion>
@@ -80,14 +80,14 @@ const PAGINATED = `<?xml version="1.0" encoding="UTF-8"?>
           <DatosRegistroFacturacion><Huella>AAA</Huella></DatosRegistroFacturacion>
           <EstadoRegistro>
             <TimestampUltimaModificacion>2024-06-15T08:45:12+02:00</TimestampUltimaModificacion>
-            <EstadoRegistro>Correcta</EstadoRegistro>
+            <EstadoRegistro>Correcto</EstadoRegistro>
           </EstadoRegistro>
         </RegistroRespuestaConsultaFactuSistemaFacturacion>
       </RespuestaConsultaFactuSistemaFacturacion>
     </soapenv:Body>
   </soapenv:Envelope>`;
 
-// A record can be reported AceptadaConErrores with the error detail nested inside the same
+// A record can be reported AceptadoConErrores with the error detail nested inside the same
 // EstadoRegistro wrapper as the status leaf, not at the record root.
 const WITH_ERROR_DETAIL = `<?xml version="1.0" encoding="UTF-8"?>
   <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
@@ -102,7 +102,7 @@ const WITH_ERROR_DETAIL = `<?xml version="1.0" encoding="UTF-8"?>
           <DatosRegistroFacturacion><Huella>AAA</Huella></DatosRegistroFacturacion>
           <EstadoRegistro>
             <TimestampUltimaModificacion>2024-06-17T11:30:00+02:00</TimestampUltimaModificacion>
-            <EstadoRegistro>AceptadaConErrores</EstadoRegistro>
+            <EstadoRegistro>AceptadoConErrores</EstadoRegistro>
             <CodigoErrorRegistro>1180</CodigoErrorRegistro>
             <DescripcionErrorRegistro>Error de bloque.</DescripcionErrorRegistro>
           </EstadoRegistro>
@@ -117,6 +117,12 @@ const WITH_ERROR_DETAIL = `<?xml version="1.0" encoding="UTF-8"?>
   </soapenv:Envelope>`;
 
 describe("parseRespuestaConsulta", () => {
+  it("uses the official masculine consulta-state values", () => {
+    expectTypeOf<EstadoRegistroConsulta>().toEqualTypeOf<
+      "Correcto" | "AceptadoConErrores" | "Anulado"
+    >();
+  });
+
   it("reports whether the query returned data", () => {
     expect(parseRespuestaConsulta(RESPONSE).ResultadoConsulta).toBe("ConDatos");
   });
@@ -171,14 +177,24 @@ describe("parseRespuestaConsulta", () => {
     expect(registro?.TimestampUltimaModificacion).toBe("2024-06-15T08:45:12+02:00");
   });
 
-  it("uses the consulta enum, which has Anulada and no Incorrecta", () => {
+  it("uses the consulta enum, which has Anulado and no Incorrecta", () => {
     const [registro] = parseRespuestaConsulta(RESPONSE).registros;
-    expect(registro?.EstadoRegistro).toBe("Correcta");
+    expect(registro?.EstadoRegistro).toBe("Correcto");
     const annulled = RESPONSE.replace(
-      "<EstadoRegistro>Correcta</EstadoRegistro>",
-      "<EstadoRegistro>Anulada</EstadoRegistro>",
+      "<EstadoRegistro>Correcto</EstadoRegistro>",
+      "<EstadoRegistro>Anulado</EstadoRegistro>",
     );
-    expect(parseRespuestaConsulta(annulled).registros[0]?.EstadoRegistro).toBe("Anulada");
+    expect(parseRespuestaConsulta(annulled).registros[0]?.EstadoRegistro).toBe("Anulado");
+  });
+
+  it("rejects a response state outside the official consulta enum", () => {
+    const invalid = RESPONSE.replace(
+      "<EstadoRegistro>Correcto</EstadoRegistro>",
+      "<EstadoRegistro>Correcta</EstadoRegistro>",
+    );
+    expect(() => parseRespuestaConsulta(invalid)).toThrow(
+      "Unexpected consulta record state: Correcta",
+    );
   });
 
   it("exposes no CSV field at all", () => {
@@ -218,7 +234,7 @@ describe("parseRespuestaConsulta", () => {
     const registros = parseRespuestaConsulta(MULTI_RECORD).registros;
     expect(registros).toHaveLength(2);
     expect(registros.map((r) => r.IDFactura.NumSerieFactura)).toEqual(["1/G33", "2/G33"]);
-    expect(registros.map((r) => r.EstadoRegistro)).toEqual(["Correcta", "AceptadaConErrores"]);
+    expect(registros.map((r) => r.EstadoRegistro)).toEqual(["Correcto", "AceptadoConErrores"]);
   });
 
   it("echoes ClavePaginacion verbatim when IndicadorPaginacion is S, for the next page", () => {
