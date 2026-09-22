@@ -32,8 +32,9 @@ personal or representative certificate. The checks cover all consulta filters, i
 headers, both expanded-response options, a pagination cursor, and the JSON QR lookup. The recipient
 header is an authorised probe for the certificate holder and may return `SinDatos`; querying the
 submitted invoice as its configured customer requires that customer's certificate or an AEAT
-authorisation for it. The workflow then waits for AEAT's next-submission interval, submits a chained anulación, and confirms the final consulta
-reports the invoice as `Anulado` with the original stored hash. You can also run its `consult` mode
+authorisation for it. The workflow then waits for AEAT's next-submission interval, submits a chained
+anulación, and confirms the final consulta reports the invoice as `Anulado` with the cancellation
+record's hash. You can also run its `consult` mode
 manually to check the certificate, connection and response parser without submitting a record. The
 workflow never uses a production or seal-certificate endpoint. It does not call `RequerimientoSOAP`,
 which belongs to non-VERI*FACTU submissions made in response to an AEAT requirement.

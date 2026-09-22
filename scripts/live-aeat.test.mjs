@@ -25,6 +25,7 @@ import {
   withLiveStage,
 } from "./live-aeat.mjs";
 import { validate } from "../dist/index.js";
+import { createFakeAeat } from "../dist/testing/fake-aeat.js";
 
 const record = {
   IDFactura: { NumSerieFactura: "CI/123" },
@@ -240,6 +241,52 @@ test("the live anulación chains to the alta and is locally valid", () => {
       "anulación",
     ),
   );
+  assert.doesNotThrow(() =>
+    assertStoredRecord(
+      {
+        registros: [
+          {
+            IDFactura: alta.IDFactura,
+            EstadoRegistro: "Anulado",
+            DatosRegistroFacturacion: { Huella: cancellation.Huella },
+          },
+        ],
+      },
+      cancellation,
+      "Anulado",
+    ),
+  );
+});
+
+test("the fake AEAT's cancelled consulta satisfies the live cancellation assertion", async () => {
+  const issuedAt = new Date("2026-09-22T10:00:00Z");
+  const alta = buildTestRecord({
+    nif: "89890001K",
+    name: "Waitron SL",
+    systemNif: "89890001K",
+    systemName: "Waitron SL",
+    recipientNif: "11111111H",
+    recipientName: "Cliente Uno",
+    now: issuedAt,
+    runId: "fake-cancellation",
+  });
+  const cancellation = buildTestCancellation({
+    record: alta,
+    issuedAt,
+    now: new Date("2026-09-22T10:01:00Z"),
+  });
+  const cabecera = submissionHeader({ NombreRazon: "Waitron SL", NIF: "89890001K" });
+  const aeat = createFakeAeat({ serverNow: new Date("2026-09-23T00:00:00Z") });
+  await aeat.client().submit(cabecera, [{ RegistroAlta: alta }]);
+  await aeat.client().submit(cabecera, [{ RegistroAnulacion: cancellation }]);
+  const consulted = await aeat.client().consultar(issuerConsultaHeader(cabecera.ObligadoEmision), {
+    Ejercicio: "2026",
+    Periodo: "09",
+    NumSerieFactura: alta.IDFactura.NumSerieFactura,
+  });
+
+  assert.doesNotThrow(() => assertStoredRecord(consulted, cancellation, "Anulado"));
+  assert.throws(() => assertStoredRecord(consulted, alta, "Anulado"), /stored hash differs/);
 });
 
 test("the pagination check rejects a repeated cursor record", () => {
@@ -342,7 +389,7 @@ test("a failed live consulta identifies its stage and response shape", () => {
         { ResultadoConsulta: "SinDatos", IndicadorPaginacion: "N", registros: [] },
         record,
       ),
-    /minimal issuer consulta: AEAT did not return the submitted test alta \(SinDatos, 0 records\)/,
+    /minimal issuer consulta: AEAT did not return the submitted test record \(SinDatos, 0 records\)/,
   );
   assert.throws(
     () =>
