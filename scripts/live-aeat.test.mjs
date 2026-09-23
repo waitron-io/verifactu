@@ -205,7 +205,64 @@ test("the live alta is locally valid before a request is sent", () => {
   );
 });
 
-for (const excludedRegime of ["03", "05", "06", "08", "09"]) {
+const excludedRegimeLines = [
+  [
+    "03",
+    {
+      Impuesto: "01",
+      ClaveRegimen: "03",
+      CalificacionOperacion: "S1",
+      TipoImpositivo: "21.00",
+      BaseImponibleOimporteNoSujeto: "100.00",
+      CuotaRepercutida: "21.00",
+    },
+  ],
+  [
+    "05",
+    {
+      Impuesto: "01",
+      ClaveRegimen: "05",
+      CalificacionOperacion: "S1",
+      TipoImpositivo: "21.00",
+      BaseImponibleOimporteNoSujeto: "100.00",
+      CuotaRepercutida: "21.00",
+    },
+  ],
+  [
+    "06",
+    {
+      Impuesto: "01",
+      ClaveRegimen: "06",
+      CalificacionOperacion: "S1",
+      TipoImpositivo: "21.00",
+      BaseImponibleOimporteNoSujeto: "100.00",
+      BaseImponibleACoste: "100.00",
+      CuotaRepercutida: "21.00",
+    },
+  ],
+  [
+    "08",
+    {
+      Impuesto: "01",
+      ClaveRegimen: "08",
+      CalificacionOperacion: "N2",
+      BaseImponibleOimporteNoSujeto: "100.00",
+    },
+  ],
+  [
+    "09",
+    {
+      Impuesto: "01",
+      ClaveRegimen: "09",
+      CalificacionOperacion: "S1",
+      TipoImpositivo: "21.00",
+      BaseImponibleOimporteNoSujeto: "100.00",
+      CuotaRepercutida: "21.00",
+    },
+  ],
+];
+
+for (const [excludedRegime, excludedLine] of excludedRegimeLines) {
   test(`the mixed-regime probe selects excluded regime ${excludedRegime}`, () => {
     const record = buildMixedRegimeTestRecord({
       nif: "89890001K",
@@ -228,14 +285,7 @@ for (const excludedRegime of ["03", "05", "06", "08", "09"]) {
         BaseImponibleOimporteNoSujeto: "1.00",
         CuotaRepercutida: "0.21",
       },
-      {
-        Impuesto: "01",
-        ClaveRegimen: excludedRegime,
-        CalificacionOperacion: "S1",
-        TipoImpositivo: "21.00",
-        BaseImponibleOimporteNoSujeto: "100.00",
-        CuotaRepercutida: "21.00",
-      },
+      excludedLine,
     ]);
     assert.equal(record.CuotaTotal, "999.00");
     assert.equal(record.ImporteTotal, "999.00");
