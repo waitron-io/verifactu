@@ -304,8 +304,8 @@ export function buildMixedRegimeTestRecord(options) {
         CuotaRepercutida: "21.00",
       },
     ],
-    cuotaTotal: "21.21",
-    importeTotal: "1.21",
+    cuotaTotal: "999.00",
+    importeTotal: "999.00",
   });
 }
 
@@ -491,7 +491,7 @@ async function main() {
     });
     const evidence = await submitMixedRegimeProbe(client, cabecera, record);
     process.stdout.write(
-      "Mixed-regime probe: CuotaTotal matches all lines; ImporteTotal matches only regime 01.\n",
+      "Mixed-regime probe: CuotaTotal and ImporteTotal differ by more than 10.00 under all-line and regime-01-only scopes.\n",
     );
     process.stdout.write(`AEAT mixed-regime response: ${JSON.stringify(evidence)}\n`);
     return;

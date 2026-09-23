@@ -331,13 +331,13 @@ describe("validate", () => {
     },
   );
 
-  it("skips both total cross-checks when one of several tax lines has an excluded regime", () => {
+  it("keeps both total mismatch warnings when one of several tax lines has an excluded regime", () => {
     const record = valid();
     record.Desglose.push({ ...record.Desglose[0]!, ClaveRegimen: "03" });
     record.CuotaTotal = "999.00";
     record.ImporteTotal = "999.00";
-    expect(codes(record)).not.toContain("CUOTA_TOTAL_MISMATCH");
-    expect(codes(record)).not.toContain("IMPORTE_TOTAL_MISMATCH");
+    expect(codes(record)).toContain("CUOTA_TOTAL_MISMATCH");
+    expect(codes(record)).toContain("IMPORTE_TOTAL_MISMATCH");
   });
 
   it("marks total mismatches as warnings, not errors", () => {

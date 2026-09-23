@@ -205,7 +205,7 @@ test("the live alta is locally valid before a request is sent", () => {
   );
 });
 
-test("the mixed-regime probe is locally valid and distinguishes total cross-check interpretations", () => {
+test("the mixed-regime probe makes both totals differ under every possible line scope", () => {
   const record = buildMixedRegimeTestRecord({
     nif: "89890001K",
     name: "Waitron SL",
@@ -235,10 +235,13 @@ test("the mixed-regime probe is locally valid and distinguishes total cross-chec
       CuotaRepercutida: "21.00",
     },
   ]);
-  assert.equal(record.CuotaTotal, "21.21");
-  assert.equal(record.ImporteTotal, "1.21");
+  assert.equal(record.CuotaTotal, "999.00");
+  assert.equal(record.ImporteTotal, "999.00");
   assert.equal(record.RefExterna, "CI-MIXED-12345");
-  assert.deepEqual(validate(record), []);
+  assert.deepEqual(
+    validate(record).filter(({ severity }) => severity === "error"),
+    [],
+  );
 });
 
 test("the mixed-regime probe preserves AEAT's exact response as evidence", () => {
