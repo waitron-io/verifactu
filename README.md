@@ -89,6 +89,13 @@ you can report the exact field without parsing the message.
 submission on validation errors, review this new issue when updating from an earlier version.
 For K/L/M IDs with letters in their seven-character body, the check covers the shape only.
 
+`validate` also enforces AEAT's operation-date window, the invoice-family restrictions on
+`FacturaSimplificadaArt7273` and `FacturaSinIdentifDestinatarioArt61d`, and the required `Macrodato`
+field at an absolute total of €100,000,000. Recipient-issued and third-party-issued invoices can be
+represented with `EmitidaPorTerceroODestinatario` and `Tercero`; the builder, XML serializer, and
+request parser preserve those fields, while validation checks their required combinations and local
+NIF or EU VAT-number structure. AEAT remains responsible for confirming registration.
+
 A rectificativa (`R1`-`R5`) is built the same way, with `TipoRectificativa` set to say whether it
 substitutes (`S`) or adjusts (`I`) the original invoice. `FacturasRectificadas` may identify the
 invoice(s) being rectified only on `R1`-`R5`. `ImporteRectificacion` is required for, and allowed

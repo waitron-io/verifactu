@@ -17,6 +17,12 @@ const fullInvoice = buildAltaRecord({
     IDDestinatario: [{ NombreRazon: "Customer SL", NIF: "B12345674" }],
   },
 });
+
+const thirdPartyIssued = buildAltaRecord({
+  ...saleInput,
+  EmitidaPorTerceroODestinatario: "T",
+  Tercero: { NombreRazon: "Third-party issuer SL", NIF: "B12345674" },
+});
 ```
 
 Here `saleInput` is the input from the earlier example, including your chain link. Include
@@ -31,6 +37,13 @@ with `F3`. `ImporteRectificacion` is required for, and allowed only with, a subs
 or `"X"` also requires `Subsanacion: "S"`. A present reference group must contain at least one
 invoice. Local validation checks each referenced Spanish NIF, the invoice number's 1–60-character
 length, and its date; only AEAT can confirm that the NIF belongs to a registered taxpayer.
+
+When the recipient issues the invoice, set `EmitidaPorTerceroODestinatario: "D"` and include that
+recipient in `Destinatarios`. When another party issues it, use `"T"` and provide `Tercero` with
+either a Spanish `NIF` or an `IDOtro` identity, as in `thirdPartyIssued` above.
+
+The third party's Spanish NIF must differ from the invoice issuer NIF. `buildAltaRecord`,
+`serializeEnvio`, and `parseEnvio` preserve these fields at their official XSD position.
 
 `buildAltaRecord` returns a complete record with formatted date and money strings and a `Huella`.
 The hash uses the exact literals that XML serialization sends. Keep that returned record intact and

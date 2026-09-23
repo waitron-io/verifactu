@@ -1124,6 +1124,48 @@ describe("serializeEnvio — Destinatarios", () => {
     );
   });
 
+  it("emits the third-party issuance fields at their XSD ordinal before Destinatarios", () => {
+    type ThirdPartyRecord = ReturnType<typeof buildAltaRecord> & {
+      EmitidaPorTerceroODestinatario: "T";
+      Tercero: {
+        NombreRazon: string;
+        IDOtro: { CodigoPais: string; IDType: string; ID: string };
+      };
+    };
+    const thirdPartyRecord = Object.assign(
+      buildAltaRecord({
+        ...ALTA_INPUT,
+        Macrodato: "N",
+        TipoFactura: "F3",
+        Destinatarios: {
+          IDDestinatario: [{ NombreRazon: "Cliente Uno SL", NIF: "B99999999" }],
+        },
+      }),
+      {
+        EmitidaPorTerceroODestinatario: "T" as const,
+        Tercero: {
+          NombreRazon: "Foreign issuer",
+          IDOtro: { CodigoPais: "FR", IDType: "04", ID: "X1234" },
+        },
+      },
+    ) as ThirdPartyRecord;
+
+    const xml = serializeEnvio(CABECERA, [{ RegistroAlta: thirdPartyRecord }]);
+    expect(xml).toContain(
+      `<sf:Macrodato>N</sf:Macrodato>` +
+        `<sf:EmitidaPorTerceroODestinatario>T</sf:EmitidaPorTerceroODestinatario>` +
+        `<sf:Tercero>` +
+        `<sf:NombreRazon>Foreign issuer</sf:NombreRazon>` +
+        `<sf:IDOtro>` +
+        `<sf:CodigoPais>FR</sf:CodigoPais>` +
+        `<sf:IDType>04</sf:IDType>` +
+        `<sf:ID>X1234</sf:ID>` +
+        `</sf:IDOtro>` +
+        `</sf:Tercero>` +
+        `<sf:Destinatarios>`,
+    );
+  });
+
   it("omits CodigoPais from IDOtro when it is not supplied", () => {
     const input: AltaInput = {
       ...ALTA_INPUT,

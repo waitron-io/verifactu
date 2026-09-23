@@ -41,9 +41,26 @@ confirma si un NIF está censado.
 
 En un alta, `FechaExpedicionFactura` no puede ser anterior al 28 de octubre de 2024 ni posterior a
 la fecha actual. Tampoco puede preceder a `FechaOperacion` en una línea de IVA o IGIC, salvo que
-esa línea use el régimen `14` o `15`. La comprobación de la fecha actual usa el desfase numérico de
-`FechaHoraHusoGenRegistro`, no la zona horaria del ordenador. En pruebas o aplicaciones con un
-reloj controlado puedes pasar `{ now }` como segundo argumento de `validate` o `assertValid`.
+esa línea use el régimen `14` o `15`. `FechaOperacion` no puede tener más de 20 años ni ser
+posterior al final del año natural siguiente. Una fecha de operación futura en IVA o IGIC también
+se limita a los regímenes `14` y `15`. En un registro mixto, cada línea aplicable de IVA o IGIC debe
+cumplir esa excepción. Las comprobaciones de fecha actual usan el desfase numérico de
+`FechaHoraHusoGenRegistro`, no la zona horaria del ordenador. En pruebas o aplicaciones con un reloj
+controlado puedes pasar `{ now }` como segundo argumento de `validate` o `assertValid`.
+
+Los indicadores legales también se contrastan con `TipoFactura`:
+`FacturaSimplificadaArt7273: "S"` solo se permite en `F1`, `F3` y `R1`–`R4`, mientras que
+`FacturaSinIdentifDestinatarioArt61d: "S"` solo se permite en `F2` y `R5`. `Macrodato` debe estar
+presente cuando el valor absoluto de `ImporteTotal` alcance 100.000.000 €. La regla oficial exige
+el campo; como el XSD permite tanto `S` como `N`, la validación local no sustituye esa regla de
+presencia por otra sobre su valor.
+
+En una expedición por terceros, `EmitidaPorTerceroODestinatario: "T"` exige `Tercero`; `"D"` exige
+`Destinatarios`; y `Tercero` está prohibido en cualquier otro caso. El tercero debe usar exactamente
+uno de `NIF` e `IDOtro`. La validación local comprueba el formato del NIF español y que sea distinto
+del emisor de la factura, la restricción española de `IDOtro`, la prohibición de `IDType: "07"` y
+los formatos en mayúsculas de NIF-IVA publicados por la AEAT para `IDType: "02"`, incluida la
+transición fechada GB/XI. Solo la AEAT puede confirmar que un NIF o NIF-IVA bien formado está censado.
 
 Mantén `IDEmisorFactura` igual a `Cabecera.ObligadoEmision.NIF`. `serializeEnvio` rechaza el lote
 si ambos valores difieren, antes de crear el XML. La AEAT permite un conjunto más amplio de

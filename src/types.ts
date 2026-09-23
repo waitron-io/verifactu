@@ -129,9 +129,12 @@ export interface IDOtro {
  * identifier to `never` so a literal carrying BOTH NIF and IDOtro is a type error
  * too, not merely one omitting the unused branch.
  */
-export type Destinatario =
+export type PersonaFisicaJuridica =
   | { NombreRazon: string; NIF: string; IDOtro?: never }
   | { NombreRazon: string; IDOtro: IDOtro; NIF?: never };
+
+/** A recipient uses the same `sf:PersonaFisicaJuridicaType` shape as a third-party issuer. */
+export type Destinatario = PersonaFisicaJuridica;
 
 export interface RegistroAlta {
   IDVersion: "1.0";
@@ -154,12 +157,15 @@ export interface RegistroAlta {
   FacturaSimplificadaArt7273?: SiNo;
   FacturaSinIdentifDestinatarioArt61d?: SiNo;
   Macrodato?: SiNo;
+  /** Who issued the invoice when it was issued by its recipient or by a third party. */
+  EmitidaPorTerceroODestinatario?: "D" | "T";
+  /** Required exactly when EmitidaPorTerceroODestinatario is `T`. */
+  Tercero?: PersonaFisicaJuridica;
   /**
    * The recipient(s) of the operation — sf:Destinatarios in the XSD, whose
-   * ordinal is AFTER Macrodato and BEFORE Cupon (SuministroInformacion.xsd,
-   * RegistroFacturacionAltaType line 153; the two elements between Macrodato and
-   * Destinatarios — EmitidaPorTerceroODestinatario, Tercero — are optional and
-   * not modelled). Required on F1/F3 and R1-R4, forbidden on F2/R5;
+   * ordinal is after Tercero and before Cupon (SuministroInformacion.xsd,
+   * RegistroFacturacionAltaType line 153). Required on F1/F3 and R1-R4,
+   * forbidden on F2/R5;
    * see validate.ts. Not a huella input.
    */
   Destinatarios?: { IDDestinatario: Destinatario[] };
@@ -281,6 +287,10 @@ export interface AltaInput extends RecordInputBase {
   FacturaSimplificadaArt7273?: SiNo;
   FacturaSinIdentifDestinatarioArt61d?: SiNo;
   Macrodato?: SiNo;
+  /** `D` when the recipient issued the invoice, or `T` when a third party did. */
+  EmitidaPorTerceroODestinatario?: "D" | "T";
+  /** Required exactly when EmitidaPorTerceroODestinatario is `T`. */
+  Tercero?: PersonaFisicaJuridica;
   /**
    * The recipient(s). Reused verbatim in the record — a Destinatario carries no
    * dates or amounts to format, so it needs no separate input type (cf.

@@ -43,6 +43,20 @@ export type ValidationCode =
   // AEAT §3.1.3.6: ImporteRectificacion is mandatory when TipoRectificativa is "S".
   | "IMPORTE_RECTIFICACION_REQUIRED"
   | "IMPORTE_RECTIFICACION_FORBIDDEN"
+  | "FECHA_OPERACION_BEFORE_MINIMUM"
+  | "FECHA_OPERACION_AFTER_NEXT_YEAR"
+  | "FECHA_OPERACION_FUTURE"
+  | "FACTURA_SIMPLIFICADA_ART_7273_FORBIDDEN"
+  | "FACTURA_SIN_IDENTIF_DESTINATARIO_ART_61D_FORBIDDEN"
+  | "MACRODATO_REQUIRED"
+  | "TERCERO_REQUIRED"
+  | "DESTINATARIOS_REQUIRED_BY_ISSUER"
+  | "TERCERO_FORBIDDEN"
+  | "TERCERO_NIF_EQUALS_EMISOR"
+  | "TERCERO_ID_CHOICE"
+  | "TERCERO_ES_IDTYPE"
+  | "TERCERO_IDTYPE_07_FORBIDDEN"
+  | "TERCERO_VAT_ID_FORMAT"
   // AEAT requires a recipient on F1/F3 and R1-R4. The XSD leaves Destinatarios
   // optional for every TipoFactura, so this rule must be checked outside the schema.
   | "DESTINATARIOS_REQUIRED"
@@ -127,6 +141,49 @@ const TIPO_PATTERN = /^\d{1,3}\.\d{2}$/;
  */
 // eslint-disable-next-line no-control-regex -- deliberately matching control characters
 const CONTROL_CHAR_PATTERN = /[\x00-\x08\x0B\x0C\x0E-\x1F]/;
+
+/** AEAT validation note (1): uppercase NIF-IVA shapes for EU member states. */
+const EU_VAT_SUFFIX_PATTERNS: Readonly<Record<string, RegExp>> = {
+  DE: /^\d{9}$/,
+  AT: /^[A-Z0-9]{9}$/,
+  BE: /^\d{10}$/,
+  CY: /^[A-Z0-9]{9}$/,
+  CZ: /^\d{8,10}$/,
+  HR: /^\d{11}$/,
+  DK: /^\d{8}$/,
+  SK: /^\d{10}$/,
+  SI: /^\d{8}$/,
+  EE: /^\d{9}$/,
+  FI: /^\d{8}$/,
+  FR: /^[A-Z0-9]{11}$/,
+  EL: /^\d{9}$/,
+  NL: /^[A-Z0-9]{12}$/,
+  HU: /^\d{8}$/,
+  IT: /^\d{11}$/,
+  IE: /^[A-Z0-9]{8,9}$/,
+  LV: /^\d{11}$/,
+  LT: /^(?:\d{9}|\d{12})$/,
+  LU: /^\d{8}$/,
+  MT: /^\d{8}$/,
+  PL: /^\d{10}$/,
+  PT: /^\d{9}$/,
+  SE: /^\d{12}$/,
+  BG: /^\d{9,10}$/,
+  RO: /^[1-9]\d{1,9}$/,
+};
+
+function isValidEuVatId(value: string, effectiveDate: number | undefined): boolean {
+  const country = value.slice(0, 2);
+  const suffix = value.slice(2);
+  if (country === "GB" || country === "XI") {
+    if (!/^(?:[A-Z0-9]{5}|[A-Z0-9]{9}|[A-Z0-9]{12})$/.test(suffix)) return false;
+    if (effectiveDate === undefined) return false;
+    if (effectiveDate < 20210101) return country === "GB";
+    if (effectiveDate <= 20210131) return country === "GB" || country === "XI";
+    return country === "XI";
+  }
+  return EU_VAT_SUFFIX_PATTERNS[country]?.test(suffix) ?? false;
+}
 
 function isValidAmount(value: string): boolean {
   return AMOUNT_PATTERN.test(value);
@@ -305,8 +362,46 @@ export function validate(
 
   const operacionOrdinal =
     record.FechaOperacion === undefined ? undefined : fechaOrdinal(record.FechaOperacion);
+  const effectiveOperationDate =
+    record.FechaOperacion === undefined ? expedicionOrdinal : operacionOrdinal;
   if (record.FechaOperacion !== undefined && operacionOrdinal === undefined) {
     add("FECHA_FORMAT", "FechaOperacion", "Date must be DD-MM-YYYY");
+  }
+  const today = currentDateOrdinal(now, record.FechaHoraHusoGenRegistro);
+  const hasRestrictedIvaOrIgicLine = record.Desglose.some(
+    ({ Impuesto, ClaveRegimen }) =>
+      [undefined, "01", "03"].includes(Impuesto) && !["14", "15"].includes(ClaveRegimen ?? ""),
+  );
+
+  // AEAT §3.1.3.7 bounds FechaOperacion relative to the current calendar
+  // date. "The following year" is a calendar-year ceiling, so every date in
+  // current year + 1 is accepted, through 31 December.
+  if (operacionOrdinal !== undefined && today !== undefined) {
+    const currentYear = Math.floor(today / 10_000);
+    const currentMonthAndDay = today % 10_000;
+    const twentyYearsAgo = (currentYear - 20) * 10_000 + currentMonthAndDay;
+    const endOfNextYear = (currentYear + 1) * 10_000 + 1231;
+    if (operacionOrdinal < twentyYearsAgo) {
+      add(
+        "FECHA_OPERACION_BEFORE_MINIMUM",
+        "FechaOperacion",
+        "FechaOperacion must not be before the current date minus twenty years",
+      );
+    }
+    if (operacionOrdinal > endOfNextYear) {
+      add(
+        "FECHA_OPERACION_AFTER_NEXT_YEAR",
+        "FechaOperacion",
+        "FechaOperacion must not be after the calendar year following the current year",
+      );
+    }
+    if (operacionOrdinal > today && hasRestrictedIvaOrIgicLine) {
+      add(
+        "FECHA_OPERACION_FUTURE",
+        "FechaOperacion",
+        "A future FechaOperacion is allowed for IVA or IGIC only under regime 14 or 15",
+      );
+    }
   }
 
   // AEAT validation §3.1.3.1: alta issue dates start when the governing
@@ -322,7 +417,6 @@ export function validate(
         "FechaExpedicionFactura must not be before 28-10-2024",
       );
     }
-    const today = currentDateOrdinal(now, record.FechaHoraHusoGenRegistro);
     if (today !== undefined && expedicionOrdinal > today) {
       add(
         "FECHA_EXPEDICION_FUTURE",
@@ -330,14 +424,10 @@ export function validate(
         "FechaExpedicionFactura must not be after the current date",
       );
     }
-    const hasRestrictedDateOrder = record.Desglose.some(
-      ({ Impuesto, ClaveRegimen }) =>
-        [undefined, "01", "03"].includes(Impuesto) && !["14", "15"].includes(ClaveRegimen ?? ""),
-    );
     if (
       operacionOrdinal !== undefined &&
       expedicionOrdinal < operacionOrdinal &&
-      hasRestrictedDateOrder
+      hasRestrictedIvaOrIgicLine
     ) {
       add(
         "FECHA_EXPEDICION_BEFORE_OPERACION",
@@ -440,6 +530,110 @@ export function validate(
       "ImporteRectificacion",
       "ImporteRectificacion may be set only when TipoRectificativa is S (sustitución)",
     );
+  }
+
+  // AEAT §3.1.3.8–9: these two legal-status flags may carry S only for the
+  // invoice families named by the corresponding rule. N remains permitted
+  // because the publication restricts only the affirmative value.
+  if (
+    record.FacturaSimplificadaArt7273 === "S" &&
+    !["F1", "F3", "R1", "R2", "R3", "R4"].includes(record.TipoFactura)
+  ) {
+    add(
+      "FACTURA_SIMPLIFICADA_ART_7273_FORBIDDEN",
+      "FacturaSimplificadaArt7273",
+      "FacturaSimplificadaArt7273 may be S only when TipoFactura is F1, F3 or R1-R4",
+    );
+  }
+  if (
+    record.FacturaSinIdentifDestinatarioArt61d === "S" &&
+    !["F2", "R5"].includes(record.TipoFactura)
+  ) {
+    add(
+      "FACTURA_SIN_IDENTIF_DESTINATARIO_ART_61D_FORBIDDEN",
+      "FacturaSinIdentifDestinatarioArt61d",
+      "FacturaSinIdentifDestinatarioArt61d may be S only when TipoFactura is F2 or R5",
+    );
+  }
+
+  // AEAT §3.1.3.10 says the field is mandatory at an absolute invoice total
+  // of 100 million euros. Its XSD type still permits both S and N, so this is
+  // deliberately a presence check rather than a truth-value check.
+  if (
+    isValidAmount(record.ImporteTotal) &&
+    Math.abs(Number(record.ImporteTotal)) >= 100_000_000 &&
+    record.Macrodato === undefined
+  ) {
+    add(
+      "MACRODATO_REQUIRED",
+      "Macrodato",
+      "Macrodato is mandatory when the absolute ImporteTotal is at least 100000000.00",
+    );
+  }
+
+  // AEAT §3.1.3.11–12: the issuer indicator selects which identity block is
+  // mandatory. A third-party issuer uses the same XSD person shape as a
+  // recipient but has stricter business rules of its own.
+  if (record.EmitidaPorTerceroODestinatario === "T" && record.Tercero === undefined) {
+    add(
+      "TERCERO_REQUIRED",
+      "Tercero",
+      "Tercero is mandatory when EmitidaPorTerceroODestinatario is T",
+    );
+  }
+  if (record.EmitidaPorTerceroODestinatario === "D" && record.Destinatarios === undefined) {
+    add(
+      "DESTINATARIOS_REQUIRED_BY_ISSUER",
+      "Destinatarios",
+      "Destinatarios is mandatory when EmitidaPorTerceroODestinatario is D",
+    );
+  }
+  if (record.Tercero !== undefined && record.EmitidaPorTerceroODestinatario !== "T") {
+    add(
+      "TERCERO_FORBIDDEN",
+      "Tercero",
+      "Tercero may be set only when EmitidaPorTerceroODestinatario is T",
+    );
+  }
+  if (record.Tercero !== undefined) {
+    const tercero = record.Tercero;
+    const hasNif = tercero.NIF !== undefined;
+    const hasIdOtro = tercero.IDOtro !== undefined;
+    checkNoControlChars("Tercero.NombreRazon", tercero.NombreRazon);
+    checkNoControlChars("Tercero.IDOtro.ID", tercero.IDOtro?.ID);
+    if (hasNif === hasIdOtro) {
+      add("TERCERO_ID_CHOICE", "Tercero", "Tercero must carry exactly one of NIF or IDOtro");
+    }
+    if (tercero.NIF !== undefined) {
+      checkNif("Tercero.NIF", tercero.NIF);
+      if (tercero.NIF === record.IDFactura.IDEmisorFactura) {
+        add(
+          "TERCERO_NIF_EQUALS_EMISOR",
+          "Tercero.NIF",
+          "Tercero.NIF must differ from IDEmisorFactura",
+        );
+      }
+    }
+    if (tercero.IDOtro?.CodigoPais === "ES" && tercero.IDOtro.IDType !== "03") {
+      add(
+        "TERCERO_ES_IDTYPE",
+        "Tercero.IDOtro.IDType",
+        "A Spanish Tercero identified through IDOtro must use IDType 03",
+      );
+    }
+    if (tercero.IDOtro?.IDType === "07") {
+      add("TERCERO_IDTYPE_07_FORBIDDEN", "Tercero.IDOtro.IDType", "Tercero must not use IDType 07");
+    }
+    if (
+      tercero.IDOtro?.IDType === "02" &&
+      !isValidEuVatId(tercero.IDOtro.ID, effectiveOperationDate)
+    ) {
+      add(
+        "TERCERO_VAT_ID_FORMAT",
+        "Tercero.IDOtro.ID",
+        "Tercero IDType 02 must match a published uppercase EU VAT-number structure",
+      );
+    }
   }
 
   // AEAT validation 3.1.3.13 makes recipients mandatory for full and R1-R4

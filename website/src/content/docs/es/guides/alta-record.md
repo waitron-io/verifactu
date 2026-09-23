@@ -18,6 +18,12 @@ const fullInvoice = buildAltaRecord({
     IDDestinatario: [{ NombreRazon: "Cliente SL", NIF: "B12345674" }],
   },
 });
+
+const thirdPartyIssued = buildAltaRecord({
+  ...saleInput,
+  EmitidaPorTerceroODestinatario: "T",
+  Tercero: { NombreRazon: "Expedidor tercero SL", NIF: "B12345674" },
+});
 ```
 
 Aquí `saleInput` contiene los datos del ejemplo anterior y su enlace con la cadena. Incluye
@@ -33,6 +39,13 @@ un rechazo de la AEAT, `RechazoPrevio: "S"` o `"X"` también exige `Subsanacion:
 de referencias presente debe contener al menos una factura. La validación local comprueba cada NIF
 español referenciado, la longitud de 1–60 caracteres del número de factura y su fecha; solo la AEAT
 puede confirmar que el NIF pertenece a un contribuyente censado.
+
+Cuando el destinatario expida la factura, usa `EmitidaPorTerceroODestinatario: "D"` e inclúyelo en
+`Destinatarios`. Cuando la expida otra persona o entidad, usa `"T"` e indica `Tercero` con un `NIF`
+español o una identidad `IDOtro`, como en `thirdPartyIssued` arriba.
+
+El NIF español del tercero debe ser distinto del NIF emisor de la factura. `buildAltaRecord`,
+`serializeEnvio` y `parseEnvio` conservan estos campos en la posición oficial del XSD.
 
 `buildAltaRecord` devuelve el registro completo, con fechas e importes formateados y su `Huella`.
 El hash usa los mismos textos que se envían en el XML. Conserva el registro devuelto sin cambios,

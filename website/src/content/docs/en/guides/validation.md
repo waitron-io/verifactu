@@ -38,9 +38,26 @@ enter the QR payload. AEAT remains responsible for confirming that a NIF is regi
 
 For an alta, `FechaExpedicionFactura` cannot be before 28 October 2024 or after the current date.
 It also cannot be before `FechaOperacion` on an IVA or IGIC line unless that line uses regime `14`
-or `15`. The current-date check uses the numeric offset in `FechaHoraHusoGenRegistro`, rather than
-the computer's time zone. Tests and applications with a controlled clock can pass `{ now }` as the
-second argument to `validate` or `assertValid`.
+or `15`. `FechaOperacion` cannot be more than 20 years old or later than the end of the next
+calendar year. A future operation date on IVA or IGIC is likewise limited to regimes `14` and `15`.
+For a mixed record, every applicable IVA or IGIC line must meet that exception. The current-date
+checks use the numeric offset in `FechaHoraHusoGenRegistro`, rather than the computer's time zone.
+Tests and applications with a controlled clock can pass `{ now }` as the second argument to
+`validate` or `assertValid`.
+
+The legal-status flags are also cross-checked with `TipoFactura`:
+`FacturaSimplificadaArt7273: "S"` is limited to `F1`, `F3`, and `R1`–`R4`, while
+`FacturaSinIdentifDestinatarioArt61d: "S"` is limited to `F2` and `R5`. `Macrodato` must be present
+when the absolute `ImporteTotal` reaches €100,000,000. The official rule requires the field; because
+the XSD permits both `S` and `N`, local validation does not replace that presence rule with a
+truth-value rule.
+
+For third-party issuance, `EmitidaPorTerceroODestinatario: "T"` requires `Tercero`; `"D"` requires
+`Destinatarios`; and `Tercero` is forbidden in any other case. A third party must use exactly one of
+`NIF` and `IDOtro`. Local validation checks Spanish NIF form and inequality with the invoice issuer,
+the Spanish `IDOtro` restriction, the ban on `IDType: "07"`, and AEAT's published uppercase EU VAT
+number shapes for `IDType: "02"`, including the dated GB/XI transition. Only AEAT can confirm that
+a well-formed NIF or VAT number is registered.
 
 Keep `IDEmisorFactura` equal to `Cabecera.ObligadoEmision.NIF`. `serializeEnvio` rejects the batch
 when those values differ, before it creates XML. AEAT permits a wider printable-ASCII alphabet in

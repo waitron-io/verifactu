@@ -127,9 +127,13 @@ export function buildAltaRecord(input: AltaInput): RegistroAlta {
       FacturaSinIdentifDestinatarioArt61d: input.FacturaSinIdentifDestinatarioArt61d,
     }),
     ...(input.Macrodato !== undefined && { Macrodato: input.Macrodato }),
+    ...(input.EmitidaPorTerceroODestinatario !== undefined && {
+      EmitidaPorTerceroODestinatario: input.EmitidaPorTerceroODestinatario,
+    }),
+    ...(input.Tercero !== undefined && { Tercero: input.Tercero }),
     // Passed through unchanged — a Destinatario carries no dates or amounts to
-    // format. Kept at its XSD ordinal (after Macrodato, before Cupon) so the
-    // object mirrors the element order the serialiser emits.
+    // format. Kept at its XSD ordinal (after the issuance fields, before Cupon)
+    // so the object mirrors the element order the serialiser emits.
     ...(input.Destinatarios !== undefined && { Destinatarios: input.Destinatarios }),
     ...(input.Cupon !== undefined && { Cupon: input.Cupon }),
     Desglose: input.Desglose.map(formatDetalle),
