@@ -6,6 +6,7 @@ import {
   assertPaginationAdvanced,
   assertQrPreproductionUrl,
   assertQrLookup,
+  assertStoredMixedRegimeEvidence,
   assertStoredRecordAt,
   assertStoredRecord,
   assertSubmission,
@@ -13,6 +14,7 @@ import {
   buildTestCancellation,
   buildTestRecord,
   certificateKind,
+  consultStoredMixedRegimeProbe,
   describeRecipientConsulta,
   describeRepresentativeConsulta,
   expandedIssuerConsultaFilter,
@@ -368,6 +370,216 @@ test("the mixed-regime probe submits through the client and returns its evidence
     CodigoErrorRegistro: undefined,
     DescripcionErrorRegistro: undefined,
   });
+});
+
+test("the stored mixed-regime probe queries the historical serial and compares the returned record", async () => {
+  const ordinaryLine = {
+    Impuesto: "01",
+    ClaveRegimen: "01",
+    TipoImpositivo: "21.00",
+    BaseImponibleOimporteNoSujeto: "1.00",
+    CuotaRepercutida: "0.21",
+    CalificacionOperacion: "S1",
+  };
+  const excludedLine = {
+    Impuesto: "01",
+    ClaveRegimen: "05",
+    TipoImpositivo: "21.00",
+    BaseImponibleOimporteNoSujeto: "100.00",
+    CuotaRepercutida: "21.00",
+    CalificacionOperacion: "S1",
+  };
+  const storedHash = "D256416486DAA7C7EA064B5E09D0E6A68D0746AB8026143D6E6140DE8D60FDFE";
+  const client = {
+    async consultar(cabecera, filter) {
+      assert.deepEqual(cabecera, {
+        ObligadoEmision: { NombreRazon: "Waitron SL", NIF: "89890001K" },
+      });
+      assert.deepEqual(filter, {
+        Ejercicio: "2026",
+        Periodo: "09",
+        NumSerieFactura: "CI-MIXED-05/20260923/35864290069",
+        FechaExpedicionFactura: "23-09-2026",
+      });
+      return {
+        ResultadoConsulta: "ConDatos",
+        IndicadorPaginacion: "N",
+        registros: [
+          {
+            IDFactura: {
+              IDEmisorFactura: "89890001K",
+              NumSerieFactura: "CI-MIXED-05/20260923/35864290069",
+              FechaExpedicionFactura: "23-09-2026",
+            },
+            DatosRegistroFacturacion: {
+              Desglose: { DetalleDesglose: [ordinaryLine, excludedLine] },
+              CuotaTotal: "999.00",
+              ImporteTotal: "999.00",
+              FechaHoraHusoGenRegistro: "2026-09-23T12:34:56+02:00",
+              TipoHuella: "01",
+              Huella: storedHash,
+            },
+            TimestampUltimaModificacion: "2026-09-23T12:35:00+02:00",
+            EstadoRegistro: "Correcto",
+          },
+        ],
+      };
+    },
+  };
+
+  assert.deepEqual(
+    await consultStoredMixedRegimeProbe(client, {
+      nif: "89890001K",
+      name: "Waitron SL",
+      systemNif: "89890001K",
+      systemName: "Waitron SL",
+      recipientNif: "11111111H",
+      recipientName: "Cliente Uno",
+      runId: "35864290069",
+      issueDate: "23-09-2026",
+      excludedRegime: "05",
+    }),
+    {
+      NumSerieFactura: "CI-MIXED-05/20260923/35864290069",
+      EstadoRegistro: "Correcto",
+      Huella: { status: "match", expected: storedHash, stored: storedHash },
+      CuotaTotal: { status: "match", expected: "999.00", stored: "999.00" },
+      ImporteTotal: { status: "match", expected: "999.00", stored: "999.00" },
+      Desglose: {
+        status: "match",
+        expected: [ordinaryLine, excludedLine],
+        stored: [ordinaryLine, excludedLine],
+      },
+    },
+  );
+});
+
+test("the stored mixed-regime probe supports the legacy regime-03 serial", async () => {
+  const legacyHash = "F8812BB5390F03BBA6698F7A15742A6F809AABE38FEE48A4A766C21DD78B4E67";
+  const client = {
+    async consultar(_cabecera, filter) {
+      assert.equal(filter.NumSerieFactura, "CI-MIXED/20260923/35857557571");
+      return {
+        ResultadoConsulta: "ConDatos",
+        IndicadorPaginacion: "N",
+        registros: [
+          {
+            IDFactura: {
+              IDEmisorFactura: "89890001K",
+              NumSerieFactura: "CI-MIXED/20260923/35857557571",
+              FechaExpedicionFactura: "23-09-2026",
+            },
+            DatosRegistroFacturacion: {
+              FechaHoraHusoGenRegistro: "2026-09-23T10:00:00+02:00",
+              Huella: legacyHash,
+            },
+            TimestampUltimaModificacion: "2026-09-23T10:01:00+02:00",
+            EstadoRegistro: "Correcto",
+          },
+        ],
+      };
+    },
+  };
+
+  const evidence = await consultStoredMixedRegimeProbe(client, {
+    nif: "89890001K",
+    name: "Waitron SL",
+    systemNif: "89890001K",
+    systemName: "Waitron SL",
+    recipientNif: "11111111H",
+    recipientName: "Cliente Uno",
+    runId: "35857557571",
+    issueDate: "23-09-2026",
+    excludedRegime: "03",
+    legacyPrefix: true,
+  });
+
+  assert.equal(evidence.NumSerieFactura, "CI-MIXED/20260923/35857557571");
+  assert.deepEqual(evidence.Huella, {
+    status: "match",
+    expected: legacyHash,
+    stored: legacyHash,
+  });
+});
+
+test("the stored mixed-regime probe reports optional consulta fields that AEAT omits", async () => {
+  const client = {
+    async consultar() {
+      return {
+        ResultadoConsulta: "ConDatos",
+        IndicadorPaginacion: "N",
+        registros: [
+          {
+            IDFactura: {
+              IDEmisorFactura: "89890001K",
+              NumSerieFactura: "CI-MIXED-09/20260923/35864701279",
+              FechaExpedicionFactura: "23-09-2026",
+            },
+            DatosRegistroFacturacion: { Huella: "A".repeat(64) },
+            TimestampUltimaModificacion: "2026-09-23T14:00:00+02:00",
+            EstadoRegistro: "Correcto",
+          },
+        ],
+      };
+    },
+  };
+
+  const evidence = await consultStoredMixedRegimeProbe(client, {
+    nif: "89890001K",
+    name: "Waitron SL",
+    systemNif: "89890001K",
+    systemName: "Waitron SL",
+    recipientNif: "11111111H",
+    recipientName: "Cliente Uno",
+    runId: "35864701279",
+    issueDate: "23-09-2026",
+    excludedRegime: "09",
+  });
+
+  assert.deepEqual(evidence.Huella, {
+    status: "unverifiable",
+    stored: "A".repeat(64),
+    reason: "AEAT omitted FechaHoraHusoGenRegistro",
+  });
+  assert.deepEqual(evidence.CuotaTotal, { status: "omitted", expected: "999.00" });
+  assert.deepEqual(evidence.ImporteTotal, { status: "omitted", expected: "999.00" });
+  assert.deepEqual(evidence.Desglose.status, "omitted");
+});
+
+test("the stored mixed-regime probe rejects a returned value that differs from the fixture", () => {
+  const evidence = {
+    NumSerieFactura: "CI-MIXED-05/20260923/35864290069",
+    EstadoRegistro: "Correcto",
+    Huella: { status: "match", expected: "A", stored: "A" },
+    CuotaTotal: { status: "mismatch", expected: "999.00", stored: "21.21" },
+    ImporteTotal: { status: "omitted", expected: "999.00" },
+    Desglose: { status: "omitted", expected: [] },
+  };
+
+  assert.throws(
+    () => assertStoredMixedRegimeEvidence(evidence),
+    /stored mixed-regime CuotaTotal differs from the submitted fixture/,
+  );
+});
+
+test("the stored mixed-regime probe rejects an ambiguous issue date", async () => {
+  await assert.rejects(
+    consultStoredMixedRegimeProbe(
+      { consultar: () => assert.fail("invalid input must not reach AEAT") },
+      {
+        nif: "89890001K",
+        name: "Waitron SL",
+        systemNif: "89890001K",
+        systemName: "Waitron SL",
+        recipientNif: "11111111H",
+        recipientName: "Cliente Uno",
+        runId: "35864701279",
+        issueDate: "2026-09-23",
+        excludedRegime: "09",
+      },
+    ),
+    /issue date must use DD-MM-YYYY/,
+  );
 });
 
 test("the live anulación chains to the alta and is locally valid", () => {

@@ -12,6 +12,7 @@ on:
           - consult
           - submit
           - mixed-regime
+          - mixed-regime-consult
         default: consult
         required: true
       excluded_regime:
@@ -25,6 +26,19 @@ on:
           - "09"
         default: "03"
         required: true
+      existing_run_id:
+        description: GitHub run ID embedded in the existing mixed-regime record
+        type: string
+        required: false
+      existing_issue_date:
+        description: Issue date of the existing mixed-regime record (DD-MM-YYYY)
+        type: string
+        required: false
+      legacy_mixed_prefix:
+        description: Existing regime-03 record uses the original CI-MIXED serial prefix
+        type: boolean
+        default: false
+        required: false
 
 permissions:
   contents: read
@@ -54,5 +68,8 @@ jobs:
           AEAT_TEST_RECIPIENT_NIF: ${{ secrets.AEAT_TEST_RECIPIENT_NIF }}
           AEAT_TEST_RECIPIENT_NAME: ${{ secrets.AEAT_TEST_RECIPIENT_NAME }}
           AEAT_TEST_EXCLUDED_REGIME: ${{ inputs.excluded_regime || '03' }}
+          AEAT_TEST_EXISTING_RUN_ID: ${{ inputs.existing_run_id }}
+          AEAT_TEST_EXISTING_ISSUE_DATE: ${{ inputs.existing_issue_date }}
+          AEAT_TEST_LEGACY_MIXED_PREFIX: ${{ inputs.legacy_mixed_prefix }}
           TEST_MODE: ${{ github.event_name == 'schedule' && 'submit' || inputs.mode }}
         run: node scripts/live-aeat.mjs "$TEST_MODE"

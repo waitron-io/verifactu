@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { request } from "node:https";
 import { fileURLToPath } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 import {
   assertValid,
   buildAltaRecord,
@@ -284,7 +285,7 @@ export function buildTestRecord(options) {
 }
 
 export function buildMixedRegimeTestRecord(options) {
-  const { excludedRegime = "03", ...recordOptions } = options;
+  const { excludedRegime = "03", legacyPrefix = false, ...recordOptions } = options;
   if (!MIXED_REGIME_EXCLUSIONS.has(excludedRegime)) {
     throw new Error("Mixed-regime exclusion must be 03, 05, 06, 08, or 09");
   }
@@ -307,8 +308,8 @@ export function buildMixedRegimeTestRecord(options) {
           CuotaRepercutida: "21.00",
         };
   return buildTestRecordWith(recordOptions, {
-    serialPrefix: `CI-MIXED-${excludedRegime}`,
-    referencePrefix: `CI-MIXED-${excludedRegime}`,
+    serialPrefix: legacyPrefix ? "CI-MIXED" : `CI-MIXED-${excludedRegime}`,
+    referencePrefix: legacyPrefix ? "CI-MIXED" : `CI-MIXED-${excludedRegime}`,
     description: "Prueba de totales con regímenes mixtos en preproducción",
     desglose: [
       {
@@ -332,6 +333,79 @@ export async function submitMixedRegimeProbe(client, cabecera, record) {
     client.submit(cabecera, [{ RegistroAlta: record }]),
   );
   return mixedRegimeSubmissionEvidence(submitted, record);
+}
+
+function comparison(expected, stored) {
+  if (stored === undefined) return { status: "omitted", expected };
+  return {
+    status: isDeepStrictEqual(stored, expected) ? "match" : "mismatch",
+    expected,
+    stored,
+  };
+}
+
+export async function consultStoredMixedRegimeProbe(client, options) {
+  const dateParts = /^(\d{2})-(\d{2})-(\d{4})$/.exec(options.issueDate);
+  if (!dateParts) throw new Error("mixed-regime issue date must use DD-MM-YYYY");
+  const [, day, month, year] = dateParts;
+  const prefix = options.legacyPrefix ? "CI-MIXED" : `CI-MIXED-${options.excludedRegime}`;
+  const serial = `${prefix}/${year}${month}${day}/${options.runId}`;
+  const result = await withLiveStage("stored mixed-regime issuer consulta", () =>
+    client.consultar(issuerConsultaHeader({ NombreRazon: options.name, NIF: options.nif }), {
+      Ejercicio: year,
+      Periodo: month,
+      NumSerieFactura: serial,
+      FechaExpedicionFactura: options.issueDate,
+    }),
+  );
+  assertConsultation(result);
+  const stored = result.registros.find(
+    (entry) =>
+      entry.IDFactura.NumSerieFactura === serial &&
+      entry.IDFactura.FechaExpedicionFactura === options.issueDate,
+  );
+  if (!stored) throw new Error("AEAT did not return the historical mixed-regime record");
+  const data = stored.DatosRegistroFacturacion;
+  const generatedAt = data.FechaHoraHusoGenRegistro;
+  const canRebuildHash = typeof generatedAt === "string";
+  const expected = buildMixedRegimeTestRecord({
+    ...options,
+    now: new Date(canRebuildHash ? generatedAt : `${year}-${month}-${day}T12:00:00Z`),
+  });
+  const storedDesglose = data.Desglose?.DetalleDesglose;
+  const normalizedDesglose = Array.isArray(storedDesglose)
+    ? storedDesglose
+    : storedDesglose === undefined
+      ? undefined
+      : [storedDesglose];
+  return {
+    NumSerieFactura: serial,
+    EstadoRegistro: stored.EstadoRegistro,
+    Huella:
+      canRebuildHash || data.Huella === undefined
+        ? comparison(expected.Huella, data.Huella)
+        : {
+            status: "unverifiable",
+            stored: data.Huella,
+            reason: "AEAT omitted FechaHoraHusoGenRegistro",
+          },
+    CuotaTotal: comparison(expected.CuotaTotal, data.CuotaTotal),
+    ImporteTotal: comparison(expected.ImporteTotal, data.ImporteTotal),
+    Desglose: comparison(expected.Desglose, normalizedDesglose),
+  };
+}
+
+export function assertStoredMixedRegimeEvidence(evidence) {
+  if (evidence.EstadoRegistro !== "Correcto") {
+    throw new Error(
+      `stored mixed-regime record is ${evidence.EstadoRegistro ?? "missing its state"}`,
+    );
+  }
+  for (const field of ["Huella", "CuotaTotal", "ImporteTotal", "Desglose"]) {
+    if (evidence[field].status === "mismatch") {
+      throw new Error(`stored mixed-regime ${field} differs from the submitted fixture`);
+    }
+  }
 }
 
 export function buildTestCancellation({ record, issuedAt, now }) {
@@ -456,8 +530,8 @@ export function describeRecipientConsulta(result, record) {
 
 async function main() {
   const mode = process.argv[2] ?? "consult";
-  if (!["consult", "submit", "mixed-regime"].includes(mode)) {
-    throw new Error("Mode must be consult, submit, or mixed-regime");
+  if (!["consult", "submit", "mixed-regime", "mixed-regime-consult"].includes(mode)) {
+    throw new Error("Mode must be consult, submit, mixed-regime, or mixed-regime-consult");
   }
   const nif = required("AEAT_TEST_NIF");
   const name = required("AEAT_TEST_NAME");
@@ -494,6 +568,25 @@ async function main() {
   };
   const cabecera = submissionHeader(obligadoEmision);
   const runId = process.env.GITHUB_RUN_ID ?? String(now.getTime());
+
+  if (mode === "mixed-regime-consult") {
+    const excludedRegime = process.env.AEAT_TEST_EXCLUDED_REGIME ?? "03";
+    const evidence = await consultStoredMixedRegimeProbe(client, {
+      nif,
+      name,
+      systemNif: required("AEAT_TEST_SYSTEM_NIF"),
+      systemName: required("AEAT_TEST_SYSTEM_NAME"),
+      recipientNif: recipient.NIF,
+      recipientName: recipient.NombreRazon,
+      runId: required("AEAT_TEST_EXISTING_RUN_ID"),
+      issueDate: required("AEAT_TEST_EXISTING_ISSUE_DATE"),
+      excludedRegime,
+      legacyPrefix: process.env.AEAT_TEST_LEGACY_MIXED_PREFIX === "true",
+    });
+    process.stdout.write(`AEAT stored mixed-regime record: ${JSON.stringify(evidence)}\n`);
+    assertStoredMixedRegimeEvidence(evidence);
+    return;
+  }
 
   if (mode === "mixed-regime") {
     const excludedRegime = process.env.AEAT_TEST_EXCLUDED_REGIME ?? "03";
