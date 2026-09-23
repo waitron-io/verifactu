@@ -139,11 +139,15 @@ export interface RegistroAlta {
   RefExterna?: string;
   NombreRazonEmisor: string;
   Subsanacion?: SiNo;
+  /** `S` and `X` are valid only when Subsanacion is `S`; see validate.ts. */
   RechazoPrevio?: "N" | "S" | "X";
   TipoFactura: TipoFactura;
   TipoRectificativa?: "S" | "I";
+  /** Allowed only for TipoFactura R1-R5; referenced NIF registration is confirmed by AEAT. */
   FacturasRectificadas?: { IDFacturaRectificada: IDFacturaAR[] };
+  /** Allowed only for TipoFactura F3; referenced NIF registration is confirmed by AEAT. */
   FacturasSustituidas?: { IDFacturaSustituida: IDFacturaAR[] };
+  /** Required for, and allowed only with, TipoRectificativa `S`. */
   ImporteRectificacion?: DesgloseRectificacion;
   FechaOperacion?: string;
   DescripcionOperacion: string;
@@ -261,14 +265,15 @@ export interface AltaInput extends RecordInputBase {
   FechaExpedicionFactura: Date;
   NombreRazonEmisor: string;
   Subsanacion?: SiNo;
+  /** `S` and `X` are valid only when Subsanacion is `S`; see validate.ts. */
   RechazoPrevio?: "N" | "S" | "X";
   TipoFactura: TipoFactura;
   TipoRectificativa?: "S" | "I";
-  /** The rectified invoices' identities. Formatted with this input's own offsetMinutes, like FechaExpedicionFactura. */
+  /** The rectified invoices' identities. Allowed only for R1-R5 and formatted with this input's offsetMinutes. */
   FacturasRectificadas?: IDFacturaARInput[];
-  /** The substituted invoices' identities. Formatted with this input's own offsetMinutes, like FechaExpedicionFactura. */
+  /** The substituted invoices' identities. Allowed only for F3 and formatted with this input's offsetMinutes. */
   FacturasSustituidas?: IDFacturaARInput[];
-  /** Mandatory (rule 1118) when TipoRectificativa is "S" — sustitución. */
+  /** Required for, and allowed only with, TipoRectificativa `S` — sustitución. */
   ImporteRectificacion?: DesgloseRectificacionInput;
   /** A date like FechaExpedicionFactura — RegistroAlta stores it pre-formatted as DD-MM-YYYY. */
   FechaOperacion?: Date;

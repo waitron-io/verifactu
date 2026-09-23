@@ -26,6 +26,13 @@ simplificadas `F2` y sus rectificaciones `R5`. `validate(fullInvoice)` devuelve 
 el envío si incumples cualquiera de estas reglas. En las líneas de IVA, IPSI e IGIC, indica también
 el código de régimen aplicable en `ClaveRegimen`. Omítelo para otros impuestos.
 
+En una rectificación, usa `FacturasRectificadas` solo con `R1`–`R5`. Usa
+`FacturasSustituidas` solo con `F3`. `ImporteRectificacion` es obligatorio, y solo está permitido,
+en una rectificación por sustitución (`TipoRectificativa: "S"`). Al corregir un registro después de
+un rechazo de la AEAT, `RechazoPrevio: "S"` o `"X"` también exige `Subsanacion: "S"`. La validación
+local comprueba el formato y el carácter de control de cada NIF español referenciado; solo la AEAT
+puede confirmar que el NIF pertenece a un contribuyente censado.
+
 `buildAltaRecord` devuelve el registro completo, con fechas e importes formateados y su `Huella`.
 El hash usa los mismos textos que se envían en el XML. Conserva el registro devuelto sin cambios,
 guárdalo con la venta y [encadena el siguiente](/verifactu/es/guides/huella-chain/).

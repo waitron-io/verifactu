@@ -357,20 +357,31 @@ describe("buildAltaRecord — TipoRectificativa, FacturasRectificadas, FacturasS
   });
 
   it("does not change the huella when TipoRectificativa, FacturasRectificadas, FacturasSustituidas or ImporteRectificacion are populated", () => {
-    // Same invariant as the seven-field group above, extended to these four —
-    // none of them are among the eight fields CadenaAltaInput hashes. Both
-    // sides fix TipoFactura at "R1" (unlike that test's F1 base) so that the
-    // comparison isolates these four fields' effect rather than also picking
-    // up TipoFactura's own (legitimate, pre-existing) contribution to the hash.
-    const base = buildAltaRecord({ ...ALTA_INPUT, TipoFactura: "R1" });
-    const withExtras = buildAltaRecord({ ...ALTA_INPUT, ...RECTIFICATIVA_EXTRAS });
-    expect(withExtras.Huella).toBe(base.Huella);
+    // None of these fields are among the eight fields CadenaAltaInput hashes.
+    // Exercise them in their valid invoice families so this invariant does not
+    // rely on a business-invalid record that could never be submitted.
+    const rectificativaBase = buildAltaRecord({ ...ALTA_INPUT, TipoFactura: "R1" });
+    const rectificativa = buildAltaRecord({
+      ...ALTA_INPUT,
+      ...RECTIFICATIVA_EXTRAS,
+      FacturasSustituidas: undefined,
+    });
+    expect(rectificativa.Huella).toBe(rectificativaBase.Huella);
+
+    const sustitucionBase = buildAltaRecord({ ...ALTA_INPUT, TipoFactura: "F3" });
+    const sustitucion = buildAltaRecord({
+      ...ALTA_INPUT,
+      TipoFactura: "F3",
+      FacturasSustituidas: RECTIFICATIVA_EXTRAS.FacturasSustituidas,
+    });
+    expect(sustitucion.Huella).toBe(sustitucionBase.Huella);
   });
 
-  it("builds a full rectificativa por sustitución end to end, valid per AEAT rules 1114/1115/1118", () => {
+  it("builds a full rectificativa por sustitución end to end, valid per AEAT §3.1.3.3–6", () => {
     const record = buildAltaRecord({
       ...ALTA_INPUT,
       ...RECTIFICATIVA_EXTRAS,
+      FacturasSustituidas: undefined,
       FechaExpedicionFactura: new Date("2024-10-28T00:00:00+01:00"),
       Destinatarios: {
         IDDestinatario: [{ NombreRazon: "Cliente Factura SL", NIF: "B99999997" }],
@@ -380,9 +391,8 @@ describe("buildAltaRecord — TipoRectificativa, FacturasRectificadas, FacturasS
     expect(record.TipoFactura).toBe("R1");
     expect(record.TipoRectificativa).toBe("S");
     expect(record.ImporteRectificacion).toBeDefined();
-    // The record hashes and validates like any other alta — a rectificativa
-    // is not a special case for either concern, provided the fields rules
-    // 1114/1115/1118 require are actually present.
+    // The record hashes and validates like any other alta when its correction
+    // fields agree with one another.
     expect(computeHuella(record)).toBe(record.Huella);
     expect(validate(record)).toEqual([]);
   });

@@ -1068,6 +1068,112 @@ describe("validate — rectificativa rules (AEAT 1114/1115/1118)", () => {
   });
 });
 
+describe("validate — AEAT §3.1.3.2–6", () => {
+  const referencedInvoice = {
+    IDEmisorFactura: "89890001K",
+    NumSerieFactura: "ORIGINAL/1",
+    FechaExpedicionFactura: new Date("2024-10-28T00:00:00+01:00"),
+  };
+
+  it.each(["S", "X"] as const)(
+    "requires Subsanacion S when RechazoPrevio is %s",
+    (RechazoPrevio) => {
+      const record = buildAltaRecord({ ...INPUT, RechazoPrevio });
+      expect(codes(record)).toContain("RECHAZO_PREVIO_REQUIRES_SUBSANACION");
+    },
+  );
+
+  it.each(["S", "X"] as const)(
+    "accepts RechazoPrevio %s when Subsanacion is S",
+    (RechazoPrevio) => {
+      const record = buildAltaRecord({ ...INPUT, Subsanacion: "S", RechazoPrevio });
+      expect(codes(record)).not.toContain("RECHAZO_PREVIO_REQUIRES_SUBSANACION");
+    },
+  );
+
+  it("accepts RechazoPrevio N without Subsanacion", () => {
+    const record = buildAltaRecord({ ...INPUT, RechazoPrevio: "N" });
+    expect(codes(record)).not.toContain("RECHAZO_PREVIO_REQUIRES_SUBSANACION");
+  });
+
+  it("forbids FacturasRectificadas on a non-rectificativa invoice", () => {
+    const record = buildAltaRecord({ ...INPUT, FacturasRectificadas: [referencedInvoice] });
+    expect(codes(record)).toContain("FACTURAS_RECTIFICADAS_FORBIDDEN");
+  });
+
+  it("accepts FacturasRectificadas on R1-R5", () => {
+    const record = buildAltaRecord({
+      ...INPUT,
+      TipoFactura: "R1",
+      TipoRectificativa: "I",
+      FacturasRectificadas: [referencedInvoice],
+    });
+    expect(codes(record)).not.toContain("FACTURAS_RECTIFICADAS_FORBIDDEN");
+  });
+
+  it("checks every referenced rectified invoice NIF locally", () => {
+    const record = buildAltaRecord({
+      ...INPUT,
+      TipoFactura: "R1",
+      TipoRectificativa: "I",
+      FacturasRectificadas: [
+        referencedInvoice,
+        { ...referencedInvoice, IDEmisorFactura: "B12345678" },
+      ],
+    });
+    const issue = validate(record).find(
+      ({ field }) => field === "FacturasRectificadas.IDFacturaRectificada[1].IDEmisorFactura",
+    );
+    expect(issue?.code).toBe("NIF_CONTROL");
+  });
+
+  it("forbids FacturasSustituidas unless TipoFactura is F3", () => {
+    const record = buildAltaRecord({ ...INPUT, FacturasSustituidas: [referencedInvoice] });
+    expect(codes(record)).toContain("FACTURAS_SUSTITUIDAS_FORBIDDEN");
+  });
+
+  it("accepts FacturasSustituidas on F3", () => {
+    const record = buildAltaRecord({
+      ...INPUT,
+      TipoFactura: "F3",
+      FacturasSustituidas: [referencedInvoice],
+    });
+    expect(codes(record)).not.toContain("FACTURAS_SUSTITUIDAS_FORBIDDEN");
+  });
+
+  it("checks every referenced substituted invoice NIF locally", () => {
+    const record = buildAltaRecord({
+      ...INPUT,
+      TipoFactura: "F3",
+      FacturasSustituidas: [{ ...referencedInvoice, IDEmisorFactura: "SHORT" }],
+    });
+    const issue = validate(record).find(
+      ({ field }) => field === "FacturasSustituidas.IDFacturaSustituida[0].IDEmisorFactura",
+    );
+    expect(issue?.code).toBe("NIF_LENGTH");
+  });
+
+  it("forbids ImporteRectificacion when TipoRectificativa is I", () => {
+    const record = buildAltaRecord({
+      ...INPUT,
+      TipoFactura: "R1",
+      TipoRectificativa: "I",
+      ImporteRectificacion: { BaseRectificada: "100", CuotaRectificada: "21" },
+    });
+    expect(codes(record)).toContain("IMPORTE_RECTIFICACION_FORBIDDEN");
+  });
+
+  it("accepts ImporteRectificacion when TipoRectificativa is S", () => {
+    const record = buildAltaRecord({
+      ...INPUT,
+      TipoFactura: "R1",
+      TipoRectificativa: "S",
+      ImporteRectificacion: { BaseRectificada: "100", CuotaRectificada: "21" },
+    });
+    expect(codes(record)).not.toContain("IMPORTE_RECTIFICACION_FORBIDDEN");
+  });
+});
+
 describe("validate — Destinatarios rules (F1/F3/R1-R4 require, F2/R5 forbid)", () => {
   const DESTINATARIOS = {
     IDDestinatario: [{ NombreRazon: "Cliente Factura SL", NIF: "B99999997" }],
@@ -1502,6 +1608,15 @@ describe("validate — pins the exact field, message and severity for every Vali
       },
     },
     {
+      description: "RECHAZO_PREVIO_REQUIRES_SUBSANACION",
+      code: "RECHAZO_PREVIO_REQUIRES_SUBSANACION",
+      field: "RechazoPrevio",
+      message: "RechazoPrevio S or X requires Subsanacion S",
+      mutate: (r) => {
+        r.RechazoPrevio = "S";
+      },
+    },
+    {
       description: "TIPO_RECTIFICATIVA_REQUIRED",
       code: "TIPO_RECTIFICATIVA_REQUIRED",
       field: "TipoRectificativa",
@@ -1520,6 +1635,24 @@ describe("validate — pins the exact field, message and severity for every Vali
       },
     },
     {
+      description: "FACTURAS_RECTIFICADAS_FORBIDDEN",
+      code: "FACTURAS_RECTIFICADAS_FORBIDDEN",
+      field: "FacturasRectificadas",
+      message: "FacturasRectificadas may be set only when TipoFactura is R1-R5",
+      mutate: (r) => {
+        r.FacturasRectificadas = { IDFacturaRectificada: [{ ...r.IDFactura }] };
+      },
+    },
+    {
+      description: "FACTURAS_SUSTITUIDAS_FORBIDDEN",
+      code: "FACTURAS_SUSTITUIDAS_FORBIDDEN",
+      field: "FacturasSustituidas",
+      message: "FacturasSustituidas may be set only when TipoFactura is F3",
+      mutate: (r) => {
+        r.FacturasSustituidas = { IDFacturaSustituida: [{ ...r.IDFactura }] };
+      },
+    },
+    {
       description: "IMPORTE_RECTIFICACION_REQUIRED",
       code: "IMPORTE_RECTIFICACION_REQUIRED",
       field: "ImporteRectificacion",
@@ -1527,6 +1660,15 @@ describe("validate — pins the exact field, message and severity for every Vali
       mutate: (r) => {
         r.TipoFactura = "R1";
         r.TipoRectificativa = "S";
+      },
+    },
+    {
+      description: "IMPORTE_RECTIFICACION_FORBIDDEN",
+      code: "IMPORTE_RECTIFICACION_FORBIDDEN",
+      field: "ImporteRectificacion",
+      message: "ImporteRectificacion may be set only when TipoRectificativa is S (sustitución)",
+      mutate: (r) => {
+        r.ImporteRectificacion = { BaseRectificada: "100.00", CuotaRectificada: "21.00" };
       },
     },
     {
