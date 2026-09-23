@@ -444,11 +444,11 @@ export function validate(record: RegistroAlta | RegistroAnulacion): ValidationIs
   const cuotas = sum(record.Desglose.map((d) => d.CuotaRepercutida));
   const recargos = sum(record.Desglose.map((d) => d.CuotaRecargoEquivalencia));
   const bases = sum(record.Desglose.map((d) => d.BaseImponibleOimporteNoSujeto));
-  // AEAT suppresses both cross-checks for the whole record when any line
-  // uses an excluded regime.
-  const crossCheckTotals =
-    record.Desglose.length === 0 ||
-    !record.Desglose.some((detail) => TOTAL_CHECK_EXEMPT_REGIMES.has(detail.ClaveRegimen ?? ""));
+  // A mixed 01 + 03 record confirms whole-record suppression. AEAT groups 03
+  // with the other excluded regimes, so one excluded line skips both checks.
+  const crossCheckTotals = !record.Desglose.some((detail) =>
+    TOTAL_CHECK_EXEMPT_REGIMES.has(detail.ClaveRegimen ?? ""),
+  );
 
   if (
     crossCheckTotals &&
