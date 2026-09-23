@@ -444,8 +444,8 @@ export function validate(record: RegistroAlta | RegistroAnulacion): ValidationIs
   const cuotas = sum(record.Desglose.map((d) => d.CuotaRepercutida));
   const recargos = sum(record.Desglose.map((d) => d.CuotaRecargoEquivalencia));
   const bases = sum(record.Desglose.map((d) => d.BaseImponibleOimporteNoSujeto));
-  // The rule compares record totals. For a mixed-regime record, keep the
-  // advisory cross-check rather than let one exempt line silence every line.
+  // The published exclusion is ambiguous for mixed records. Keep the
+  // advisory checks whenever at least one line is not excluded.
   const crossCheckTotals =
     record.Desglose.length === 0 ||
     !record.Desglose.every((detail) => TOTAL_CHECK_EXEMPT_REGIMES.has(detail.ClaveRegimen ?? ""));

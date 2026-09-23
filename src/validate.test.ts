@@ -331,7 +331,7 @@ describe("validate", () => {
     },
   );
 
-  it("keeps total mismatch warnings when only one of several tax lines has an exempt regime", () => {
+  it("keeps both total mismatch warnings when one of several tax lines has an excluded regime", () => {
     const record = valid();
     record.Desglose.push({ ...record.Desglose[0]!, ClaveRegimen: "03" });
     record.CuotaTotal = "999.00";
