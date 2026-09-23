@@ -65,6 +65,18 @@ requires `CodigoPais: "ES"`; Spanish recipients may use only `IDType: "03"` or `
 These invoice families are also the only ones that can use recipient-issued (`"D"`) records,
 because `F2` and `R5` forbid `Destinatarios`.
 
+For IVA `S1` detail lines, `validate` checks the official rate list and the dated windows for the
+temporary `5`, `2`, and `7.5` percent rates. When you include `TipoRecargoEquivalencia`, its value
+must match both `TipoImpositivo` and the effective operation date. The effective date is
+`FechaOperacion`, falling back to `FechaExpedicionFactura` when omitted.
+
+`BaseImponibleACoste` is available only for regime `06`, IPSI, or another tax. Reverse-charge `S2`
+lines require an eligible invoice family plus zero `TipoImpositivo` and `CuotaRepercutida`. IVA
+`N1`/`N2` lines must omit rate, charged-tax, and equivalence-surcharge fields. All exempt lines must
+omit those fields. Exemption codes are checked against the IVA/IGIC lists and regime-01
+restrictions; supplied recipients of an IVA `E5` line must use `IDOtro`. Finally, `Cupon: "S"` is
+valid only on `R1` and `R5`.
+
 Keep `IDEmisorFactura` equal to `Cabecera.ObligadoEmision.NIF`. `serializeEnvio` rejects the batch
 when those values differ, before it creates XML. AEAT permits a wider printable-ASCII alphabet in
 `NumSerieFactura`, but this library accepts only letters, digits, `/`, `_`, `.`, and `-`. That

@@ -62,6 +62,19 @@ export type ValidationCode =
   | "DESTINATARIO_ES_IDTYPE"
   | "DESTINATARIO_VAT_ID_FORMAT"
   | "DESTINATARIO_VAT_FACTURA_TYPE"
+  | "CUPON_FORBIDDEN"
+  | "TIPO_IMPOSITIVO_VALUE"
+  | "TIPO_IMPOSITIVO_DATE"
+  | "BASE_IMPONIBLE_A_COSTE_FORBIDDEN"
+  | "TIPO_RECARGO_COMBINATION"
+  | "S2_TIPO_FACTURA"
+  | "S2_TIPO_IMPOSITIVO"
+  | "S2_CUOTA_REPERCUTIDA"
+  | "N1_N2_TAX_FIELDS_FORBIDDEN"
+  | "OPERACION_EXENTA_VALUE"
+  | "OPERACION_EXENTA_REGIMEN"
+  | "OPERACION_EXENTA_TAX_FIELDS_FORBIDDEN"
+  | "OPERACION_EXENTA_E5_DESTINATARIO_ID"
   // AEAT requires a recipient on F1/F3 and R1-R4. The XSD leaves Destinatarios
   // optional for every TipoFactura, so this rule must be checked outside the schema.
   | "DESTINATARIOS_REQUIRED"
@@ -146,6 +159,41 @@ const TIPO_PATTERN = /^\d{1,3}\.\d{2}$/;
  */
 // eslint-disable-next-line no-control-regex -- deliberately matching control characters
 const CONTROL_CHAR_PATTERN = /[\x00-\x08\x0B\x0C\x0E-\x1F]/;
+
+const IVA_S1_RATES = new Set(["0.00", "2.00", "4.00", "5.00", "7.50", "10.00", "21.00"]);
+const S2_INVOICE_TYPES = new Set(["F1", "F3", "R1", "R2", "R3", "R4"]);
+const IVA_EXEMPTION_CODES = new Set(["E1", "E2", "E3", "E4", "E5", "E6"]);
+const IGIC_EXEMPTION_CODES = new Set([...IVA_EXEMPTION_CODES, "E7", "E8"]);
+
+function isWithin(date: number | undefined, first: number, last: number): boolean {
+  return date === undefined || (date >= first && date <= last);
+}
+
+function isAllowedIvaRateDate(rate: string, date: number | undefined): boolean {
+  if (rate === "5.00") return isWithin(date, 20220701, 20240930);
+  if (rate === "2.00" || rate === "7.50") return isWithin(date, 20241001, 20241231);
+  return true;
+}
+
+function isAllowedRecargoCombination(
+  rate: string | undefined,
+  recargo: string,
+  date: number | undefined,
+): boolean {
+  if (rate === "21.00") return recargo === "5.20" || recargo === "1.75";
+  if (rate === "10.00") return recargo === "1.40";
+  if (rate === "7.50") return recargo === "1.00" && isWithin(date, 20241001, 20241231);
+  if (rate === "5.00") {
+    return (
+      (recargo === "0.50" && (date === undefined || date <= 20221231)) ||
+      (recargo === "0.62" && isWithin(date, 20230101, 20240930))
+    );
+  }
+  if (rate === "4.00") return recargo === "0.50";
+  if (rate === "2.00") return recargo === "0.26" && isWithin(date, 20241001, 20241231);
+  if (rate === "0.00") return recargo === "0.00" && isWithin(date, 20230101, 20240930);
+  return false;
+}
 
 /** AEAT validation note (1): uppercase NIF-IVA shapes for EU member states. */
 const EU_VAT_SUFFIX_PATTERNS: Readonly<Record<string, RegExp>> = {
@@ -644,6 +692,10 @@ export function validate(
     }
   }
 
+  if (record.Cupon === "S" && !["R1", "R5"].includes(record.TipoFactura)) {
+    add("CUPON_FORBIDDEN", "Cupon", "Cupon may be S only when TipoFactura is R1 or R5");
+  }
+
   // AEAT validation 3.1.3.13 makes recipients mandatory for full and R1-R4
   // invoices, and forbidden for F2/R5, even though the XSD leaves the block optional.
   const requiereDestinatario = ["F1", "F3", "R1", "R2", "R3", "R4"].includes(record.TipoFactura);
@@ -795,6 +847,7 @@ export function validate(
 
     const fields: Array<[string, string | undefined]> = [
       ["BaseImponibleOimporteNoSujeto", detalle.BaseImponibleOimporteNoSujeto],
+      ["BaseImponibleACoste", detalle.BaseImponibleACoste],
       ["CuotaRepercutida", detalle.CuotaRepercutida],
       ["CuotaRecargoEquivalencia", detalle.CuotaRecargoEquivalencia],
     ];
@@ -826,7 +879,154 @@ export function validate(
         );
       }
     }
+
+    const field = `Desglose[${index}]`;
+    const isIva = detalle.Impuesto === undefined || detalle.Impuesto === "01";
+    const isIgic = detalle.Impuesto === "03";
+    const isS1 = detalle.CalificacionOperacion === "S1";
+    const validTipoImpositivo =
+      detalle.TipoImpositivo === undefined || TIPO_PATTERN.test(detalle.TipoImpositivo);
+    const validTipoRecargo =
+      detalle.TipoRecargoEquivalencia === undefined ||
+      TIPO_PATTERN.test(detalle.TipoRecargoEquivalencia);
+
+    if (isIva && isS1 && detalle.TipoImpositivo !== undefined && validTipoImpositivo) {
+      if (!IVA_S1_RATES.has(detalle.TipoImpositivo)) {
+        add(
+          "TIPO_IMPOSITIVO_VALUE",
+          `${field}.TipoImpositivo`,
+          "TipoImpositivo is not permitted for an IVA S1 line",
+        );
+      } else if (!isAllowedIvaRateDate(detalle.TipoImpositivo, effectiveOperationDate)) {
+        add(
+          "TIPO_IMPOSITIVO_DATE",
+          `${field}.TipoImpositivo`,
+          "TipoImpositivo is not permitted on the effective operation date",
+        );
+      }
+    }
+
+    if (
+      detalle.BaseImponibleACoste !== undefined &&
+      detalle.ClaveRegimen !== "06" &&
+      detalle.Impuesto !== "02" &&
+      detalle.Impuesto !== "05"
+    ) {
+      add(
+        "BASE_IMPONIBLE_A_COSTE_FORBIDDEN",
+        `${field}.BaseImponibleACoste`,
+        "BaseImponibleACoste is allowed only for regime 06, IPSI or other tax",
+      );
+    }
+
+    if (
+      isIva &&
+      isS1 &&
+      detalle.TipoRecargoEquivalencia !== undefined &&
+      validTipoRecargo &&
+      validTipoImpositivo &&
+      !isAllowedRecargoCombination(
+        detalle.TipoImpositivo,
+        detalle.TipoRecargoEquivalencia,
+        effectiveOperationDate,
+      )
+    ) {
+      add(
+        "TIPO_RECARGO_COMBINATION",
+        `${field}.TipoRecargoEquivalencia`,
+        "TipoRecargoEquivalencia is not permitted for this rate and operation date",
+      );
+    }
+
+    if (detalle.CalificacionOperacion === "S2") {
+      if (!S2_INVOICE_TYPES.has(record.TipoFactura)) {
+        add(
+          "S2_TIPO_FACTURA",
+          `${field}.CalificacionOperacion`,
+          "CalificacionOperacion S2 is allowed only when TipoFactura is F1, F3 or R1-R4",
+        );
+      }
+      if (detalle.TipoImpositivo !== "0.00") {
+        add(
+          "S2_TIPO_IMPOSITIVO",
+          `${field}.TipoImpositivo`,
+          "CalificacionOperacion S2 requires TipoImpositivo to be present and zero",
+        );
+      }
+      if (detalle.CuotaRepercutida !== "0.00") {
+        add(
+          "S2_CUOTA_REPERCUTIDA",
+          `${field}.CuotaRepercutida`,
+          "CalificacionOperacion S2 requires CuotaRepercutida to be present and zero",
+        );
+      }
+    }
+
+    const taxFieldsPresent = [
+      detalle.TipoImpositivo,
+      detalle.CuotaRepercutida,
+      detalle.TipoRecargoEquivalencia,
+      detalle.CuotaRecargoEquivalencia,
+    ].some((value) => value !== undefined);
+    if (
+      isIva &&
+      (detalle.CalificacionOperacion === "N1" || detalle.CalificacionOperacion === "N2") &&
+      taxFieldsPresent
+    ) {
+      add(
+        "N1_N2_TAX_FIELDS_FORBIDDEN",
+        field,
+        "IVA N1 and N2 lines must not carry tax-rate or charged-tax fields",
+      );
+    }
+
+    if (detalle.OperacionExenta !== undefined) {
+      if (
+        (isIva && !IVA_EXEMPTION_CODES.has(detalle.OperacionExenta)) ||
+        (isIgic && !IGIC_EXEMPTION_CODES.has(detalle.OperacionExenta))
+      ) {
+        add(
+          "OPERACION_EXENTA_VALUE",
+          `${field}.OperacionExenta`,
+          "OperacionExenta is not permitted for this tax",
+        );
+      }
+      if (
+        (isIva || isIgic) &&
+        detalle.ClaveRegimen === "01" &&
+        ["E2", "E3"].includes(detalle.OperacionExenta)
+      ) {
+        add(
+          "OPERACION_EXENTA_REGIMEN",
+          `${field}.OperacionExenta`,
+          "OperacionExenta E2 and E3 are forbidden under regime 01",
+        );
+      }
+      if (taxFieldsPresent) {
+        add(
+          "OPERACION_EXENTA_TAX_FIELDS_FORBIDDEN",
+          field,
+          "Exempt lines must not carry tax-rate or charged-tax fields",
+        );
+      }
+    }
   });
+
+  const hasIvaE5Line = record.Desglose.some(
+    (detalle) =>
+      (detalle.Impuesto === undefined || detalle.Impuesto === "01") &&
+      detalle.OperacionExenta === "E5",
+  );
+  if (
+    hasIvaE5Line &&
+    record.Destinatarios?.IDDestinatario.some((recipient) => recipient.IDOtro === undefined)
+  ) {
+    add(
+      "OPERACION_EXENTA_E5_DESTINATARIO_ID",
+      "Destinatarios",
+      "Recipients of an IVA E5 line must be identified through IDOtro",
+    );
+  }
 
   // AEAT cross-checks totals against the desglose with a +/- 10.00 tolerance
   // and treats a breach as an admissible error, so these are warnings: failing

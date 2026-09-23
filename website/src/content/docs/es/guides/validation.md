@@ -68,6 +68,19 @@ Cada destinatario también debe usar exactamente uno de `NIF` e `IDOtro`. En los
 aparecer en `F1`, `F3` o `R1`–`R4`. Esos tipos de factura son también los únicos que admiten
 registros expedidos por el destinatario (`"D"`), porque `F2` y `R5` prohíben `Destinatarios`.
 
+En las líneas de detalle IVA `S1`, `validate` comprueba la lista oficial de tipos y los periodos
+fechados de los tipos temporales del `5`, `2` y `7,5` por ciento. Si incluyes
+`TipoRecargoEquivalencia`, su valor debe corresponder tanto a `TipoImpositivo` como a la fecha
+efectiva de la operación. Esa fecha es `FechaOperacion` o, si falta, `FechaExpedicionFactura`.
+
+`BaseImponibleACoste` solo está disponible para el régimen `06`, IPSI u otro impuesto. Las líneas
+de inversión del sujeto pasivo `S2` exigen un tipo de factura admitido y valores cero en
+`TipoImpositivo` y `CuotaRepercutida`. Las líneas IVA `N1`/`N2` deben omitir tipos, cuotas
+repercutidas y recargos de equivalencia. Todas las líneas exentas deben omitir esos campos. Los
+códigos de exención se contrastan con las listas IVA/IGIC y las restricciones del régimen 01; los
+destinatarios informados en una línea IVA `E5` deben usar `IDOtro`. Por último, `Cupon: "S"` solo es
+válido en `R1` y `R5`.
+
 Mantén `IDEmisorFactura` igual a `Cabecera.ObligadoEmision.NIF`. `serializeEnvio` rechaza el lote
 si ambos valores difieren, antes de crear el XML. La AEAT permite un conjunto más amplio de
 caracteres ASCII imprimibles en `NumSerieFactura`, pero esta biblioteca solo acepta letras,
