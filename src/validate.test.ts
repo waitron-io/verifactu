@@ -1012,10 +1012,10 @@ describe("validate — default severity", () => {
   });
 });
 
-describe("validate — rectificativa rules (AEAT 1114/1115/1118)", () => {
+describe("validate — rectificativa rules (AEAT §3.1.3.3 and §3.1.3.6)", () => {
   // A genuinely valid rectificativa: TipoFactura is R1-R5, TipoRectificativa
   // is set, and — because it's "S" (sustitución) — ImporteRectificacion is
-  // also present, satisfying rule 1118 as well as 1114.
+  // also present, satisfying §3.1.3.6 as well as §3.1.3.3.
   const rectificativa = () =>
     buildAltaRecord({
       ...INPUT,
@@ -1033,37 +1033,37 @@ describe("validate — rectificativa rules (AEAT 1114/1115/1118)", () => {
     expect(validate(record)).toEqual([]);
   });
 
-  it("1114: rejects a rectificativa TipoFactura (R1-R5) with no TipoRectificativa", () => {
+  it("§3.1.3.3 rejects a rectificativa TipoFactura (R1-R5) with no TipoRectificativa", () => {
     const record = buildAltaRecord({ ...INPUT, TipoFactura: "R1" });
     expect(codes(record)).toContain("TIPO_RECTIFICATIVA_REQUIRED");
   });
 
-  it("1114: does not require TipoRectificativa for a non-rectificativa TipoFactura", () => {
+  it("§3.1.3.3 does not require TipoRectificativa for a non-rectificativa TipoFactura", () => {
     expect(codes(valid())).not.toContain("TIPO_RECTIFICATIVA_REQUIRED");
   });
 
-  it("1115: rejects TipoRectificativa set on a non-rectificativa TipoFactura", () => {
+  it("§3.1.3.3 rejects TipoRectificativa set on a non-rectificativa TipoFactura", () => {
     // Exactly the shape records.test.ts's EXTRAS fixture used to build by
     // accident: TipoRectificativa on an F1 (INPUT.TipoFactura) record.
     const record = buildAltaRecord({ ...INPUT, TipoRectificativa: "S" });
     expect(codes(record)).toContain("TIPO_RECTIFICATIVA_FORBIDDEN");
   });
 
-  it("1115: does not forbid TipoRectificativa on a rectificativa TipoFactura", () => {
+  it("§3.1.3.3 does not forbid TipoRectificativa on a rectificativa TipoFactura", () => {
     expect(codes(rectificativa())).not.toContain("TIPO_RECTIFICATIVA_FORBIDDEN");
   });
 
-  it("1118: rejects TipoRectificativa S with no ImporteRectificacion", () => {
+  it("§3.1.3.6 rejects TipoRectificativa S with no ImporteRectificacion", () => {
     const record = buildAltaRecord({ ...INPUT, TipoFactura: "R1", TipoRectificativa: "S" });
     expect(codes(record)).toContain("IMPORTE_RECTIFICACION_REQUIRED");
   });
 
-  it("1118: does not require ImporteRectificacion for TipoRectificativa I", () => {
+  it("§3.1.3.6 does not require ImporteRectificacion for TipoRectificativa I", () => {
     const record = buildAltaRecord({ ...INPUT, TipoFactura: "R1", TipoRectificativa: "I" });
     expect(codes(record)).not.toContain("IMPORTE_RECTIFICACION_REQUIRED");
   });
 
-  it("1118: does not require ImporteRectificacion when TipoRectificativa is absent", () => {
+  it("§3.1.3.6 does not require ImporteRectificacion when TipoRectificativa is absent", () => {
     expect(codes(valid())).not.toContain("IMPORTE_RECTIFICACION_REQUIRED");
   });
 });
@@ -1108,7 +1108,7 @@ describe("validate — AEAT §3.1.3.2–6", () => {
       TipoRectificativa: "I",
       FacturasRectificadas: [referencedInvoice],
     });
-    expect(codes(record)).not.toContain("FACTURAS_RECTIFICADAS_FORBIDDEN");
+    expect(validate(record)).toEqual([]);
   });
 
   it("checks every referenced rectified invoice NIF locally", () => {
@@ -1127,6 +1127,75 @@ describe("validate — AEAT §3.1.3.2–6", () => {
     expect(issue?.code).toBe("NIF_CONTROL");
   });
 
+  it("rejects an empty FacturasRectificadas group", () => {
+    const record = buildAltaRecord({
+      ...INPUT,
+      TipoFactura: "R1",
+      TipoRectificativa: "I",
+      FacturasRectificadas: [],
+    });
+    expect(codes(record)).toContain("FACTURAS_RECTIFICADAS_EMPTY");
+  });
+
+  it.each(["", "A".repeat(61)])(
+    "rejects a referenced rectified invoice number outside the XSD's 1–60 range: %j",
+    (NumSerieFactura) => {
+      const record = buildAltaRecord({
+        ...INPUT,
+        TipoFactura: "R1",
+        TipoRectificativa: "I",
+        FacturasRectificadas: [{ ...referencedInvoice, NumSerieFactura }],
+      });
+      const issue = validate(record).find(
+        ({ field }) => field === "FacturasRectificadas.IDFacturaRectificada[0].NumSerieFactura",
+      );
+      expect(issue).toMatchObject({
+        code: "NUMSERIE_LENGTH",
+        message: "NumSerieFactura must be 1 to 60 characters",
+      });
+    },
+  );
+
+  it.each(["A", "A".repeat(60)])(
+    "accepts a referenced rectified invoice number at an XSD length boundary: %j",
+    (NumSerieFactura) => {
+      const record = buildAltaRecord({
+        ...INPUT,
+        TipoFactura: "R1",
+        TipoRectificativa: "I",
+        FacturasRectificadas: [{ ...referencedInvoice, NumSerieFactura }],
+      });
+      const field = "FacturasRectificadas.IDFacturaRectificada[0].NumSerieFactura";
+      expect(validate(record).find((issue) => issue.field === field)).toBeUndefined();
+    },
+  );
+
+  it("rejects an impossible referenced rectified invoice date", () => {
+    const record = buildAltaRecord({
+      ...INPUT,
+      TipoFactura: "R1",
+      TipoRectificativa: "I",
+      FacturasRectificadas: [referencedInvoice],
+    });
+    record.FacturasRectificadas!.IDFacturaRectificada[0]!.FechaExpedicionFactura = "31-02-2025";
+    const issue = validate(record).find(
+      ({ field }) =>
+        field === "FacturasRectificadas.IDFacturaRectificada[0].FechaExpedicionFactura",
+    );
+    expect(issue).toMatchObject({ code: "FECHA_FORMAT", message: "Date must be DD-MM-YYYY" });
+  });
+
+  it("does not apply the main invoice's QR-safe alphabet to a referenced invoice number", () => {
+    const record = buildAltaRecord({
+      ...INPUT,
+      TipoFactura: "R1",
+      TipoRectificativa: "I",
+      FacturasRectificadas: [{ ...referencedInvoice, NumSerieFactura: "ORIGINAL & (1)" }],
+    });
+    const field = "FacturasRectificadas.IDFacturaRectificada[0].NumSerieFactura";
+    expect(validate(record).find((issue) => issue.field === field)).toBeUndefined();
+  });
+
   it("forbids FacturasSustituidas unless TipoFactura is F3", () => {
     const record = buildAltaRecord({ ...INPUT, FacturasSustituidas: [referencedInvoice] });
     expect(codes(record)).toContain("FACTURAS_SUSTITUIDAS_FORBIDDEN");
@@ -1138,19 +1207,52 @@ describe("validate — AEAT §3.1.3.2–6", () => {
       TipoFactura: "F3",
       FacturasSustituidas: [referencedInvoice],
     });
-    expect(codes(record)).not.toContain("FACTURAS_SUSTITUIDAS_FORBIDDEN");
+    expect(validate(record)).toEqual([]);
   });
 
   it("checks every referenced substituted invoice NIF locally", () => {
     const record = buildAltaRecord({
       ...INPUT,
       TipoFactura: "F3",
-      FacturasSustituidas: [{ ...referencedInvoice, IDEmisorFactura: "SHORT" }],
+      FacturasSustituidas: [referencedInvoice, { ...referencedInvoice, IDEmisorFactura: "SHORT" }],
     });
     const issue = validate(record).find(
-      ({ field }) => field === "FacturasSustituidas.IDFacturaSustituida[0].IDEmisorFactura",
+      ({ field }) => field === "FacturasSustituidas.IDFacturaSustituida[1].IDEmisorFactura",
     );
     expect(issue?.code).toBe("NIF_LENGTH");
+  });
+
+  it("rejects an empty FacturasSustituidas group", () => {
+    const record = buildAltaRecord({ ...INPUT, TipoFactura: "F3", FacturasSustituidas: [] });
+    expect(codes(record)).toContain("FACTURAS_SUSTITUIDAS_EMPTY");
+  });
+
+  it("rejects an overlong referenced substituted invoice number", () => {
+    const record = buildAltaRecord({
+      ...INPUT,
+      TipoFactura: "F3",
+      FacturasSustituidas: [{ ...referencedInvoice, NumSerieFactura: "A".repeat(61) }],
+    });
+    const issue = validate(record).find(
+      ({ field }) => field === "FacturasSustituidas.IDFacturaSustituida[0].NumSerieFactura",
+    );
+    expect(issue).toMatchObject({
+      code: "NUMSERIE_LENGTH",
+      message: "NumSerieFactura must be 1 to 60 characters",
+    });
+  });
+
+  it("rejects a malformed referenced substituted invoice date", () => {
+    const record = buildAltaRecord({
+      ...INPUT,
+      TipoFactura: "F3",
+      FacturasSustituidas: [referencedInvoice],
+    });
+    record.FacturasSustituidas!.IDFacturaSustituida[0]!.FechaExpedicionFactura = "2025-01-01";
+    const issue = validate(record).find(
+      ({ field }) => field === "FacturasSustituidas.IDFacturaSustituida[0].FechaExpedicionFactura",
+    );
+    expect(issue).toMatchObject({ code: "FECHA_FORMAT", message: "Date must be DD-MM-YYYY" });
   });
 
   it("forbids ImporteRectificacion when TipoRectificativa is I", () => {
@@ -1644,12 +1746,33 @@ describe("validate — pins the exact field, message and severity for every Vali
       },
     },
     {
+      description: "FACTURAS_RECTIFICADAS_EMPTY",
+      code: "FACTURAS_RECTIFICADAS_EMPTY",
+      field: "FacturasRectificadas",
+      message: "FacturasRectificadas, when present, must carry at least one IDFacturaRectificada",
+      mutate: (r) => {
+        r.TipoFactura = "R1";
+        r.TipoRectificativa = "I";
+        r.FacturasRectificadas = { IDFacturaRectificada: [] };
+      },
+    },
+    {
       description: "FACTURAS_SUSTITUIDAS_FORBIDDEN",
       code: "FACTURAS_SUSTITUIDAS_FORBIDDEN",
       field: "FacturasSustituidas",
       message: "FacturasSustituidas may be set only when TipoFactura is F3",
       mutate: (r) => {
         r.FacturasSustituidas = { IDFacturaSustituida: [{ ...r.IDFactura }] };
+      },
+    },
+    {
+      description: "FACTURAS_SUSTITUIDAS_EMPTY",
+      code: "FACTURAS_SUSTITUIDAS_EMPTY",
+      field: "FacturasSustituidas",
+      message: "FacturasSustituidas, when present, must carry at least one IDFacturaSustituida",
+      mutate: (r) => {
+        r.TipoFactura = "F3";
+        r.FacturasSustituidas = { IDFacturaSustituida: [] };
       },
     },
     {

@@ -33,8 +33,10 @@ registro enviado.
 Los campos de rectificación se comprueban en conjunto. Los valores `S` y `X` de `RechazoPrevio`
 exigen `Subsanacion: "S"`; `FacturasRectificadas` solo está permitido en `R1`–`R5`;
 `FacturasSustituidas`, solo en `F3`; e `ImporteRectificacion` es obligatorio, y solo está permitido,
-con `TipoRectificativa: "S"`. Los NIF de las facturas referenciadas reciben la misma comprobación
-local de longitud y carácter de control que el NIF del emisor principal. La AEAT sigue siendo quien
+con `TipoRectificativa: "S"`. Una agrupación de referencias presente debe contener al menos una
+factura. Cada factura referenciada recibe comprobaciones locales del NIF, del número de factura de
+1–60 caracteres y de una fecha real. El alfabeto más estrecho y seguro para QR de la factura
+principal no se aplica a estas referencias porque nunca entran en el QR. La AEAT sigue siendo quien
 confirma si un NIF está censado.
 
 En un alta, `FechaExpedicionFactura` no puede ser anterior al 28 de octubre de 2024 ni posterior a

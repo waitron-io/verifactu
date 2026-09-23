@@ -94,7 +94,9 @@ substitutes (`S`) or adjusts (`I`) the original invoice. `FacturasRectificadas` 
 invoice(s) being rectified only on `R1`-`R5`. `ImporteRectificacion` is required for, and allowed
 only on, an `S` correction. `FacturasSustituidas` is a different field: use it only on an `F3`
 invoice that replaces simplified invoices. When resubmitting after an AEAT rejection, set
-`RechazoPrevio` to `S` or `X` only together with `Subsanacion: "S"`:
+`RechazoPrevio` to `S` or `X` only together with `Subsanacion: "S"`. A present reference group
+must contain at least one invoice; local validation checks each reference's NIF, 1–60-character
+invoice number, and real date:
 
 ```ts
 const rectificativa = buildAltaRecord({

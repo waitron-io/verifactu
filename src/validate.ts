@@ -32,13 +32,15 @@ export type ValidationCode =
   | "CUOTA_TOTAL_MISMATCH"
   | "IMPORTE_TOTAL_MISMATCH"
   | "RECHAZO_PREVIO_REQUIRES_SUBSANACION"
-  // AEAT error 1114: TipoRectificativa is mandatory when TipoFactura is R1-R5.
+  // AEAT §3.1.3.3: TipoRectificativa is mandatory when TipoFactura is R1-R5.
   | "TIPO_RECTIFICATIVA_REQUIRED"
-  // AEAT error 1115: TipoRectificativa is forbidden when TipoFactura is not R1-R5.
+  // AEAT §3.1.3.3: TipoRectificativa is forbidden when TipoFactura is not R1-R5.
   | "TIPO_RECTIFICATIVA_FORBIDDEN"
   | "FACTURAS_RECTIFICADAS_FORBIDDEN"
+  | "FACTURAS_RECTIFICADAS_EMPTY"
   | "FACTURAS_SUSTITUIDAS_FORBIDDEN"
-  // AEAT error 1118: ImporteRectificacion is mandatory when TipoRectificativa is "S".
+  | "FACTURAS_SUSTITUIDAS_EMPTY"
+  // AEAT §3.1.3.6: ImporteRectificacion is mandatory when TipoRectificativa is "S".
   | "IMPORTE_RECTIFICACION_REQUIRED"
   | "IMPORTE_RECTIFICACION_FORBIDDEN"
   // AEAT requires a recipient on F1/F3 and R1-R4. The XSD leaves Destinatarios
@@ -88,7 +90,7 @@ const FECHA_PATTERN = /^(\d{2})-(\d{2})-(\d{4})$/;
  * the same magnitude bound applies to + and - alike.
  */
 const FECHA_HORA_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}([+-])(\d{2}):(\d{2})$/;
-/** AEAT error 1114/1115: TipoRectificativa is mandatory iff TipoFactura is a rectificativa. */
+/** AEAT §3.1.3.3: TipoRectificativa is mandatory iff TipoFactura is a rectificativa. */
 const TIPO_FACTURA_RECTIFICATIVA_PATTERN = /^R[1-5]$/;
 /**
  * Conservative charset for NumSerieFactura. AEAT permits printable ASCII, but
@@ -195,6 +197,11 @@ export function validate(
       add("NIF_LENGTH", field, "NIF must be exactly 9 characters");
     } else if (!hasValidNifControl(value)) {
       add("NIF_CONTROL", field, "NIF has an invalid format or control character");
+    }
+  };
+  const checkNumSerieLength = (field: string, value: string) => {
+    if (value.length < 1 || value.length > 60) {
+      add("NUMSERIE_LENGTH", field, "NumSerieFactura must be 1 to 60 characters");
     }
   };
 
@@ -380,11 +387,20 @@ export function validate(
       "FacturasRectificadas may be set only when TipoFactura is R1-R5",
     );
   }
-  record.FacturasRectificadas?.IDFacturaRectificada.forEach((invoice, index) => {
-    checkNif(
-      `FacturasRectificadas.IDFacturaRectificada[${index}].IDEmisorFactura`,
-      invoice.IDEmisorFactura,
+  if (record.FacturasRectificadas?.IDFacturaRectificada.length === 0) {
+    add(
+      "FACTURAS_RECTIFICADAS_EMPTY",
+      "FacturasRectificadas",
+      "FacturasRectificadas, when present, must carry at least one IDFacturaRectificada",
     );
+  }
+  record.FacturasRectificadas?.IDFacturaRectificada.forEach((invoice, index) => {
+    const field = `FacturasRectificadas.IDFacturaRectificada[${index}]`;
+    checkNif(`${field}.IDEmisorFactura`, invoice.IDEmisorFactura);
+    checkNumSerieLength(`${field}.NumSerieFactura`, invoice.NumSerieFactura);
+    if (fechaOrdinal(invoice.FechaExpedicionFactura) === undefined) {
+      add("FECHA_FORMAT", `${field}.FechaExpedicionFactura`, "Date must be DD-MM-YYYY");
+    }
   });
   if (record.FacturasSustituidas !== undefined && record.TipoFactura !== "F3") {
     add(
@@ -393,11 +409,20 @@ export function validate(
       "FacturasSustituidas may be set only when TipoFactura is F3",
     );
   }
-  record.FacturasSustituidas?.IDFacturaSustituida.forEach((invoice, index) => {
-    checkNif(
-      `FacturasSustituidas.IDFacturaSustituida[${index}].IDEmisorFactura`,
-      invoice.IDEmisorFactura,
+  if (record.FacturasSustituidas?.IDFacturaSustituida.length === 0) {
+    add(
+      "FACTURAS_SUSTITUIDAS_EMPTY",
+      "FacturasSustituidas",
+      "FacturasSustituidas, when present, must carry at least one IDFacturaSustituida",
     );
+  }
+  record.FacturasSustituidas?.IDFacturaSustituida.forEach((invoice, index) => {
+    const field = `FacturasSustituidas.IDFacturaSustituida[${index}]`;
+    checkNif(`${field}.IDEmisorFactura`, invoice.IDEmisorFactura);
+    checkNumSerieLength(`${field}.NumSerieFactura`, invoice.NumSerieFactura);
+    if (fechaOrdinal(invoice.FechaExpedicionFactura) === undefined) {
+      add("FECHA_FORMAT", `${field}.FechaExpedicionFactura`, "Date must be DD-MM-YYYY");
+    }
   });
 
   // AEAT §3.1.3.6: a rectificativa por sustitución must carry the replaced

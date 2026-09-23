@@ -29,8 +29,9 @@ el código de régimen aplicable en `ClaveRegimen`. Omítelo para otros impuesto
 En una rectificación, usa `FacturasRectificadas` solo con `R1`–`R5`. Usa
 `FacturasSustituidas` solo con `F3`. `ImporteRectificacion` es obligatorio, y solo está permitido,
 en una rectificación por sustitución (`TipoRectificativa: "S"`). Al corregir un registro después de
-un rechazo de la AEAT, `RechazoPrevio: "S"` o `"X"` también exige `Subsanacion: "S"`. La validación
-local comprueba el formato y el carácter de control de cada NIF español referenciado; solo la AEAT
+un rechazo de la AEAT, `RechazoPrevio: "S"` o `"X"` también exige `Subsanacion: "S"`. Una agrupación
+de referencias presente debe contener al menos una factura. La validación local comprueba cada NIF
+español referenciado, la longitud de 1–60 caracteres del número de factura y su fecha; solo la AEAT
 puede confirmar que el NIF pertenece a un contribuyente censado.
 
 `buildAltaRecord` devuelve el registro completo, con fechas e importes formateados y su `Huella`.

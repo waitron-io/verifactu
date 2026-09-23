@@ -79,7 +79,7 @@ export interface IDFacturaAR {
 
 /**
  * `sf:DesgloseRectificacionType` — mandatory when TipoRectificativa is "S"
- * (sustitución): rule 1118. BaseRectificada/CuotaRectificada are required by
+ * (sustitución): AEAT §3.1.3.6. BaseRectificada/CuotaRectificada are required by
  * the XSD; CuotaRecargoRectificado is optional.
  */
 export interface DesgloseRectificacion {
@@ -143,9 +143,9 @@ export interface RegistroAlta {
   RechazoPrevio?: "N" | "S" | "X";
   TipoFactura: TipoFactura;
   TipoRectificativa?: "S" | "I";
-  /** Allowed only for TipoFactura R1-R5; referenced NIF registration is confirmed by AEAT. */
+  /** Non-empty when present; allowed only for R1-R5. AEAT confirms referenced NIF registration. */
   FacturasRectificadas?: { IDFacturaRectificada: IDFacturaAR[] };
-  /** Allowed only for TipoFactura F3; referenced NIF registration is confirmed by AEAT. */
+  /** Non-empty when present; allowed only for F3. AEAT confirms referenced NIF registration. */
   FacturasSustituidas?: { IDFacturaSustituida: IDFacturaAR[] };
   /** Required for, and allowed only with, TipoRectificativa `S`. */
   ImporteRectificacion?: DesgloseRectificacion;
@@ -269,9 +269,9 @@ export interface AltaInput extends RecordInputBase {
   RechazoPrevio?: "N" | "S" | "X";
   TipoFactura: TipoFactura;
   TipoRectificativa?: "S" | "I";
-  /** The rectified invoices' identities. Allowed only for R1-R5 and formatted with this input's offsetMinutes. */
+  /** A non-empty list of rectified invoice identities, allowed only for R1-R5 and formatted with this input's offsetMinutes. */
   FacturasRectificadas?: IDFacturaARInput[];
-  /** The substituted invoices' identities. Allowed only for F3 and formatted with this input's offsetMinutes. */
+  /** A non-empty list of substituted invoice identities, allowed only for F3 and formatted with this input's offsetMinutes. */
   FacturasSustituidas?: IDFacturaARInput[];
   /** Required for, and allowed only with, TipoRectificativa `S` — sustitución. */
   ImporteRectificacion?: DesgloseRectificacionInput;

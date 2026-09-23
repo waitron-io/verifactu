@@ -203,12 +203,11 @@ describe("buildAltaRecord — optional field pass-through", () => {
 describe("buildAltaRecord — rectificativa fields", () => {
   // Seven fields RegistroAlta supports and serializeEnvio already serialises,
   // but that AltaInput previously had no way to populate. TipoRectificativa is
-  // deliberately NOT in this group: AEAT rule 1115 forbids it whenever
+  // deliberately NOT in this group: AEAT §3.1.3.3 forbids it whenever
   // TipoFactura is not R1-R5, so an F1 record (ALTA_INPUT's TipoFactura) can
-  // never legally carry it. It — and FacturasRectificadas/FacturasSustituidas/
-  // ImporteRectificacion, the three rectificativa-specific fields added
-  // alongside it — get their own TipoFactura: "R1" fixture below instead of
-  // being spread onto ALTA_INPUT unchanged.
+  // never legally carry it. The invoice-family-specific fields added alongside
+  // it get valid R1 or F3 fixtures below instead of being spread onto
+  // ALTA_INPUT unchanged.
   const EXTRAS = {
     Subsanacion: "S",
     RechazoPrevio: "S",
@@ -255,21 +254,16 @@ describe("buildAltaRecord — rectificativa fields", () => {
 });
 
 describe("buildAltaRecord — TipoRectificativa, FacturasRectificadas, FacturasSustituidas, ImporteRectificacion", () => {
-  // These four are only ever legal together with a rectificativa TipoFactura
-  // (R1-R5) — rules 1114/1115 — so, unlike the seven fields above, they get
-  // their own TipoFactura: "R1" base rather than being layered onto
-  // ALTA_INPUT's F1 unchanged.
+  // Correction references belong to R1-R5, while substituted-invoice
+  // references belong to F3. Keep those fixtures separate so every record
+  // built below is a combination callers may submit.
   // Explicitly typed (via Pick<AltaInput, ...>) rather than `as const`: an
   // `as const` array literal is readonly, which is incompatible with
   // AltaInput's mutable IDFacturaARInput[] — unlike EXTRAS above, whose
   // fields are all scalars.
   const RECTIFICATIVA_EXTRAS: Pick<
     AltaInput,
-    | "TipoFactura"
-    | "TipoRectificativa"
-    | "FacturasRectificadas"
-    | "FacturasSustituidas"
-    | "ImporteRectificacion"
+    "TipoFactura" | "TipoRectificativa" | "FacturasRectificadas" | "ImporteRectificacion"
   > = {
     TipoFactura: "R1",
     TipoRectificativa: "S",
@@ -280,19 +274,19 @@ describe("buildAltaRecord — TipoRectificativa, FacturasRectificadas, FacturasS
         FechaExpedicionFactura: new Date("2023-12-01T00:00:00+01:00"),
       },
     ],
-    FacturasSustituidas: [
-      {
-        IDEmisorFactura: "89890001K",
-        NumSerieFactura: "12345676/G31",
-        FechaExpedicionFactura: new Date("2023-12-01T00:00:00+01:00"),
-      },
-    ],
     ImporteRectificacion: {
       BaseRectificada: "100",
       CuotaRectificada: "21",
       CuotaRecargoRectificado: "5",
     },
   };
+  const FACTURAS_SUSTITUIDAS: NonNullable<AltaInput["FacturasSustituidas"]> = [
+    {
+      IDEmisorFactura: "89890001K",
+      NumSerieFactura: "12345676/G31",
+      FechaExpedicionFactura: new Date("2023-12-01T00:00:00+01:00"),
+    },
+  ];
 
   it("passes through TipoRectificativa when supplied", () => {
     const record = buildAltaRecord({ ...ALTA_INPUT, ...RECTIFICATIVA_EXTRAS });
@@ -313,7 +307,11 @@ describe("buildAltaRecord — TipoRectificativa, FacturasRectificadas, FacturasS
   });
 
   it("formats FacturasSustituidas as one IDFacturaSustituida per entry", () => {
-    const record = buildAltaRecord({ ...ALTA_INPUT, ...RECTIFICATIVA_EXTRAS });
+    const record = buildAltaRecord({
+      ...ALTA_INPUT,
+      TipoFactura: "F3",
+      FacturasSustituidas: FACTURAS_SUSTITUIDAS,
+    });
     expect(record.FacturasSustituidas).toEqual({
       IDFacturaSustituida: [
         {
@@ -364,7 +362,6 @@ describe("buildAltaRecord — TipoRectificativa, FacturasRectificadas, FacturasS
     const rectificativa = buildAltaRecord({
       ...ALTA_INPUT,
       ...RECTIFICATIVA_EXTRAS,
-      FacturasSustituidas: undefined,
     });
     expect(rectificativa.Huella).toBe(rectificativaBase.Huella);
 
@@ -372,7 +369,7 @@ describe("buildAltaRecord — TipoRectificativa, FacturasRectificadas, FacturasS
     const sustitucion = buildAltaRecord({
       ...ALTA_INPUT,
       TipoFactura: "F3",
-      FacturasSustituidas: RECTIFICATIVA_EXTRAS.FacturasSustituidas,
+      FacturasSustituidas: FACTURAS_SUSTITUIDAS,
     });
     expect(sustitucion.Huella).toBe(sustitucionBase.Huella);
   });
@@ -381,7 +378,6 @@ describe("buildAltaRecord — TipoRectificativa, FacturasRectificadas, FacturasS
     const record = buildAltaRecord({
       ...ALTA_INPUT,
       ...RECTIFICATIVA_EXTRAS,
-      FacturasSustituidas: undefined,
       FechaExpedicionFactura: new Date("2024-10-28T00:00:00+01:00"),
       Destinatarios: {
         IDDestinatario: [{ NombreRazon: "Cliente Factura SL", NIF: "B99999997" }],
