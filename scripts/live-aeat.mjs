@@ -335,10 +335,43 @@ export async function submitMixedRegimeProbe(client, cabecera, record) {
   return mixedRegimeSubmissionEvidence(submitted, record);
 }
 
-function comparison(expected, stored) {
+// AEAT may reformat xsd:decimal text; compare its numeric value while keeping codes exact.
+const DESGLOSE_DECIMAL_FIELDS = new Set([
+  "TipoImpositivo",
+  "BaseImponibleOimporteNoSujeto",
+  "BaseImponibleACoste",
+  "CuotaRepercutida",
+  "TipoRecargoEquivalencia",
+  "CuotaRecargoEquivalencia",
+]);
+
+function canonicalDecimal(value) {
+  if (typeof value !== "string") return value;
+  const parsed = /^([+-]?)(\d+)(?:\.(\d+))?$/.exec(value);
+  if (!parsed) return value;
+  const [, sign, integer, fraction = ""] = parsed;
+  const canonicalInteger = integer.replace(/^0+(?=\d)/, "");
+  const canonicalFraction = fraction.replace(/0+$/, "");
+  const canonicalSign =
+    sign === "-" && (canonicalInteger !== "0" || canonicalFraction !== "") ? "-" : "";
+  return `${canonicalSign}${canonicalInteger}${canonicalFraction ? `.${canonicalFraction}` : ""}`;
+}
+
+function canonicalDesglose(lines) {
+  return lines.map((line) =>
+    Object.fromEntries(
+      Object.entries(line).map(([field, value]) => [
+        field,
+        DESGLOSE_DECIMAL_FIELDS.has(field) ? canonicalDecimal(value) : value,
+      ]),
+    ),
+  );
+}
+
+function comparison(expected, stored, canonicalize = (value) => value) {
   if (stored === undefined) return { status: "omitted", expected };
   return {
-    status: isDeepStrictEqual(stored, expected) ? "match" : "mismatch",
+    status: isDeepStrictEqual(canonicalize(stored), canonicalize(expected)) ? "match" : "mismatch",
     expected,
     stored,
   };
@@ -389,9 +422,9 @@ export async function consultStoredMixedRegimeProbe(client, options) {
             stored: data.Huella,
             reason: "AEAT omitted FechaHoraHusoGenRegistro",
           },
-    CuotaTotal: comparison(expected.CuotaTotal, data.CuotaTotal),
-    ImporteTotal: comparison(expected.ImporteTotal, data.ImporteTotal),
-    Desglose: comparison(expected.Desglose, normalizedDesglose),
+    CuotaTotal: comparison(expected.CuotaTotal, data.CuotaTotal, canonicalDecimal),
+    ImporteTotal: comparison(expected.ImporteTotal, data.ImporteTotal, canonicalDecimal),
+    Desglose: comparison(expected.Desglose, normalizedDesglose, canonicalDesglose),
   };
 }
 
