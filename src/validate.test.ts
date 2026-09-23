@@ -1760,6 +1760,465 @@ describe("validate — AEAT §3.1.3.7–12", () => {
   });
 });
 
+describe("validate — AEAT §3.1.3.14–15.5", () => {
+  const withDetail = (overrides: Partial<DetalleDesglose>) => {
+    const record = valid();
+    const detail = { ...record.Desglose[0]!, ...overrides } as DetalleDesglose;
+    if (overrides.OperacionExenta !== undefined) {
+      delete detail.CalificacionOperacion;
+      for (const field of [
+        "TipoImpositivo",
+        "CuotaRepercutida",
+        "TipoRecargoEquivalencia",
+        "CuotaRecargoEquivalencia",
+      ] as const) {
+        if (!Object.hasOwn(overrides, field)) delete detail[field];
+      }
+    }
+    if (overrides.CalificacionOperacion !== undefined) delete detail.OperacionExenta;
+    record.Desglose[0] = detail;
+    return record;
+  };
+
+  const withEffectiveDate = (date: string, overrides: Partial<DetalleDesglose>) => {
+    const record = withDetail(overrides);
+    record.FechaOperacion = date;
+    return record;
+  };
+
+  it.each(["R1", "R5"] as const)("§3.1.3.14 permits Cupon S for %s", (TipoFactura) => {
+    const record = valid();
+    record.TipoFactura = TipoFactura;
+    record.TipoRectificativa = "I";
+    record.Cupon = "S";
+    expect(codes(record)).not.toContain("CUPON_FORBIDDEN");
+  });
+
+  it.each(["F1", "F2", "F3", "R2", "R3", "R4"] as const)(
+    "§3.1.3.14 forbids Cupon S for %s",
+    (TipoFactura) => {
+      const record = valid();
+      record.TipoFactura = TipoFactura;
+      record.Cupon = "S";
+      expect(codes(record)).toContain("CUPON_FORBIDDEN");
+    },
+  );
+
+  it("§3.1.3.14 permits Cupon N for an ordinary invoice", () => {
+    const record = valid();
+    record.Cupon = "N";
+    expect(codes(record)).not.toContain("CUPON_FORBIDDEN");
+  });
+
+  it.each(["0.00", "4.00", "10.00", "21.00"])(
+    "§3.1.3.15.1 permits the ordinary IVA S1 rate %s",
+    (TipoImpositivo) => {
+      expect(codes(withDetail({ TipoImpositivo }))).not.toContain("TIPO_IMPOSITIVO_VALUE");
+    },
+  );
+
+  it("§3.1.3.15.1 rejects an IVA S1 rate outside the published list", () => {
+    expect(codes(withDetail({ TipoImpositivo: "3.00" }))).toContain("TIPO_IMPOSITIVO_VALUE");
+  });
+
+  it("§3.1.3.15.1 applies the IVA S1 rate list when Impuesto is explicitly 01", () => {
+    expect(codes(withDetail({ Impuesto: "01", TipoImpositivo: "3.00" }))).toContain(
+      "TIPO_IMPOSITIVO_VALUE",
+    );
+  });
+
+  it.each(["03", "05"])("§3.1.3.15.1 does not apply the IVA rate list to tax %s", (Impuesto) => {
+    const record = withDetail({ Impuesto, TipoImpositivo: "3.00" });
+    if (Impuesto === "05") record.Desglose[0]!.ClaveRegimen = undefined;
+    expect(codes(record)).not.toContain("TIPO_IMPOSITIVO_VALUE");
+  });
+
+  it("§3.1.3.15.1 does not cascade a value error from malformed TipoImpositivo", () => {
+    const record = withDetail({ TipoImpositivo: "3" });
+    expect(codes(record)).toContain("TIPO_RANGE");
+    expect(codes(record)).not.toContain("TIPO_IMPOSITIVO_VALUE");
+  });
+
+  it.each([
+    ["5.00", "01-07-2022"],
+    ["5.00", "30-09-2024"],
+    ["2.00", "01-10-2024"],
+    ["2.00", "31-12-2024"],
+    ["7.50", "01-10-2024"],
+    ["7.50", "31-12-2024"],
+  ])("§3.1.3.15.1 permits special IVA rate %s on %s", (TipoImpositivo, date) => {
+    expect(codes(withEffectiveDate(date, { TipoImpositivo }))).not.toContain(
+      "TIPO_IMPOSITIVO_DATE",
+    );
+  });
+
+  it.each([
+    ["5.00", "30-06-2022"],
+    ["5.00", "01-10-2024"],
+    ["2.00", "30-09-2024"],
+    ["2.00", "01-01-2025"],
+    ["7.50", "30-09-2024"],
+    ["7.50", "01-01-2025"],
+  ])("§3.1.3.15.1 rejects special IVA rate %s on %s", (TipoImpositivo, date) => {
+    expect(codes(withEffectiveDate(date, { TipoImpositivo }))).toContain("TIPO_IMPOSITIVO_DATE");
+  });
+
+  it("§3.1.3.15.1 falls back to FechaExpedicionFactura for the special-rate date", () => {
+    const record = withDetail({ TipoImpositivo: "2.00" });
+    record.FechaOperacion = undefined;
+    record.IDFactura.FechaExpedicionFactura = "01-10-2024";
+    expect(codes(record)).not.toContain("TIPO_IMPOSITIVO_DATE");
+  });
+
+  it("§3.1.3.15.1 does not cascade a dated-rate error from malformed dates", () => {
+    const record = withEffectiveDate("99-99-2024", { TipoImpositivo: "5.00" });
+    expect(codes(record)).toContain("FECHA_FORMAT");
+    expect(codes(record)).not.toContain("TIPO_IMPOSITIVO_DATE");
+  });
+
+  it.each([
+    { ClaveRegimen: "06" },
+    { Impuesto: "02", ClaveRegimen: "01" },
+    { Impuesto: "05", ClaveRegimen: undefined },
+  ] satisfies Array<Partial<DetalleDesglose>>)(
+    "§3.1.3.15.2 permits BaseImponibleACoste for an eligible line: %o",
+    (overrides) => {
+      expect(codes(withDetail({ ...overrides, BaseImponibleACoste: "90.00" }))).not.toContain(
+        "BASE_IMPONIBLE_A_COSTE_FORBIDDEN",
+      );
+    },
+  );
+
+  it("§3.1.3.15.2 forbids BaseImponibleACoste on an ordinary IVA line", () => {
+    expect(codes(withDetail({ BaseImponibleACoste: "90.00" }))).toContain(
+      "BASE_IMPONIBLE_A_COSTE_FORBIDDEN",
+    );
+  });
+
+  it("§3.1.3.15.2 validates the amount syntax of BaseImponibleACoste", () => {
+    expect(validate(withDetail({ ClaveRegimen: "06", BaseImponibleACoste: "9e1" }))).toContainEqual(
+      expect.objectContaining({
+        code: "AMOUNT_FORMAT",
+        field: "Desglose[0].BaseImponibleACoste",
+      }),
+    );
+  });
+
+  it("§3.1.3.15.3 rejects a recargo outside the published list", () => {
+    expect(
+      codes(withDetail({ TipoImpositivo: "21.00", TipoRecargoEquivalencia: "9.00" })),
+    ).toContain("TIPO_RECARGO_COMBINATION");
+  });
+
+  it.each([
+    ["7.50", "0.50", "01-10-2024"],
+    ["5.00", "0.62", "01-07-2022"],
+    ["2.00", "0.50", "01-10-2024"],
+    ["0.00", "0.26", "01-01-2023"],
+  ])(
+    "§3.1.3.15.3 rejects wrong recargo %s/%s on an otherwise eligible date %s",
+    (TipoImpositivo, TipoRecargoEquivalencia, date) => {
+      expect(codes(withEffectiveDate(date, { TipoImpositivo, TipoRecargoEquivalencia }))).toContain(
+        "TIPO_RECARGO_COMBINATION",
+      );
+    },
+  );
+
+  it("§3.1.3.15.3 rejects a recargo with no TipoImpositivo", () => {
+    expect(codes(withDetail({ TipoRecargoEquivalencia: "1.40" }))).toContain(
+      "TIPO_RECARGO_COMBINATION",
+    );
+  });
+
+  it("§3.1.3.15.3 does not cascade a combination error from a malformed recargo", () => {
+    const record = withDetail({ TipoImpositivo: "21.00", TipoRecargoEquivalencia: "5.2" });
+    expect(codes(record)).toContain("TIPO_RANGE");
+    expect(codes(record)).not.toContain("TIPO_RECARGO_COMBINATION");
+  });
+
+  it("§3.1.3.15.3 does not cascade a dated-recargo error from malformed dates", () => {
+    const record = withEffectiveDate("99-99-2024", {
+      TipoImpositivo: "7.50",
+      TipoRecargoEquivalencia: "1.00",
+    });
+    expect(codes(record)).toContain("FECHA_FORMAT");
+    expect(codes(record)).not.toContain("TIPO_RECARGO_COMBINATION");
+  });
+
+  it.each(["03", "05"])(
+    "§3.1.3.15.3 does not apply the IVA recargo pairing to tax %s",
+    (Impuesto) => {
+      const record = withDetail({
+        Impuesto,
+        TipoImpositivo: "21.00",
+        TipoRecargoEquivalencia: "1.40",
+      });
+      if (Impuesto === "05") record.Desglose[0]!.ClaveRegimen = undefined;
+      expect(codes(record)).not.toContain("TIPO_RECARGO_COMBINATION");
+    },
+  );
+
+  it.each([
+    ["21.00", "5.20", "23-09-2026"],
+    ["21.00", "1.75", "23-09-2026"],
+    ["10.00", "1.40", "23-09-2026"],
+    ["7.50", "1.00", "01-10-2024"],
+    ["7.50", "1.00", "31-12-2024"],
+    ["5.00", "0.50", "31-12-2022"],
+    ["5.00", "0.62", "01-01-2023"],
+    ["5.00", "0.62", "30-09-2024"],
+    ["4.00", "0.50", "23-09-2026"],
+    ["2.00", "0.26", "01-10-2024"],
+    ["2.00", "0.26", "31-12-2024"],
+    ["0.00", "0.00", "01-01-2023"],
+    ["0.00", "0.00", "30-09-2024"],
+  ])(
+    "§3.1.3.15.3 permits rate %s with recargo %s on %s",
+    (TipoImpositivo, TipoRecargoEquivalencia, date) => {
+      expect(
+        codes(withEffectiveDate(date, { TipoImpositivo, TipoRecargoEquivalencia })),
+      ).not.toContain("TIPO_RECARGO_COMBINATION");
+    },
+  );
+
+  it.each([
+    ["21.00", "1.40", "23-09-2026"],
+    ["10.00", "5.20", "23-09-2026"],
+    ["7.50", "1.00", "30-09-2024"],
+    ["5.00", "0.50", "01-01-2023"],
+    ["5.00", "0.62", "01-10-2024"],
+    ["4.00", "0.62", "23-09-2026"],
+    ["2.00", "0.26", "01-01-2025"],
+    ["0.00", "0.00", "31-12-2022"],
+    ["0.00", "0.00", "01-10-2024"],
+  ])(
+    "§3.1.3.15.3 rejects rate %s with recargo %s on %s",
+    (TipoImpositivo, TipoRecargoEquivalencia, date) => {
+      expect(codes(withEffectiveDate(date, { TipoImpositivo, TipoRecargoEquivalencia }))).toContain(
+        "TIPO_RECARGO_COMBINATION",
+      );
+    },
+  );
+
+  it.each(["F2", "R5"] as const)("§3.1.3.15.4 forbids S2 for %s", (TipoFactura) => {
+    const record = withDetail({
+      CalificacionOperacion: "S2",
+      TipoImpositivo: "0.00",
+      CuotaRepercutida: "0.00",
+    });
+    record.TipoFactura = TipoFactura;
+    expect(codes(record)).toContain("S2_TIPO_FACTURA");
+  });
+
+  it("§3.1.3.15.4 permits S2 for F1 with zero rate and tax", () => {
+    const record = withDetail({
+      CalificacionOperacion: "S2",
+      TipoImpositivo: "0.00",
+      CuotaRepercutida: "0.00",
+    });
+    expect(codes(record)).not.toContain("S2_TIPO_FACTURA");
+    expect(codes(record)).not.toContain("S2_TIPO_IMPOSITIVO");
+    expect(codes(record)).not.toContain("S2_CUOTA_REPERCUTIDA");
+  });
+
+  it.each([undefined, "21.00"])(
+    "§3.1.3.15.4 requires S2 TipoImpositivo to be present and zero: %s",
+    (TipoImpositivo) => {
+      expect(codes(withDetail({ CalificacionOperacion: "S2", TipoImpositivo }))).toContain(
+        "S2_TIPO_IMPOSITIVO",
+      );
+    },
+  );
+
+  it.each([undefined, "21.00"])(
+    "§3.1.3.15.4 requires S2 CuotaRepercutida to be present and zero: %s",
+    (CuotaRepercutida) => {
+      expect(codes(withDetail({ CalificacionOperacion: "S2", CuotaRepercutida }))).toContain(
+        "S2_CUOTA_REPERCUTIDA",
+      );
+    },
+  );
+
+  it.each([
+    "TipoImpositivo",
+    "CuotaRepercutida",
+    "TipoRecargoEquivalencia",
+    "CuotaRecargoEquivalencia",
+  ] as const)("§3.1.3.15.4 forbids %s on an IVA N1/N2 line", (field) => {
+    const record = withDetail({ CalificacionOperacion: "N1" });
+    record.Desglose[0]![field] = field.startsWith("Tipo") ? "1.00" : "1.00";
+    expect(codes(record)).toContain("N1_N2_TAX_FIELDS_FORBIDDEN");
+  });
+
+  it("§3.1.3.15.4 applies the IVA field ban to N2 as well as N1", () => {
+    expect(codes(withDetail({ CalificacionOperacion: "N2", TipoImpositivo: "1.00" }))).toContain(
+      "N1_N2_TAX_FIELDS_FORBIDDEN",
+    );
+  });
+
+  it("§3.1.3.15.4 does not also report S1 rate or recargo errors for an IVA N1 line", () => {
+    const result = codes(
+      withDetail({
+        CalificacionOperacion: "N1",
+        TipoImpositivo: "3.00",
+        TipoRecargoEquivalencia: "9.00",
+      }),
+    );
+    expect(result).toContain("N1_N2_TAX_FIELDS_FORBIDDEN");
+    expect(result).not.toContain("TIPO_IMPOSITIVO_VALUE");
+    expect(result).not.toContain("TIPO_RECARGO_COMBINATION");
+  });
+
+  it("§3.1.3.15.4 does not apply the IVA N1/N2 field ban to another tax", () => {
+    const record = withDetail({
+      Impuesto: "05",
+      ClaveRegimen: undefined,
+      CalificacionOperacion: "N2",
+      TipoImpositivo: "1.00",
+    });
+    expect(codes(record)).not.toContain("N1_N2_TAX_FIELDS_FORBIDDEN");
+  });
+
+  it.each(["E1", "E4", "E5", "E6"])(
+    "§3.1.3.15.5 permits IVA exemption %s outside ordinary regime 01 exceptions",
+    (OperacionExenta) => {
+      expect(codes(withDetail({ ClaveRegimen: "02", OperacionExenta }))).not.toContain(
+        "OPERACION_EXENTA_VALUE",
+      );
+    },
+  );
+
+  it("§3.1.3.15.5 accepts a clean exempt line without tax fields", () => {
+    expect(codes(withDetail({ OperacionExenta: "E1" }))).not.toContain(
+      "OPERACION_EXENTA_TAX_FIELDS_FORBIDDEN",
+    );
+  });
+
+  it.each(["E7", "E8"])("§3.1.3.15.5 rejects IVA exemption %s", (OperacionExenta) => {
+    expect(codes(withDetail({ OperacionExenta }))).toContain("OPERACION_EXENTA_VALUE");
+  });
+
+  it.each(["E1", "E6", "E7", "E8"])("§3.1.3.15.5 permits IGIC exemption %s", (OperacionExenta) => {
+    expect(codes(withDetail({ Impuesto: "03", OperacionExenta }))).not.toContain(
+      "OPERACION_EXENTA_VALUE",
+    );
+  });
+
+  it("§3.1.3.15.5 rejects an exemption outside the IGIC list", () => {
+    expect(codes(withDetail({ Impuesto: "03", OperacionExenta: "E9" }))).toContain(
+      "OPERACION_EXENTA_VALUE",
+    );
+  });
+
+  it.each(["E2", "E3"])(
+    "§3.1.3.15.5 rejects exemption %s under ordinary IVA/IGIC regime 01",
+    (OperacionExenta) => {
+      expect(codes(withDetail({ OperacionExenta }))).toContain("OPERACION_EXENTA_REGIMEN");
+      expect(codes(withDetail({ Impuesto: "03", OperacionExenta }))).toContain(
+        "OPERACION_EXENTA_REGIMEN",
+      );
+    },
+  );
+
+  it("§3.1.3.15.5 permits E2 outside ordinary regime 01", () => {
+    const result = codes(withDetail({ ClaveRegimen: "02", OperacionExenta: "E2" }));
+    expect(result).not.toContain("OPERACION_EXENTA_REGIMEN");
+    expect(result).not.toContain("OPERACION_EXENTA_VALUE");
+  });
+
+  it("§3.1.3.15.5 permits E3 outside ordinary regime 01", () => {
+    const result = codes(withDetail({ ClaveRegimen: "02", OperacionExenta: "E3" }));
+    expect(result).not.toContain("OPERACION_EXENTA_REGIMEN");
+    expect(result).not.toContain("OPERACION_EXENTA_VALUE");
+  });
+
+  it("§3.1.3.15.5 leaves exemption values for another tax to its schema/code list", () => {
+    const record = withDetail({ Impuesto: "05", ClaveRegimen: undefined, OperacionExenta: "E8" });
+    expect(codes(record)).not.toContain("OPERACION_EXENTA_VALUE");
+  });
+
+  it("§3.1.3.15.5 does not apply the regime-01 E2/E3 ban to another tax", () => {
+    const record = withDetail({ Impuesto: "05", ClaveRegimen: "01", OperacionExenta: "E2" });
+    expect(codes(record)).not.toContain("OPERACION_EXENTA_REGIMEN");
+  });
+
+  it.each([
+    "TipoImpositivo",
+    "CuotaRepercutida",
+    "TipoRecargoEquivalencia",
+    "CuotaRecargoEquivalencia",
+  ] as const)("§3.1.3.15.5 forbids %s on an exempt line", (field) => {
+    const record = withDetail({ OperacionExenta: "E1" });
+    record.Desglose[0]![field] = "1.00";
+    expect(codes(record)).toContain("OPERACION_EXENTA_TAX_FIELDS_FORBIDDEN");
+  });
+
+  it("§3.1.3.15.5.1 requires IDOtro for recipients of an IVA E5 line", () => {
+    expect(codes(withDetail({ OperacionExenta: "E5" }))).toContain(
+      "OPERACION_EXENTA_E5_DESTINATARIO_ID",
+    );
+  });
+
+  it("§3.1.3.15.5.1 applies when IVA is explicitly 01", () => {
+    expect(codes(withDetail({ Impuesto: "01", OperacionExenta: "E5" }))).toContain(
+      "OPERACION_EXENTA_E5_DESTINATARIO_ID",
+    );
+  });
+
+  it("§3.1.3.15.5.1 accepts IDOtro for recipients of an IVA E5 line", () => {
+    const record = withDetail({ OperacionExenta: "E5" });
+    record.Destinatarios = {
+      IDDestinatario: [
+        { NombreRazon: "French recipient", IDOtro: { IDType: "02", ID: "FR12345678901" } },
+      ],
+    };
+    expect(codes(record)).not.toContain("OPERACION_EXENTA_E5_DESTINATARIO_ID");
+  });
+
+  it("§3.1.3.15.5.1 rejects mixed NIF and IDOtro recipients on an IVA E5 line", () => {
+    const record = withDetail({ OperacionExenta: "E5" });
+    record.Destinatarios = {
+      IDDestinatario: [
+        { NombreRazon: "French recipient", IDOtro: { IDType: "02", ID: "FR12345678901" } },
+        { NombreRazon: "Spanish recipient", NIF: "B99999997" },
+      ],
+    };
+    expect(codes(record)).toContain("OPERACION_EXENTA_E5_DESTINATARIO_ID");
+  });
+
+  it("§3.1.3.15.5.1 checks an E5 line in a mixed desglose", () => {
+    const record = valid();
+    record.Desglose = [
+      record.Desglose[0]!,
+      {
+        ClaveRegimen: "02",
+        OperacionExenta: "E5",
+        BaseImponibleOimporteNoSujeto: "10.00",
+      },
+    ];
+    expect(codes(record)).toContain("OPERACION_EXENTA_E5_DESTINATARIO_ID");
+  });
+
+  it("§3.1.3.15.5.1 does not apply the E5 identity rule to IGIC", () => {
+    expect(codes(withDetail({ Impuesto: "03", OperacionExenta: "E5" }))).not.toContain(
+      "OPERACION_EXENTA_E5_DESTINATARIO_ID",
+    );
+  });
+
+  it("§3.1.3.15.5.1 does not apply the E5 identity rule to another exemption", () => {
+    expect(codes(withDetail({ OperacionExenta: "E4" }))).not.toContain(
+      "OPERACION_EXENTA_E5_DESTINATARIO_ID",
+    );
+  });
+
+  it("§3.1.3.15.5.1 has no recipient identity to check when Destinatarios is absent", () => {
+    const record = withDetail({ OperacionExenta: "E5" });
+    record.TipoFactura = "F2";
+    record.Destinatarios = undefined;
+    expect(codes(record)).not.toContain("OPERACION_EXENTA_E5_DESTINATARIO_ID");
+  });
+});
+
 describe("validate — Destinatarios rules (F1/F3/R1-R4 require, F2/R5 forbid)", () => {
   const DESTINATARIOS = {
     IDDestinatario: [{ NombreRazon: "Cliente Factura SL", NIF: "B99999997" }],
@@ -2595,6 +3054,136 @@ describe("validate — pins the exact field, message and severity for every Vali
             },
           ],
         };
+      },
+    },
+    {
+      description: "CUPON_FORBIDDEN",
+      code: "CUPON_FORBIDDEN",
+      field: "Cupon",
+      message: "Cupon may be S only when TipoFactura is R1 or R5",
+      mutate: (r) => {
+        r.Cupon = "S";
+      },
+    },
+    {
+      description: "TIPO_IMPOSITIVO_VALUE",
+      code: "TIPO_IMPOSITIVO_VALUE",
+      field: "Desglose[0].TipoImpositivo",
+      message: "TipoImpositivo is not permitted for an IVA S1 line",
+      mutate: (r) => {
+        r.Desglose[0]!.TipoImpositivo = "3.00";
+      },
+    },
+    {
+      description: "TIPO_IMPOSITIVO_DATE",
+      code: "TIPO_IMPOSITIVO_DATE",
+      field: "Desglose[0].TipoImpositivo",
+      message: "TipoImpositivo is not permitted on the effective operation date",
+      mutate: (r) => {
+        r.FechaOperacion = "30-06-2022";
+        r.Desglose[0]!.TipoImpositivo = "5.00";
+      },
+    },
+    {
+      description: "BASE_IMPONIBLE_A_COSTE_FORBIDDEN",
+      code: "BASE_IMPONIBLE_A_COSTE_FORBIDDEN",
+      field: "Desglose[0].BaseImponibleACoste",
+      message: "BaseImponibleACoste is allowed only for regime 06, IPSI or other tax",
+      mutate: (r) => {
+        r.Desglose[0]!.BaseImponibleACoste = "90.00";
+      },
+    },
+    {
+      description: "TIPO_RECARGO_COMBINATION",
+      code: "TIPO_RECARGO_COMBINATION",
+      field: "Desglose[0].TipoRecargoEquivalencia",
+      message: "TipoRecargoEquivalencia is not permitted for this rate and operation date",
+      mutate: (r) => {
+        r.Desglose[0]!.TipoImpositivo = "21.00";
+        r.Desglose[0]!.TipoRecargoEquivalencia = "1.40";
+      },
+    },
+    {
+      description: "S2_TIPO_FACTURA",
+      code: "S2_TIPO_FACTURA",
+      field: "Desglose[0].CalificacionOperacion",
+      message: "CalificacionOperacion S2 is allowed only when TipoFactura is F1, F3 or R1-R4",
+      mutate: (r) => {
+        r.TipoFactura = "F2";
+        r.Desglose[0]!.CalificacionOperacion = "S2";
+        r.Desglose[0]!.TipoImpositivo = "0.00";
+        r.Desglose[0]!.CuotaRepercutida = "0.00";
+      },
+    },
+    {
+      description: "S2_TIPO_IMPOSITIVO",
+      code: "S2_TIPO_IMPOSITIVO",
+      field: "Desglose[0].TipoImpositivo",
+      message: "CalificacionOperacion S2 requires TipoImpositivo to be present and zero",
+      mutate: (r) => {
+        r.Desglose[0]!.CalificacionOperacion = "S2";
+        r.Desglose[0]!.TipoImpositivo = "21.00";
+      },
+    },
+    {
+      description: "S2_CUOTA_REPERCUTIDA",
+      code: "S2_CUOTA_REPERCUTIDA",
+      field: "Desglose[0].CuotaRepercutida",
+      message: "CalificacionOperacion S2 requires CuotaRepercutida to be present and zero",
+      mutate: (r) => {
+        r.Desglose[0]!.CalificacionOperacion = "S2";
+        r.Desglose[0]!.TipoImpositivo = "0.00";
+      },
+    },
+    {
+      description: "N1_N2_TAX_FIELDS_FORBIDDEN",
+      code: "N1_N2_TAX_FIELDS_FORBIDDEN",
+      field: "Desglose[0]",
+      message: "IVA N1 and N2 lines must not carry tax-rate or charged-tax fields",
+      mutate: (r) => {
+        r.Desglose[0]!.CalificacionOperacion = "N1";
+        r.Desglose[0]!.TipoImpositivo = "1.00";
+      },
+    },
+    {
+      description: "OPERACION_EXENTA_VALUE",
+      code: "OPERACION_EXENTA_VALUE",
+      field: "Desglose[0].OperacionExenta",
+      message: "OperacionExenta is not permitted for this tax",
+      mutate: (r) => {
+        delete r.Desglose[0]!.CalificacionOperacion;
+        r.Desglose[0]!.OperacionExenta = "E7";
+      },
+    },
+    {
+      description: "OPERACION_EXENTA_REGIMEN",
+      code: "OPERACION_EXENTA_REGIMEN",
+      field: "Desglose[0].OperacionExenta",
+      message: "OperacionExenta E2 and E3 are forbidden under regime 01",
+      mutate: (r) => {
+        delete r.Desglose[0]!.CalificacionOperacion;
+        r.Desglose[0]!.OperacionExenta = "E2";
+      },
+    },
+    {
+      description: "OPERACION_EXENTA_TAX_FIELDS_FORBIDDEN",
+      code: "OPERACION_EXENTA_TAX_FIELDS_FORBIDDEN",
+      field: "Desglose[0]",
+      message: "Exempt lines must not carry tax-rate or charged-tax fields",
+      mutate: (r) => {
+        delete r.Desglose[0]!.CalificacionOperacion;
+        r.Desglose[0]!.OperacionExenta = "E1";
+        r.Desglose[0]!.TipoImpositivo = "1.00";
+      },
+    },
+    {
+      description: "OPERACION_EXENTA_E5_DESTINATARIO_ID",
+      code: "OPERACION_EXENTA_E5_DESTINATARIO_ID",
+      field: "Destinatarios",
+      message: "Recipients of an IVA E5 line must be identified through IDOtro",
+      mutate: (r) => {
+        delete r.Desglose[0]!.CalificacionOperacion;
+        r.Desglose[0]!.OperacionExenta = "E5";
       },
     },
     {

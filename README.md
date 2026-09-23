@@ -98,6 +98,11 @@ NIF or EU VAT-number structure. Recipient identities receive the corresponding i
 Spanish-country, type-07, and EU VAT-shape checks. AEAT remains responsible for confirming
 registration.
 
+Detail-line validation also applies AEAT's dated IVA rates and equivalence-surcharge pairings,
+`BaseImponibleACoste` eligibility, reverse-charge and non-subject field rules, and IVA/IGIC
+exemption codes. An IVA `E5` line requires any supplied recipient to use `IDOtro`. `Cupon: "S"`
+is limited to `R1` and `R5` invoices.
+
 A rectificativa (`R1`-`R5`) is built the same way, with `TipoRectificativa` set to say whether it
 substitutes (`S`) or adjusts (`I`) the original invoice. `FacturasRectificadas` may identify the
 invoice(s) being rectified only on `R1`-`R5`. `ImporteRectificacion` is required for, and allowed
