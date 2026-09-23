@@ -71,3 +71,21 @@ charged-tax fields for `08`. Both retained deliberately incorrect totals and ret
 Correcto` and `EstadoRegistro: Correcto`, with no error code or description. Together with the
 earlier runs, this live-verifies the record-wide suppression for every exclusion code listed by
 §3.1.3.16–17: `03`, `05`, `06`, `08`, and `09`.
+
+Read-only issuer consultas then retrieved those five historical records by their exact serial and
+issue date. These consultas did not submit replacement records. Every record remained `Correcto`,
+and AEAT returned every requested field. The stored hash matched the originally submitted hash in
+each case, while both totals and every breakdown field matched by value:
+
+| Regime | Retrieval evidence                                                                  | Matching stored hash                                               |
+| ------ | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `03`   | [Run 35877525598](https://github.com/waitron-io/verifactu/actions/runs/35877525598) | `9F61B0D9581599ECB1230B625F7E7FDD07A80CA11BA812DF1DFE2BE8F0F8DF9B` |
+| `05`   | [Run 35877518587](https://github.com/waitron-io/verifactu/actions/runs/35877518587) | `2D303F331C20E4DC8A5D7AC6B02DCB513D13242FF0D2590275405CA3F3BC6CF6` |
+| `06`   | [Run 35877524559](https://github.com/waitron-io/verifactu/actions/runs/35877524559) | `4D3E9E7B6CEEE14E91066FBC09E08F83CEB927BCD0E2210BDEA4CC1B9A739721` |
+| `08`   | [Run 35877522333](https://github.com/waitron-io/verifactu/actions/runs/35877522333) | `265D6547765E52C77C25631C25FEA4D1AAB16D4A0711DA619A3D75331DADA12D` |
+| `09`   | [Run 35877523639](https://github.com/waitron-io/verifactu/actions/runs/35877523639) | `A53F2A7E8B79025584D7B4F03C7FB10EF0F6BEF0E323B94B9365B0F937FCD599` |
+
+AEAT reformatted decimal values in the consulta response, for example returning `999` for the
+submitted `999.00`, `21` for `21.00`, and `100` for `100.00`. The comparison therefore checks the
+numeric value of schema-decimal fields while keeping tax, regime, classification, and exemption
+codes as exact strings. The raw submitted and stored representations remain in each workflow log.
