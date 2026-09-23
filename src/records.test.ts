@@ -64,6 +64,8 @@ describe("buildAltaRecord", () => {
     expect(Object.hasOwn(record, "FacturaSimplificadaArt7273")).toBe(false);
     expect(Object.hasOwn(record, "FacturaSinIdentifDestinatarioArt61d")).toBe(false);
     expect(Object.hasOwn(record, "Macrodato")).toBe(false);
+    expect(Object.hasOwn(record, "EmitidaPorTerceroODestinatario")).toBe(false);
+    expect(Object.hasOwn(record, "Tercero")).toBe(false);
     expect(Object.hasOwn(record, "Cupon")).toBe(false);
     const detalle = record.Desglose[0]!;
     expect(Object.hasOwn(detalle, "Impuesto")).toBe(false);
@@ -445,5 +447,23 @@ describe("buildAltaRecord — Destinatarios (recipient)", () => {
       Destinatarios: DESTINATARIOS,
     });
     expect(withDest.Huella).toBe(base.Huella);
+  });
+});
+
+describe("buildAltaRecord — third-party or recipient issuance", () => {
+  const input: AltaInput = {
+    ...ALTA_INPUT,
+    EmitidaPorTerceroODestinatario: "T",
+    Tercero: { NombreRazon: "Expedidor tercero", NIF: "B12345674" },
+  };
+
+  it("passes through EmitidaPorTerceroODestinatario and Tercero", () => {
+    const record = buildAltaRecord(input);
+    expect(record.EmitidaPorTerceroODestinatario).toBe("T");
+    expect(record.Tercero).toEqual({ NombreRazon: "Expedidor tercero", NIF: "B12345674" });
+  });
+
+  it("does not include the issuance fields in the huella input", () => {
+    expect(buildAltaRecord(input).Huella).toBe(buildAltaRecord(ALTA_INPUT).Huella);
   });
 });

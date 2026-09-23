@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { assertValid, validate, VerifactuValidationError } from "./validate.js";
-import type { ValidationCode, ValidationSeverity } from "./validate.js";
+import type { ValidationCode, ValidationOptions, ValidationSeverity } from "./validate.js";
 import { buildAltaRecord, buildAnulacionRecord } from "./records.js";
 import { SISTEMA } from "../test/fixtures.js";
 import type {
@@ -57,7 +57,8 @@ const ANULACION_INPUT: AnulacionInput = {
 
 const valid = () => buildAltaRecord(INPUT);
 const validAnulacion = () => buildAnulacionRecord(ANULACION_INPUT);
-const codes = (record: RegistroAlta) => validate(record).map((issue) => issue.code);
+const codes = (record: RegistroAlta, options?: ValidationOptions) =>
+  validate(record, options).map((issue) => issue.code);
 const anulacionCodes = (record: RegistroAnulacion) => validate(record).map((issue) => issue.code);
 
 describe("validate", () => {
@@ -1276,6 +1277,489 @@ describe("validate — AEAT §3.1.3.2–6", () => {
   });
 });
 
+describe("validate — AEAT §3.1.3.7–12", () => {
+  const NOW = new Date("2026-09-23T12:00:00Z");
+  const PUBLISHED_VAT_IDS = [
+    "DE123456789",
+    "AT123456789",
+    "BE1234567890",
+    "CY123456789",
+    "CZ12345678",
+    "CZ1234567890",
+    "HR12345678901",
+    "DK12345678",
+    "SK1234567890",
+    "SI12345678",
+    "EE123456789",
+    "FI12345678",
+    "FR12345678901",
+    "EL123456789",
+    "XI12345",
+    "XI123456789",
+    "XI123456789012",
+    "NL123456789012",
+    "HU12345678",
+    "IT12345678901",
+    "IE12345678",
+    "IE123456789",
+    "LV12345678901",
+    "LT123456789",
+    "LT123456789012",
+    "LU12345678",
+    "MT12345678",
+    "PL1234567890",
+    "PT123456789",
+    "SE123456789012",
+    "BG123456789",
+    "BG1234567890",
+    "RO12",
+    "RO1234567890",
+  ] as const;
+  const MAX_LENGTH_VAT_IDS = [
+    "DE123456789",
+    "AT123456789",
+    "BE1234567890",
+    "CY123456789",
+    "CZ1234567890",
+    "HR12345678901",
+    "DK12345678",
+    "SK1234567890",
+    "SI12345678",
+    "EE123456789",
+    "FI12345678",
+    "FR12345678901",
+    "EL123456789",
+    "XI123456789012",
+    "NL123456789012",
+    "HU12345678",
+    "IT12345678901",
+    "IE123456789",
+    "LV12345678901",
+    "LT123456789012",
+    "LU12345678",
+    "MT12345678",
+    "PL1234567890",
+    "PT123456789",
+    "SE123456789012",
+    "BG1234567890",
+    "RO1234567890",
+  ] as const;
+
+  type ThirdPartyFields = {
+    EmitidaPorTerceroODestinatario?: "D" | "T";
+    Tercero?:
+      | { NombreRazon: string; NIF: string; IDOtro?: never }
+      | {
+          NombreRazon: string;
+          IDOtro: { CodigoPais?: string; IDType: string; ID: string };
+          NIF?: never;
+        };
+  };
+
+  const withThirdPartyFields = (
+    record: RegistroAlta,
+    fields: ThirdPartyFields,
+  ): RegistroAlta & ThirdPartyFields => Object.assign(record, fields);
+
+  it("§3.1.3.7 rejects FechaOperacion before the current date minus twenty years", () => {
+    const record = valid();
+    record.FechaOperacion = "22-09-2006";
+    expect(validate(record, { now: NOW })).toContainEqual({
+      code: "FECHA_OPERACION_BEFORE_MINIMUM",
+      severity: "error",
+      field: "FechaOperacion",
+      message: "FechaOperacion must not be before the current date minus twenty years",
+    });
+  });
+
+  it("§3.1.3.7 accepts FechaOperacion exactly twenty years before the current date", () => {
+    const record = valid();
+    record.FechaOperacion = "23-09-2006";
+    expect(codes(record, { now: NOW })).not.toContain("FECHA_OPERACION_BEFORE_MINIMUM");
+  });
+
+  it("§3.1.3.7 rejects FechaOperacion after the calendar year following the current year", () => {
+    const record = valid();
+    record.Desglose[0]!.ClaveRegimen = "14";
+    record.FechaOperacion = "01-01-2028";
+    expect(codes(record, { now: NOW })).toContain("FECHA_OPERACION_AFTER_NEXT_YEAR");
+  });
+
+  it("§3.1.3.7 accepts the last day of the calendar year following the current year", () => {
+    const record = valid();
+    record.Desglose[0]!.ClaveRegimen = "14";
+    record.FechaOperacion = "31-12-2027";
+    expect(codes(record, { now: NOW })).not.toContain("FECHA_OPERACION_AFTER_NEXT_YEAR");
+  });
+
+  it("§3.1.3.7 rejects a future FechaOperacion for ordinary IVA", () => {
+    const record = valid();
+    record.FechaOperacion = "24-09-2026";
+    expect(codes(record, { now: NOW })).toContain("FECHA_OPERACION_FUTURE");
+  });
+
+  it("§3.1.3.7 accepts FechaOperacion equal to the current date for ordinary IVA", () => {
+    const record = valid();
+    record.FechaOperacion = "23-09-2026";
+    expect(codes(record, { now: NOW })).not.toContain("FECHA_OPERACION_FUTURE");
+  });
+
+  it.each(["14", "15"])(
+    "§3.1.3.7 accepts a future FechaOperacion for IVA regime %s",
+    (ClaveRegimen) => {
+      const record = valid();
+      record.Desglose[0]!.ClaveRegimen = ClaveRegimen;
+      record.FechaOperacion = "24-09-2026";
+      expect(codes(record, { now: NOW })).not.toContain("FECHA_OPERACION_FUTURE");
+    },
+  );
+
+  it("§3.1.3.7 treats a mixed ordinary and regime-14 IVA record conservatively", () => {
+    const record = valid();
+    record.Desglose = [
+      { ...record.Desglose[0]!, ClaveRegimen: "14" },
+      { ...record.Desglose[0]!, ClaveRegimen: "01" },
+    ];
+    record.FechaOperacion = "24-09-2026";
+    expect(codes(record, { now: NOW })).toContain("FECHA_OPERACION_FUTURE");
+  });
+
+  it("§3.1.3.7 allows a future FechaOperacion for a tax other than IVA or IGIC", () => {
+    const record = valid();
+    record.Desglose[0]!.Impuesto = "05";
+    record.Desglose[0]!.ClaveRegimen = undefined;
+    record.FechaOperacion = "24-09-2026";
+    expect(codes(record, { now: NOW })).not.toContain("FECHA_OPERACION_FUTURE");
+  });
+
+  it.each(["F2", "R5"] as const)(
+    "§3.1.3.8 forbids FacturaSimplificadaArt7273 S for TipoFactura %s",
+    (TipoFactura) => {
+      const record = buildAltaRecord({
+        ...INPUT,
+        TipoFactura,
+        ...(TipoFactura === "R5" && { TipoRectificativa: "I" as const }),
+        FacturaSimplificadaArt7273: "S",
+        Destinatarios: undefined,
+      });
+      expect(codes(record)).toContain("FACTURA_SIMPLIFICADA_ART_7273_FORBIDDEN");
+    },
+  );
+
+  it.each(["F1", "F3", "R1", "R2", "R3", "R4"] as const)(
+    "§3.1.3.8 accepts FacturaSimplificadaArt7273 S for TipoFactura %s",
+    (TipoFactura) => {
+      const record = buildAltaRecord({
+        ...INPUT,
+        TipoFactura,
+        ...(TipoFactura.startsWith("R") && { TipoRectificativa: "I" as const }),
+        FacturaSimplificadaArt7273: "S",
+      });
+      expect(codes(record)).not.toContain("FACTURA_SIMPLIFICADA_ART_7273_FORBIDDEN");
+    },
+  );
+
+  it("§3.1.3.8 permits the value N on an F2 record", () => {
+    const record = buildAltaRecord({
+      ...INPUT,
+      TipoFactura: "F2",
+      FacturaSimplificadaArt7273: "N",
+      Destinatarios: undefined,
+    });
+    expect(codes(record)).not.toContain("FACTURA_SIMPLIFICADA_ART_7273_FORBIDDEN");
+  });
+
+  it.each(["F1", "F3", "R1", "R2", "R3", "R4"] as const)(
+    "§3.1.3.9 forbids FacturaSinIdentifDestinatarioArt61d S for TipoFactura %s",
+    (TipoFactura) => {
+      const record = buildAltaRecord({
+        ...INPUT,
+        TipoFactura,
+        ...(TipoFactura.startsWith("R") && { TipoRectificativa: "I" as const }),
+        FacturaSinIdentifDestinatarioArt61d: "S",
+      });
+      expect(codes(record)).toContain("FACTURA_SIN_IDENTIF_DESTINATARIO_ART_61D_FORBIDDEN");
+    },
+  );
+
+  it.each(["F2", "R5"] as const)(
+    "§3.1.3.9 accepts FacturaSinIdentifDestinatarioArt61d S for TipoFactura %s",
+    (TipoFactura) => {
+      const record = buildAltaRecord({
+        ...INPUT,
+        TipoFactura,
+        ...(TipoFactura === "R5" && { TipoRectificativa: "I" as const }),
+        FacturaSinIdentifDestinatarioArt61d: "S",
+        Destinatarios: undefined,
+      });
+      expect(codes(record)).not.toContain("FACTURA_SIN_IDENTIF_DESTINATARIO_ART_61D_FORBIDDEN");
+    },
+  );
+
+  it("§3.1.3.9 permits the value N on an F1 record", () => {
+    const record = buildAltaRecord({
+      ...INPUT,
+      FacturaSinIdentifDestinatarioArt61d: "N",
+    });
+    expect(codes(record)).not.toContain("FACTURA_SIN_IDENTIF_DESTINATARIO_ART_61D_FORBIDDEN");
+  });
+
+  it.each(["100000000.00", "-100000000.00"])(
+    "§3.1.3.10 requires Macrodato at the absolute threshold: %s",
+    (ImporteTotal) => {
+      const record = valid();
+      record.ImporteTotal = ImporteTotal;
+      record.Macrodato = undefined;
+      expect(codes(record)).toContain("MACRODATO_REQUIRED");
+    },
+  );
+
+  it("§3.1.3.10 does not require Macrodato immediately below the absolute threshold", () => {
+    const record = valid();
+    record.ImporteTotal = "99999999.99";
+    expect(codes(record)).not.toContain("MACRODATO_REQUIRED");
+  });
+
+  it("§3.1.3.10 treats either schema value as a present Macrodato field", () => {
+    const record = valid();
+    record.ImporteTotal = "100000000.00";
+    record.Macrodato = "N";
+    expect(codes(record)).not.toContain("MACRODATO_REQUIRED");
+  });
+
+  it("§3.1.3.10 does not cascade Macrodato onto a malformed total", () => {
+    const record = valid();
+    record.ImporteTotal = "1e9";
+    expect(codes(record)).toContain("AMOUNT_FORMAT");
+    expect(codes(record)).not.toContain("MACRODATO_REQUIRED");
+  });
+
+  it("§3.1.3.11 requires Tercero when EmitidaPorTerceroODestinatario is T", () => {
+    const record = withThirdPartyFields(valid(), { EmitidaPorTerceroODestinatario: "T" });
+    expect(codes(record)).toContain("TERCERO_REQUIRED");
+  });
+
+  it("§3.1.3.11 requires Destinatarios when EmitidaPorTerceroODestinatario is D", () => {
+    const record = withThirdPartyFields(
+      buildAltaRecord({ ...INPUT, TipoFactura: "F2", Destinatarios: undefined }),
+      { EmitidaPorTerceroODestinatario: "D" },
+    );
+    expect(codes(record)).toContain("DESTINATARIOS_REQUIRED_BY_ISSUER");
+  });
+
+  it("§3.1.3.11 accepts issuer indicator D when Destinatarios is present", () => {
+    const record = withThirdPartyFields(valid(), { EmitidaPorTerceroODestinatario: "D" });
+    expect(codes(record)).not.toContain("DESTINATARIOS_REQUIRED_BY_ISSUER");
+  });
+
+  it.each([undefined, "D"] as const)(
+    "§3.1.3.12 forbids Tercero unless EmitidaPorTerceroODestinatario is T: %s",
+    (EmitidaPorTerceroODestinatario) => {
+      const record = withThirdPartyFields(valid(), {
+        EmitidaPorTerceroODestinatario,
+        Tercero: { NombreRazon: "Expedidor tercero", NIF: "B12345674" },
+      });
+      expect(codes(record)).toContain("TERCERO_FORBIDDEN");
+    },
+  );
+
+  it("§3.1.3.12 rejects a Tercero NIF equal to the invoice issuer", () => {
+    const record = withThirdPartyFields(valid(), {
+      EmitidaPorTerceroODestinatario: "T",
+      Tercero: { NombreRazon: "Expedidor tercero", NIF: "89890001K" },
+    });
+    expect(codes(record)).toContain("TERCERO_NIF_EQUALS_EMISOR");
+  });
+
+  it("§3.1.3.12 applies local NIF validation to Tercero", () => {
+    const record = withThirdPartyFields(valid(), {
+      EmitidaPorTerceroODestinatario: "T",
+      Tercero: { NombreRazon: "Expedidor tercero", NIF: "B12345678" },
+    });
+    expect(validate(record)).toContainEqual({
+      code: "NIF_CONTROL",
+      severity: "error",
+      field: "Tercero.NIF",
+      message: "NIF has an invalid format or control character",
+    });
+  });
+
+  it.each([
+    { NombreRazon: "Missing identity" },
+    {
+      NombreRazon: "Both identities",
+      NIF: "B12345674",
+      IDOtro: { CodigoPais: "FR", IDType: "04", ID: "X-1" },
+    },
+  ])("§3.1.3.12 requires exactly one Tercero identity branch", (Tercero) => {
+    const record = withThirdPartyFields(valid(), {
+      EmitidaPorTerceroODestinatario: "T",
+      Tercero: Tercero as unknown as ThirdPartyFields["Tercero"],
+    });
+    expect(codes(record)).toContain("TERCERO_ID_CHOICE");
+  });
+
+  it("§3.1.3.12 requires IDType 03 for a Spanish Tercero using IDOtro", () => {
+    const record = withThirdPartyFields(valid(), {
+      EmitidaPorTerceroODestinatario: "T",
+      Tercero: {
+        NombreRazon: "Expedidor tercero",
+        IDOtro: { CodigoPais: "ES", IDType: "04", ID: "X-1" },
+      },
+    });
+    expect(codes(record)).toContain("TERCERO_ES_IDTYPE");
+  });
+
+  it("§3.1.3.12 forbids IDType 07 for Tercero", () => {
+    const record = withThirdPartyFields(valid(), {
+      EmitidaPorTerceroODestinatario: "T",
+      Tercero: {
+        NombreRazon: "Expedidor tercero",
+        IDOtro: { CodigoPais: "FR", IDType: "07", ID: "X-1" },
+      },
+    });
+    expect(codes(record)).toContain("TERCERO_IDTYPE_07_FORBIDDEN");
+  });
+
+  it("§3.1.3.12 accepts IDType 03 for a Spanish Tercero using IDOtro", () => {
+    const record = withThirdPartyFields(valid(), {
+      EmitidaPorTerceroODestinatario: "T",
+      Tercero: {
+        NombreRazon: "Expedidor tercero",
+        IDOtro: { CodigoPais: "ES", IDType: "03", ID: "X-1" },
+      },
+    });
+    expect(codes(record)).not.toContain("TERCERO_ES_IDTYPE");
+  });
+
+  it("§3.1.3.12 checks Tercero.NombreRazon for XML control characters", () => {
+    const record = withThirdPartyFields(valid(), {
+      EmitidaPorTerceroODestinatario: "T",
+      Tercero: { NombreRazon: "Expedidor\x07 tercero", NIF: "B12345674" },
+    });
+    expect(validate(record)).toContainEqual(
+      expect.objectContaining({ code: "CONTROL_CHAR", field: "Tercero.NombreRazon" }),
+    );
+  });
+
+  it("§3.1.3.12 checks Tercero.IDOtro.ID for XML control characters", () => {
+    const record = withThirdPartyFields(valid(), {
+      EmitidaPorTerceroODestinatario: "T",
+      Tercero: {
+        NombreRazon: "EU issuer",
+        IDOtro: { CodigoPais: "FR", IDType: "04", ID: "X\x071" },
+      },
+    });
+    expect(validate(record)).toContainEqual(
+      expect.objectContaining({ code: "CONTROL_CHAR", field: "Tercero.IDOtro.ID" }),
+    );
+  });
+
+  it.each(PUBLISHED_VAT_IDS)("§3.1.3.12 accepts the published EU VAT-number shape %s", (ID) => {
+    const record = withThirdPartyFields(valid(), {
+      EmitidaPorTerceroODestinatario: "T",
+      Tercero: { NombreRazon: "EU issuer", IDOtro: { IDType: "02", ID } },
+    });
+    expect(codes(record)).not.toContain("TERCERO_VAT_ID_FORMAT");
+  });
+
+  it.each(MAX_LENGTH_VAT_IDS)(
+    "§3.1.3.12 rejects extra leading or trailing VAT-number characters for %s",
+    (ID) => {
+      for (const invalid of [`${ID.slice(0, 2)}X${ID.slice(2)}`, `${ID}X`]) {
+        const record = withThirdPartyFields(valid(), {
+          EmitidaPorTerceroODestinatario: "T",
+          Tercero: { NombreRazon: "EU issuer", IDOtro: { IDType: "02", ID: invalid } },
+        });
+        expect(codes(record)).toContain("TERCERO_VAT_ID_FORMAT");
+      }
+    },
+  );
+
+  it.each(["fr12345678901", "FR123", "ESB12345674", "GB123456789", "RO01"])(
+    "§3.1.3.12 rejects an IDType 02 value outside the published EU VAT shapes: %s",
+    (ID) => {
+      const record = withThirdPartyFields(valid(), {
+        EmitidaPorTerceroODestinatario: "T",
+        Tercero: { NombreRazon: "EU issuer", IDOtro: { IDType: "02", ID } },
+      });
+      expect(codes(record)).toContain("TERCERO_VAT_ID_FORMAT");
+    },
+  );
+
+  it("§3.1.3.12 accepts a GB VAT number for an operation before 2021", () => {
+    const record = withThirdPartyFields(valid(), {
+      EmitidaPorTerceroODestinatario: "T",
+      Tercero: {
+        NombreRazon: "Historic UK issuer",
+        IDOtro: { IDType: "02", ID: "GB123456789" },
+      },
+    });
+    record.FechaOperacion = "31-12-2020";
+    expect(codes(record, { now: NOW })).not.toContain("TERCERO_VAT_ID_FORMAT");
+  });
+
+  it("§3.1.3.12 rejects an XI VAT number for an operation before 2021", () => {
+    const record = withThirdPartyFields(valid(), {
+      EmitidaPorTerceroODestinatario: "T",
+      Tercero: {
+        NombreRazon: "Historic Northern Ireland issuer",
+        IDOtro: { IDType: "02", ID: "XI123456789" },
+      },
+    });
+    record.FechaOperacion = "31-12-2020";
+    expect(codes(record, { now: NOW })).toContain("TERCERO_VAT_ID_FORMAT");
+  });
+
+  it.each([
+    ["GB123456789", "01-01-2021"],
+    ["XI123456789", "01-01-2021"],
+    ["GB123456789", "31-01-2021"],
+    ["XI123456789", "31-01-2021"],
+    ["XI123456789", "01-02-2021"],
+  ])("§3.1.3.12 accepts VAT number %s on the GB/XI transition date %s", (ID, date) => {
+    const record = withThirdPartyFields(valid(), {
+      EmitidaPorTerceroODestinatario: "T",
+      Tercero: { NombreRazon: "UK issuer", IDOtro: { IDType: "02", ID } },
+    });
+    record.FechaOperacion = date;
+    expect(codes(record, { now: NOW })).not.toContain("TERCERO_VAT_ID_FORMAT");
+  });
+
+  it("§3.1.3.12 rejects a GB VAT number from 1 February 2021", () => {
+    const record = withThirdPartyFields(valid(), {
+      EmitidaPorTerceroODestinatario: "T",
+      Tercero: {
+        NombreRazon: "UK issuer",
+        IDOtro: { IDType: "02", ID: "GB123456789" },
+      },
+    });
+    record.FechaOperacion = "01-02-2021";
+    expect(codes(record, { now: NOW })).toContain("TERCERO_VAT_ID_FORMAT");
+  });
+
+  it("§3.1.3.12 does not cascade a VAT-format error when the effective date is malformed", () => {
+    const record = withThirdPartyFields(valid(), {
+      EmitidaPorTerceroODestinatario: "T",
+      Tercero: {
+        NombreRazon: "Northern Ireland issuer",
+        IDOtro: { IDType: "02", ID: "XI123456789" },
+      },
+    });
+    record.FechaOperacion = "99-99-2021";
+    expect(codes(record, { now: NOW })).toContain("FECHA_FORMAT");
+    expect(codes(record, { now: NOW })).not.toContain("TERCERO_VAT_ID_FORMAT");
+  });
+
+  it("§3.1.3.12 accepts a distinct, locally valid Tercero NIF", () => {
+    const record = withThirdPartyFields(valid(), {
+      EmitidaPorTerceroODestinatario: "T",
+      Tercero: { NombreRazon: "Expedidor tercero", NIF: "B12345674" },
+    });
+    expect(validate(record)).toEqual([]);
+  });
+});
+
 describe("validate — Destinatarios rules (F1/F3/R1-R4 require, F2/R5 forbid)", () => {
   const DESTINATARIOS = {
     IDDestinatario: [{ NombreRazon: "Cliente Factura SL", NIF: "B99999997" }],
@@ -1421,6 +1905,106 @@ describe("validate — the recipient's own name and NIF", () => {
       },
     });
     expect(codes(record)).not.toContain("NIF_LENGTH");
+  });
+
+  it.each([
+    { NombreRazon: "Missing identity" },
+    {
+      NombreRazon: "Both identities",
+      NIF: "B12345674",
+      IDOtro: { CodigoPais: "FR", IDType: "04", ID: "X-1" },
+    },
+  ])("§3.1.3.13 requires exactly one recipient identity branch", (recipient) => {
+    const record = valid();
+    record.Destinatarios = {
+      IDDestinatario: [
+        recipient as unknown as NonNullable<
+          RegistroAlta["Destinatarios"]
+        >["IDDestinatario"][number],
+      ],
+    };
+    expect(codes(record)).toContain("DESTINATARIO_ID_CHOICE");
+  });
+
+  it.each([undefined, "FR"] as const)(
+    "§3.1.3.13 requires CodigoPais ES for recipient IDType 07, not %s",
+    (CodigoPais) => {
+      const record = valid();
+      record.Destinatarios = {
+        IDDestinatario: [
+          {
+            NombreRazon: "Unregistered recipient",
+            IDOtro: { CodigoPais, IDType: "07", ID: "X-1" },
+          },
+        ],
+      };
+      expect(codes(record)).toContain("DESTINATARIO_IDTYPE_07_COUNTRY");
+    },
+  );
+
+  it("§3.1.3.13 accepts CodigoPais ES with recipient IDType 07", () => {
+    const record = valid();
+    record.Destinatarios = {
+      IDDestinatario: [
+        {
+          NombreRazon: "Unregistered recipient",
+          IDOtro: { CodigoPais: "ES", IDType: "07", ID: "X-1" },
+        },
+      ],
+    };
+    expect(codes(record)).not.toContain("DESTINATARIO_IDTYPE_07_COUNTRY");
+    expect(codes(record)).not.toContain("DESTINATARIO_ES_IDTYPE");
+  });
+
+  it("§3.1.3.13 accepts CodigoPais ES with recipient IDType 03", () => {
+    const record = valid();
+    record.Destinatarios = {
+      IDDestinatario: [
+        {
+          NombreRazon: "Spanish recipient",
+          IDOtro: { CodigoPais: "ES", IDType: "03", ID: "X-1" },
+        },
+      ],
+    };
+    expect(codes(record)).not.toContain("DESTINATARIO_ES_IDTYPE");
+  });
+
+  it("§3.1.3.13 allows only IDType 03 or 07 for a Spanish recipient", () => {
+    const record = valid();
+    record.Destinatarios = {
+      IDDestinatario: [
+        { NombreRazon: "Spanish recipient", IDOtro: { CodigoPais: "ES", IDType: "04", ID: "X-1" } },
+      ],
+    };
+    expect(codes(record)).toContain("DESTINATARIO_ES_IDTYPE");
+  });
+
+  it("§3.1.3.13 validates an IDType 02 recipient against the EU VAT shapes", () => {
+    const record = valid();
+    record.Destinatarios = {
+      IDDestinatario: [{ NombreRazon: "French recipient", IDOtro: { IDType: "02", ID: "FR123" } }],
+    };
+    expect(codes(record)).toContain("DESTINATARIO_VAT_ID_FORMAT");
+  });
+
+  it("§3.1.3.13 accepts a recipient matching a published EU VAT shape", () => {
+    const record = valid();
+    record.Destinatarios = {
+      IDDestinatario: [
+        { NombreRazon: "French recipient", IDOtro: { IDType: "02", ID: "FR12345678901" } },
+      ],
+    };
+    expect(codes(record)).not.toContain("DESTINATARIO_VAT_ID_FORMAT");
+  });
+
+  it("§3.1.3.13 restricts IDType 02 recipients to F1, F3 and R1-R4", () => {
+    const record = buildAltaRecord({ ...INPUT, TipoFactura: "F2", Destinatarios: undefined });
+    record.Destinatarios = {
+      IDDestinatario: [
+        { NombreRazon: "French recipient", IDOtro: { IDType: "02", ID: "FR12345678901" } },
+      ],
+    };
+    expect(codes(record)).toContain("DESTINATARIO_VAT_FACTURA_TYPE");
   });
 });
 
@@ -1792,6 +2376,225 @@ describe("validate — pins the exact field, message and severity for every Vali
       message: "ImporteRectificacion may be set only when TipoRectificativa is S (sustitución)",
       mutate: (r) => {
         r.ImporteRectificacion = { BaseRectificada: "100.00", CuotaRectificada: "21.00" };
+      },
+    },
+    {
+      description: "FECHA_OPERACION_BEFORE_MINIMUM",
+      code: "FECHA_OPERACION_BEFORE_MINIMUM",
+      field: "FechaOperacion",
+      message: "FechaOperacion must not be before the current date minus twenty years",
+      mutate: (r) => {
+        r.FechaOperacion = "22-09-2006";
+      },
+    },
+    {
+      description: "FECHA_OPERACION_AFTER_NEXT_YEAR",
+      code: "FECHA_OPERACION_AFTER_NEXT_YEAR",
+      field: "FechaOperacion",
+      message: "FechaOperacion must not be after the calendar year following the current year",
+      mutate: (r) => {
+        r.Desglose[0]!.ClaveRegimen = "14";
+        r.FechaOperacion = "01-01-2028";
+      },
+    },
+    {
+      description: "FECHA_OPERACION_FUTURE",
+      code: "FECHA_OPERACION_FUTURE",
+      field: "FechaOperacion",
+      message: "A future FechaOperacion is allowed for IVA or IGIC only under regime 14 or 15",
+      mutate: (r) => {
+        r.FechaOperacion = "24-09-2026";
+      },
+    },
+    {
+      description: "FACTURA_SIMPLIFICADA_ART_7273_FORBIDDEN",
+      code: "FACTURA_SIMPLIFICADA_ART_7273_FORBIDDEN",
+      field: "FacturaSimplificadaArt7273",
+      message: "FacturaSimplificadaArt7273 may be S only when TipoFactura is F1, F3 or R1-R4",
+      mutate: (r) => {
+        r.TipoFactura = "F2";
+        r.FacturaSimplificadaArt7273 = "S";
+        delete r.Destinatarios;
+      },
+    },
+    {
+      description: "FACTURA_SIN_IDENTIF_DESTINATARIO_ART_61D_FORBIDDEN",
+      code: "FACTURA_SIN_IDENTIF_DESTINATARIO_ART_61D_FORBIDDEN",
+      field: "FacturaSinIdentifDestinatarioArt61d",
+      message: "FacturaSinIdentifDestinatarioArt61d may be S only when TipoFactura is F2 or R5",
+      mutate: (r) => {
+        r.FacturaSinIdentifDestinatarioArt61d = "S";
+      },
+    },
+    {
+      description: "MACRODATO_REQUIRED",
+      code: "MACRODATO_REQUIRED",
+      field: "Macrodato",
+      message: "Macrodato is mandatory when the absolute ImporteTotal is at least 100000000.00",
+      mutate: (r) => {
+        r.ImporteTotal = "100000000.00";
+      },
+    },
+    {
+      description: "TERCERO_REQUIRED",
+      code: "TERCERO_REQUIRED",
+      field: "Tercero",
+      message: "Tercero is mandatory when EmitidaPorTerceroODestinatario is T",
+      mutate: (r) => {
+        r.EmitidaPorTerceroODestinatario = "T";
+      },
+    },
+    {
+      description: "DESTINATARIOS_REQUIRED_BY_ISSUER",
+      code: "DESTINATARIOS_REQUIRED_BY_ISSUER",
+      field: "Destinatarios",
+      message: "Destinatarios is mandatory when EmitidaPorTerceroODestinatario is D",
+      mutate: (r) => {
+        r.TipoFactura = "F2";
+        r.EmitidaPorTerceroODestinatario = "D";
+        delete r.Destinatarios;
+      },
+    },
+    {
+      description: "TERCERO_FORBIDDEN",
+      code: "TERCERO_FORBIDDEN",
+      field: "Tercero",
+      message: "Tercero may be set only when EmitidaPorTerceroODestinatario is T",
+      mutate: (r) => {
+        r.Tercero = { NombreRazon: "Expedidor tercero", NIF: "B12345674" };
+      },
+    },
+    {
+      description: "TERCERO_NIF_EQUALS_EMISOR",
+      code: "TERCERO_NIF_EQUALS_EMISOR",
+      field: "Tercero.NIF",
+      message: "Tercero.NIF must differ from IDEmisorFactura",
+      mutate: (r) => {
+        r.EmitidaPorTerceroODestinatario = "T";
+        r.Tercero = { NombreRazon: "Expedidor tercero", NIF: r.IDFactura.IDEmisorFactura };
+      },
+    },
+    {
+      description: "TERCERO_ID_CHOICE",
+      code: "TERCERO_ID_CHOICE",
+      field: "Tercero",
+      message: "Tercero must carry exactly one of NIF or IDOtro",
+      mutate: (r) => {
+        r.EmitidaPorTerceroODestinatario = "T";
+        r.Tercero = { NombreRazon: "Missing identity" } as NonNullable<RegistroAlta["Tercero"]>;
+      },
+    },
+    {
+      description: "TERCERO_ES_IDTYPE",
+      code: "TERCERO_ES_IDTYPE",
+      field: "Tercero.IDOtro.IDType",
+      message: "A Spanish Tercero identified through IDOtro must use IDType 03",
+      mutate: (r) => {
+        r.EmitidaPorTerceroODestinatario = "T";
+        r.Tercero = {
+          NombreRazon: "Expedidor tercero",
+          IDOtro: { CodigoPais: "ES", IDType: "04", ID: "X-1" },
+        };
+      },
+    },
+    {
+      description: "TERCERO_IDTYPE_07_FORBIDDEN",
+      code: "TERCERO_IDTYPE_07_FORBIDDEN",
+      field: "Tercero.IDOtro.IDType",
+      message: "Tercero must not use IDType 07",
+      mutate: (r) => {
+        r.EmitidaPorTerceroODestinatario = "T";
+        r.Tercero = {
+          NombreRazon: "Expedidor tercero",
+          IDOtro: { CodigoPais: "FR", IDType: "07", ID: "X-1" },
+        };
+      },
+    },
+    {
+      description: "TERCERO_VAT_ID_FORMAT",
+      code: "TERCERO_VAT_ID_FORMAT",
+      field: "Tercero.IDOtro.ID",
+      message: "Tercero IDType 02 must match a published uppercase EU VAT-number structure",
+      mutate: (r) => {
+        r.EmitidaPorTerceroODestinatario = "T";
+        r.Tercero = {
+          NombreRazon: "EU issuer",
+          IDOtro: { IDType: "02", ID: "FR123" },
+        };
+      },
+    },
+    {
+      description: "DESTINATARIO_ID_CHOICE",
+      code: "DESTINATARIO_ID_CHOICE",
+      field: "Destinatarios.IDDestinatario[0]",
+      message: "Each recipient must carry exactly one of NIF or IDOtro",
+      mutate: (r) => {
+        r.Destinatarios = {
+          IDDestinatario: [
+            { NombreRazon: "Missing identity" } as NonNullable<
+              RegistroAlta["Destinatarios"]
+            >["IDDestinatario"][number],
+          ],
+        };
+      },
+    },
+    {
+      description: "DESTINATARIO_IDTYPE_07_COUNTRY",
+      code: "DESTINATARIO_IDTYPE_07_COUNTRY",
+      field: "Destinatarios.IDDestinatario[0].IDOtro.CodigoPais",
+      message: "A recipient using IDType 07 must use CodigoPais ES",
+      mutate: (r) => {
+        r.Destinatarios = {
+          IDDestinatario: [
+            { NombreRazon: "Unregistered recipient", IDOtro: { IDType: "07", ID: "X-1" } },
+          ],
+        };
+      },
+    },
+    {
+      description: "DESTINATARIO_ES_IDTYPE",
+      code: "DESTINATARIO_ES_IDTYPE",
+      field: "Destinatarios.IDDestinatario[0].IDOtro.IDType",
+      message: "A Spanish recipient identified through IDOtro must use IDType 03 or 07",
+      mutate: (r) => {
+        r.Destinatarios = {
+          IDDestinatario: [
+            {
+              NombreRazon: "Spanish recipient",
+              IDOtro: { CodigoPais: "ES", IDType: "04", ID: "X-1" },
+            },
+          ],
+        };
+      },
+    },
+    {
+      description: "DESTINATARIO_VAT_ID_FORMAT",
+      code: "DESTINATARIO_VAT_ID_FORMAT",
+      field: "Destinatarios.IDDestinatario[0].IDOtro.ID",
+      message: "A recipient IDType 02 must match a published uppercase EU VAT-number structure",
+      mutate: (r) => {
+        r.Destinatarios = {
+          IDDestinatario: [
+            { NombreRazon: "French recipient", IDOtro: { IDType: "02", ID: "FR123" } },
+          ],
+        };
+      },
+    },
+    {
+      description: "DESTINATARIO_VAT_FACTURA_TYPE",
+      code: "DESTINATARIO_VAT_FACTURA_TYPE",
+      field: "Destinatarios.IDDestinatario[0].IDOtro.IDType",
+      message: "A recipient may use IDType 02 only when TipoFactura is F1, F3 or R1-R4",
+      mutate: (r) => {
+        r.TipoFactura = "F2";
+        r.Destinatarios = {
+          IDDestinatario: [
+            {
+              NombreRazon: "French recipient",
+              IDOtro: { IDType: "02", ID: "FR12345678901" },
+            },
+          ],
+        };
       },
     },
     {

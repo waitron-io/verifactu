@@ -212,6 +212,7 @@ function altaOf(raw: RawRecord): RegistroAlta {
     "FacturaSimplificadaArt7273",
     "FacturaSinIdentifDestinatarioArt61d",
     "Macrodato",
+    "EmitidaPorTerceroODestinatario",
     "Cupon",
     "CuotaTotal",
     "ImporteTotal",
@@ -234,6 +235,7 @@ function altaOf(raw: RawRecord): RegistroAlta {
     pick(rectif, ir, ["BaseRectificada", "CuotaRectificada", "CuotaRecargoRectificado"]);
     record.ImporteRectificacion = rectif;
   }
+  if (raw.Tercero !== undefined) record.Tercero = destinatarioOf(raw.Tercero as RawRecord);
   // serializeEnvio wraps each recipient in its own <sf:Destinatarios><sf:IDDestinatario>…,
   // so raw.Destinatarios is `{ IDDestinatario: … }`, the same one-level wrapping as
   // FacturasSustituidas above.
