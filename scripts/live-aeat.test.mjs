@@ -544,6 +544,10 @@ test("the stored mixed-regime probe reports optional consulta fields that AEAT o
   assert.deepEqual(evidence.CuotaTotal, { status: "omitted", expected: "999.00" });
   assert.deepEqual(evidence.ImporteTotal, { status: "omitted", expected: "999.00" });
   assert.deepEqual(evidence.Desglose.status, "omitted");
+  assert.throws(
+    () => assertStoredMixedRegimeEvidence(evidence),
+    /did not return enough data to verify Huella/,
+  );
 });
 
 test("the stored mixed-regime probe rejects a returned value that differs from the fixture", () => {
@@ -559,6 +563,74 @@ test("the stored mixed-regime probe rejects a returned value that differs from t
   assert.throws(
     () => assertStoredMixedRegimeEvidence(evidence),
     /stored mixed-regime CuotaTotal differs from the submitted fixture/,
+  );
+});
+
+test("the stored mixed-regime probe rejects a record that is no longer Correcto", () => {
+  const evidence = {
+    NumSerieFactura: "CI-MIXED-05/20260923/35864290069",
+    EstadoRegistro: "Anulado",
+    Huella: { status: "match", expected: "A", stored: "A" },
+    CuotaTotal: { status: "match", expected: "999.00", stored: "999.00" },
+    ImporteTotal: { status: "match", expected: "999.00", stored: "999.00" },
+    Desglose: { status: "match", expected: [], stored: [] },
+  };
+
+  assert.throws(
+    () => assertStoredMixedRegimeEvidence(evidence),
+    /stored mixed-regime record is Anulado/,
+  );
+});
+
+test("the stored mixed-regime probe normalizes a singleton returned breakdown before comparing", async () => {
+  const returnedLine = {
+    Impuesto: "01",
+    ClaveRegimen: "01",
+    CalificacionOperacion: "S1",
+    TipoImpositivo: "21.00",
+    BaseImponibleOimporteNoSujeto: "1.00",
+    CuotaRepercutida: "0.21",
+  };
+  const client = {
+    async consultar() {
+      return {
+        ResultadoConsulta: "ConDatos",
+        IndicadorPaginacion: "N",
+        registros: [
+          {
+            IDFactura: {
+              IDEmisorFactura: "89890001K",
+              NumSerieFactura: "CI-MIXED-09/20260923/35864701279",
+              FechaExpedicionFactura: "23-09-2026",
+            },
+            DatosRegistroFacturacion: {
+              Desglose: { DetalleDesglose: returnedLine },
+            },
+            TimestampUltimaModificacion: "2026-09-23T14:00:00+02:00",
+            EstadoRegistro: "Correcto",
+          },
+        ],
+      };
+    },
+  };
+
+  const evidence = await consultStoredMixedRegimeProbe(client, {
+    nif: "89890001K",
+    name: "Waitron SL",
+    systemNif: "89890001K",
+    systemName: "Waitron SL",
+    recipientNif: "11111111H",
+    recipientName: "Cliente Uno",
+    runId: "35864701279",
+    issueDate: "23-09-2026",
+    excludedRegime: "09",
+  });
+
+  assert.equal(evidence.Desglose.status, "mismatch");
+  assert.deepEqual(evidence.Desglose.stored, [returnedLine]);
+  assert.throws(
+    () => assertStoredMixedRegimeEvidence(evidence),
+    /stored mixed-regime Desglose differs from the submitted fixture/,
   );
 });
 

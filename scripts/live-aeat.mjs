@@ -406,6 +406,9 @@ export function assertStoredMixedRegimeEvidence(evidence) {
       throw new Error(`stored mixed-regime ${field} differs from the submitted fixture`);
     }
   }
+  if (evidence.Huella.status !== "match") {
+    throw new Error("AEAT did not return enough data to verify Huella");
+  }
 }
 
 export function buildTestCancellation({ record, issuedAt, now }) {

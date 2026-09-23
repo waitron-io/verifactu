@@ -16,7 +16,7 @@ on:
         default: consult
         required: true
       excluded_regime:
-        description: Excluded regime used by mixed-regime mode
+        description: Excluded regime used by mixed-regime submit or consulta mode
         type: choice
         options:
           - "03"
