@@ -9,6 +9,7 @@ import {
   assertStoredRecordAt,
   assertStoredRecord,
   assertSubmission,
+  buildMixedRegimeTestRecord,
   buildTestCancellation,
   buildTestRecord,
   certificateKind,
@@ -18,8 +19,10 @@ import {
   issuerFilteredConsultaFilter,
   issuerConsultaHeader,
   minimalIssuerConsultaFilter,
+  mixedRegimeSubmissionEvidence,
   recipientConsultaHeader,
   representativeConsultaHeader,
+  submitMixedRegimeProbe,
   submissionHeader,
   waitForNextSubmission,
   withLiveStage,
@@ -200,6 +203,104 @@ test("the live alta is locally valid before a request is sent", () => {
     validate(record).filter(({ severity }) => severity === "error"),
     [],
   );
+});
+
+test("the mixed-regime probe distinguishes AEAT's three total cross-check interpretations", () => {
+  const record = buildMixedRegimeTestRecord({
+    nif: "89890001K",
+    name: "Waitron SL",
+    systemNif: "89890001K",
+    systemName: "Waitron SL",
+    recipientNif: "11111111H",
+    recipientName: "Cliente Uno",
+    now: new Date("2026-09-22T10:00:00Z"),
+    runId: "12345",
+  });
+
+  assert.deepEqual(record.Desglose, [
+    {
+      Impuesto: "01",
+      ClaveRegimen: "01",
+      CalificacionOperacion: "S1",
+      TipoImpositivo: "21.00",
+      BaseImponibleOimporteNoSujeto: "1.00",
+      CuotaRepercutida: "0.21",
+    },
+    {
+      Impuesto: "01",
+      ClaveRegimen: "03",
+      CalificacionOperacion: "S1",
+      TipoImpositivo: "21.00",
+      BaseImponibleOimporteNoSujeto: "100.00",
+      CuotaRepercutida: "21.00",
+    },
+  ]);
+  assert.equal(record.CuotaTotal, "21.21");
+  assert.equal(record.ImporteTotal, "1.21");
+  assert.equal(record.RefExterna, "CI-MIXED-12345");
+  assert.deepEqual(validate(record), [
+    {
+      code: "IMPORTE_TOTAL_MISMATCH",
+      severity: "warning",
+      field: "ImporteTotal",
+      message: "ImporteTotal disagrees with the desglose beyond the 10.00 tolerance",
+    },
+  ]);
+});
+
+test("the mixed-regime probe preserves AEAT's exact response as evidence", () => {
+  assert.deepEqual(
+    mixedRegimeSubmissionEvidence(
+      {
+        EstadoEnvio: "ParcialmenteCorrecto",
+        RespuestaLinea: [
+          {
+            IDFactura: { NumSerieFactura: "CI/other" },
+            EstadoRegistro: "Correcto",
+          },
+          {
+            IDFactura: record.IDFactura,
+            EstadoRegistro: "AceptadoConErrores",
+            CodigoErrorRegistro: 1201,
+            DescripcionErrorRegistro: "Importe total incorrecto",
+          },
+        ],
+      },
+      record,
+    ),
+    {
+      EstadoEnvio: "ParcialmenteCorrecto",
+      EstadoRegistro: "AceptadoConErrores",
+      CodigoErrorRegistro: 1201,
+      DescripcionErrorRegistro: "Importe total incorrecto",
+    },
+  );
+  assert.throws(
+    () => mixedRegimeSubmissionEvidence({ EstadoEnvio: "Correcto", RespuestaLinea: [] }, record),
+    /did not return the mixed-regime response line/,
+  );
+});
+
+test("the mixed-regime probe submits through the client and returns its evidence", async () => {
+  const mixedRecord = buildMixedRegimeTestRecord({
+    nif: "89890001K",
+    name: "Waitron SL",
+    systemNif: "89890001K",
+    systemName: "Waitron SL",
+    recipientNif: "11111111H",
+    recipientName: "Cliente Uno",
+    now: new Date("2026-09-22T10:00:00Z"),
+    runId: "fake-mixed",
+  });
+  const cabecera = submissionHeader({ NombreRazon: "Waitron SL", NIF: "89890001K" });
+  const aeat = createFakeAeat({ serverNow: new Date("2026-09-23T00:00:00Z") });
+
+  assert.deepEqual(await submitMixedRegimeProbe(aeat.client(), cabecera, mixedRecord), {
+    EstadoEnvio: "Correcto",
+    EstadoRegistro: "Correcto",
+    CodigoErrorRegistro: undefined,
+    DescripcionErrorRegistro: undefined,
+  });
 });
 
 test("the live anulación chains to the alta and is locally valid", () => {

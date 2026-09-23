@@ -74,6 +74,18 @@ export function assertSubmission(result, record, operation = "alta") {
   }
 }
 
+export function mixedRegimeSubmissionEvidence(result, record) {
+  const serial = recordSerial(record);
+  const line = result.RespuestaLinea?.find((entry) => entry.IDFactura.NumSerieFactura === serial);
+  if (!line) throw new Error("AEAT did not return the mixed-regime response line");
+  return {
+    EstadoEnvio: result.EstadoEnvio,
+    EstadoRegistro: line.EstadoRegistro,
+    CodigoErrorRegistro: line.CodigoErrorRegistro,
+    DescripcionErrorRegistro: line.DescripcionErrorRegistro,
+  };
+}
+
 export function assertStoredRecord(result, record, expectedState = "Correcto") {
   const serial = recordSerial(record);
   const stored = result.registros.find((entry) => entry.IDFactura.NumSerieFactura === serial);
@@ -214,36 +226,22 @@ async function loadCertificate() {
   return base64 ? Buffer.from(base64, "base64") : readFile(path);
 }
 
-export function buildTestRecord({
-  nif,
-  name,
-  systemNif,
-  systemName,
-  recipientNif,
-  recipientName,
-  now,
-  runId,
-}) {
+function buildTestRecordWith(
+  { nif, name, systemNif, systemName, recipientNif, recipientName, now, runId },
+  probe,
+) {
   const { year, month, day, offsetMinutes } = madridClock(now);
   return buildAltaRecord({
     IDEmisorFactura: nif,
-    NumSerieFactura: `CI/${year}${month}${day}/${runId}`,
-    RefExterna: `CI-${runId}`,
+    NumSerieFactura: `${probe.serialPrefix}/${year}${month}${day}/${runId}`,
+    RefExterna: `${probe.referencePrefix}-${runId}`,
     FechaExpedicionFactura: now,
     NombreRazonEmisor: name,
     TipoFactura: "F1",
-    DescripcionOperacion: "Prueba de integración en preproducción",
-    Desglose: [
-      {
-        ClaveRegimen: "01",
-        CalificacionOperacion: "S1",
-        TipoImpositivo: "21.00",
-        BaseImponibleOimporteNoSujeto: "1.00",
-        CuotaRepercutida: "0.21",
-      },
-    ],
-    CuotaTotal: "0.21",
-    ImporteTotal: "1.21",
+    DescripcionOperacion: probe.description,
+    Desglose: probe.desglose,
+    CuotaTotal: probe.cuotaTotal,
+    ImporteTotal: probe.importeTotal,
     Destinatarios: {
       IDDestinatario: [{ NombreRazon: recipientName, NIF: recipientNif }],
     },
@@ -262,6 +260,61 @@ export function buildTestRecord({
     generadoEn: now,
     offsetMinutes,
   });
+}
+
+export function buildTestRecord(options) {
+  return buildTestRecordWith(options, {
+    serialPrefix: "CI",
+    referencePrefix: "CI",
+    description: "Prueba de integración en preproducción",
+    desglose: [
+      {
+        ClaveRegimen: "01",
+        CalificacionOperacion: "S1",
+        TipoImpositivo: "21.00",
+        BaseImponibleOimporteNoSujeto: "1.00",
+        CuotaRepercutida: "0.21",
+      },
+    ],
+    cuotaTotal: "0.21",
+    importeTotal: "1.21",
+  });
+}
+
+export function buildMixedRegimeTestRecord(options) {
+  return buildTestRecordWith(options, {
+    serialPrefix: "CI-MIXED",
+    referencePrefix: "CI-MIXED",
+    description: "Prueba de totales con regímenes mixtos en preproducción",
+    desglose: [
+      {
+        Impuesto: "01",
+        ClaveRegimen: "01",
+        CalificacionOperacion: "S1",
+        TipoImpositivo: "21.00",
+        BaseImponibleOimporteNoSujeto: "1.00",
+        CuotaRepercutida: "0.21",
+      },
+      {
+        Impuesto: "01",
+        ClaveRegimen: "03",
+        CalificacionOperacion: "S1",
+        TipoImpositivo: "21.00",
+        BaseImponibleOimporteNoSujeto: "100.00",
+        CuotaRepercutida: "21.00",
+      },
+    ],
+    cuotaTotal: "21.21",
+    importeTotal: "1.21",
+  });
+}
+
+export async function submitMixedRegimeProbe(client, cabecera, record) {
+  assertValid(record);
+  const submitted = await withLiveStage("mixed-regime alta submission", () =>
+    client.submit(cabecera, [{ RegistroAlta: record }]),
+  );
+  return mixedRegimeSubmissionEvidence(submitted, record);
 }
 
 export function buildTestCancellation({ record, issuedAt, now }) {
@@ -386,7 +439,9 @@ export function describeRecipientConsulta(result, record) {
 
 async function main() {
   const mode = process.argv[2] ?? "consult";
-  if (!["consult", "submit"].includes(mode)) throw new Error("Mode must be consult or submit");
+  if (!["consult", "submit", "mixed-regime"].includes(mode)) {
+    throw new Error("Mode must be consult, submit, or mixed-regime");
+  }
   const nif = required("AEAT_TEST_NIF");
   const name = required("AEAT_TEST_NAME");
   const passphrase = required("AEAT_TEST_P12_PASSWORD");
@@ -422,6 +477,26 @@ async function main() {
   };
   const cabecera = submissionHeader(obligadoEmision);
   const runId = process.env.GITHUB_RUN_ID ?? String(now.getTime());
+
+  if (mode === "mixed-regime") {
+    const record = buildMixedRegimeTestRecord({
+      nif,
+      name,
+      systemNif: required("AEAT_TEST_SYSTEM_NIF"),
+      systemName: required("AEAT_TEST_SYSTEM_NAME"),
+      recipientNif: recipient.NIF,
+      recipientName: recipient.NombreRazon,
+      now,
+      runId,
+    });
+    const evidence = await submitMixedRegimeProbe(client, cabecera, record);
+    process.stdout.write(
+      "Mixed-regime probe: CuotaTotal matches all lines; ImporteTotal matches only regime 01.\n",
+    );
+    process.stdout.write(`AEAT mixed-regime response: ${JSON.stringify(evidence)}\n`);
+    return;
+  }
+
   const record = buildTestRecord({
     nif,
     name,

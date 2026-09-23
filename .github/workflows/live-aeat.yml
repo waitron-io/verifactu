@@ -11,6 +11,7 @@ on:
         options:
           - consult
           - submit
+          - mixed-regime
         default: consult
         required: true
 
