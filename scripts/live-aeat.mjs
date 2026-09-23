@@ -288,6 +288,24 @@ export function buildMixedRegimeTestRecord(options) {
   if (!MIXED_REGIME_EXCLUSIONS.has(excludedRegime)) {
     throw new Error("Mixed-regime exclusion must be 03, 05, 06, 08, or 09");
   }
+  // AEAT rules 15.6.4 and 15.6.6 require distinct line shapes for regimes 06 and 08.
+  const excludedLine =
+    excludedRegime === "08"
+      ? {
+          Impuesto: "01",
+          ClaveRegimen: excludedRegime,
+          CalificacionOperacion: "N2",
+          BaseImponibleOimporteNoSujeto: "100.00",
+        }
+      : {
+          Impuesto: "01",
+          ClaveRegimen: excludedRegime,
+          CalificacionOperacion: "S1",
+          TipoImpositivo: "21.00",
+          BaseImponibleOimporteNoSujeto: "100.00",
+          ...(excludedRegime === "06" && { BaseImponibleACoste: "100.00" }),
+          CuotaRepercutida: "21.00",
+        };
   return buildTestRecordWith(recordOptions, {
     serialPrefix: `CI-MIXED-${excludedRegime}`,
     referencePrefix: `CI-MIXED-${excludedRegime}`,
@@ -301,14 +319,7 @@ export function buildMixedRegimeTestRecord(options) {
         BaseImponibleOimporteNoSujeto: "1.00",
         CuotaRepercutida: "0.21",
       },
-      {
-        Impuesto: "01",
-        ClaveRegimen: excludedRegime,
-        CalificacionOperacion: "S1",
-        TipoImpositivo: "21.00",
-        BaseImponibleOimporteNoSujeto: "100.00",
-        CuotaRepercutida: "21.00",
-      },
+      excludedLine,
     ],
     cuotaTotal: "999.00",
     importeTotal: "999.00",
