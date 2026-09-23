@@ -28,6 +28,17 @@ IVA, IPSI, and IGIC tax lines include `ClaveRegimen`, while other tax lines omit
 establish that a regime code is
 appropriate for your transaction; inspect the AEAT response for each submitted record.
 
+For an alta, `FechaExpedicionFactura` cannot be before 28 October 2024 or after the current date.
+It also cannot be before `FechaOperacion` on an IVA or IGIC line unless that line uses regime `14`
+or `15`. The current-date check uses the numeric offset in `FechaHoraHusoGenRegistro`, rather than
+the computer's time zone. Tests and applications with a controlled clock can pass `{ now }` as the
+second argument to `validate` or `assertValid`.
+
+Keep `IDEmisorFactura` equal to `Cabecera.ObligadoEmision.NIF`. `serializeEnvio` rejects the batch
+when those values differ, before it creates XML. AEAT permits a wider printable-ASCII alphabet in
+`NumSerieFactura`, but this library accepts only letters, digits, `/`, `_`, `.`, and `-`. That
+narrower alphabet keeps the invoice number unambiguous when it becomes a QR query parameter.
+
 For a nine character Spanish taxpayer ID, `NIF_CONTROL` reports a wrong check character or an
 unknown format. It covers DNI, X/Y/Z NIE, company IDs, and numeric K/L/M IDs. The newer K/L/M form
 can contain letters in its seven character body; validation checks that form's shape only. It does

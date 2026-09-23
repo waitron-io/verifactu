@@ -12,6 +12,9 @@ export type ValidationCode =
   | "NUMSERIE_LENGTH"
   | "NUMSERIE_CHARSET"
   | "FECHA_FORMAT"
+  | "FECHA_EXPEDICION_BEFORE_MINIMUM"
+  | "FECHA_EXPEDICION_FUTURE"
+  | "FECHA_EXPEDICION_BEFORE_OPERACION"
   | "FECHA_HORA_FORMAT"
   | "HUELLA_FORMAT"
   | "ID_SISTEMA_LENGTH"
@@ -51,6 +54,11 @@ export interface ValidationIssue {
   message: string;
 }
 
+export interface ValidationOptions {
+  /** Clock injection for deterministic checks of AEAT's "current date" rule. */
+  now?: Date;
+}
+
 export class VerifactuValidationError extends Error {
   constructor(readonly issues: ValidationIssue[]) {
     super(
@@ -63,7 +71,7 @@ export class VerifactuValidationError extends Error {
 }
 
 const HUELLA_PATTERN = /^[0-9A-F]{64}$/;
-const FECHA_PATTERN = /^\d{2}-\d{2}-\d{4}$/;
+const FECHA_PATTERN = /^(\d{2})-(\d{2})-(\d{4})$/;
 /**
  * Pins FechaHoraHusoGenRegistro's full literal shape: `YYYY-MM-DDThh:mm:ss`
  * plus a numeric `+hh:mm`/`-hh:mm` offset (formatDateTime never emits `Z`).
@@ -71,11 +79,11 @@ const FECHA_PATTERN = /^\d{2}-\d{2}-\d{4}$/;
  * below — a record built from a stale formatter, or one that crossed a
  * runtime boundary (parsed JSON, a database row), might carry an offset like
  * "+166:39" or otherwise outside xs:dateTime's -14:00..+14:00 range even
- * though it matches this shape syntactically. The sign is matched but not
- * captured — hh:mm is always written as non-negative digits regardless of
- * sign, so the same magnitude bound applies to + and - alike.
+ * though it matches this shape syntactically. The sign is captured for the
+ * current-date calculation below. The hh:mm parts remain non-negative, so
+ * the same magnitude bound applies to + and - alike.
  */
-const FECHA_HORA_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:[+-])(\d{2}):(\d{2})$/;
+const FECHA_HORA_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}([+-])(\d{2}):(\d{2})$/;
 /** AEAT error 1114/1115: TipoRectificativa is mandatory iff TipoFactura is a rectificativa. */
 const TIPO_FACTURA_RECTIFICATIVA_PATTERN = /^R[1-5]$/;
 /**
@@ -121,7 +129,7 @@ function isValidAmount(value: string): boolean {
 function isValidFechaHoraHusoGenRegistro(value: string): boolean {
   const match = FECHA_HORA_PATTERN.exec(value);
   if (!match) return false;
-  const [, hh, mm] = match;
+  const [, , hh, mm] = match;
   // The pattern only constrains each half to two digits, so "60".."99" match
   // it syntactically — an xs:dateTime offset's minute component must itself
   // be 00-59, independent of the total-minutes bound below. "+00:60" is
@@ -132,11 +140,42 @@ function isValidFechaHoraHusoGenRegistro(value: string): boolean {
   return offsetMinutes <= MAX_OFFSET_MINUTES;
 }
 
+/** Returns YYYYMMDD for a real Gregorian DD-MM-YYYY date, which sorts numerically. */
+function fechaOrdinal(value: string): number | undefined {
+  const match = FECHA_PATTERN.exec(value);
+  if (!match) return undefined;
+  const [, dayText, monthText, yearText] = match;
+  const day = Number(dayText);
+  const month = Number(monthText);
+  const year = Number(yearText);
+  if (year < 1 || month < 1 || month > 12) return undefined;
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (day < 1 || day > daysInMonth[month - 1]!) return undefined;
+  return year * 10_000 + month * 100 + day;
+}
+
+function currentDateOrdinal(now: Date, fechaHoraHusoGenRegistro: string): number | undefined {
+  if (Number.isNaN(now.getTime())) return undefined;
+  const match = FECHA_HORA_PATTERN.exec(fechaHoraHusoGenRegistro);
+  if (!match || !isValidFechaHoraHusoGenRegistro(fechaHoraHusoGenRegistro)) return undefined;
+  const [, sign, hours, minutes] = match;
+  const magnitude = Number(hours) * 60 + Number(minutes);
+  const offsetMinutes = sign === "-" ? -magnitude : magnitude;
+  const shifted = new Date(now.getTime() + offsetMinutes * 60_000);
+  return (
+    shifted.getUTCFullYear() * 10_000 + (shifted.getUTCMonth() + 1) * 100 + shifted.getUTCDate()
+  );
+}
+
 function sum(values: Array<string | undefined>): number {
   return values.reduce<number>((total, value) => total + (value ? Number(value) : 0), 0);
 }
 
-export function validate(record: RegistroAlta | RegistroAnulacion): ValidationIssue[] {
+export function validate(
+  record: RegistroAlta | RegistroAnulacion,
+  options: ValidationOptions = {},
+): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const add = (
     code: ValidationCode,
@@ -174,7 +213,8 @@ export function validate(record: RegistroAlta | RegistroAnulacion): ValidationIs
   } else if (!NUMSERIE_PATTERN.test(numSerie)) {
     add("NUMSERIE_CHARSET", numSerieField, "NumSerieFactura must use only A-Z a-z 0-9 / _ . -");
   }
-  if (!FECHA_PATTERN.test(fecha)) {
+  const expedicionOrdinal = fechaOrdinal(fecha);
+  if (expedicionOrdinal === undefined) {
     add("FECHA_FORMAT", fechaField, "Date must be DD-MM-YYYY");
   }
 
@@ -248,6 +288,46 @@ export function validate(record: RegistroAlta | RegistroAnulacion): ValidationIs
   }
 
   if (!isAlta(record)) return issues;
+
+  // AEAT validation §3.1.3.1: alta issue dates start when the governing
+  // order entered into force, cannot be in the future, and may precede the
+  // operation date only for IVA/IGIC regimes 14 and 15. Use the numeric
+  // offset already carried by the record when turning the injected instant
+  // into a calendar date, so midnight does not silently use the host zone.
+  if (expedicionOrdinal !== undefined) {
+    if (expedicionOrdinal < 20241028) {
+      add(
+        "FECHA_EXPEDICION_BEFORE_MINIMUM",
+        "FechaExpedicionFactura",
+        "FechaExpedicionFactura must not be before 28-10-2024",
+      );
+    }
+    const today = currentDateOrdinal(options.now ?? new Date(), record.FechaHoraHusoGenRegistro);
+    if (today !== undefined && expedicionOrdinal > today) {
+      add(
+        "FECHA_EXPEDICION_FUTURE",
+        "FechaExpedicionFactura",
+        "FechaExpedicionFactura must not be after the current date",
+      );
+    }
+    const operacionOrdinal =
+      record.FechaOperacion === undefined ? undefined : fechaOrdinal(record.FechaOperacion);
+    const hasRestrictedDateOrder = record.Desglose.some(
+      ({ Impuesto, ClaveRegimen }) =>
+        [undefined, "01", "03"].includes(Impuesto) && !["14", "15"].includes(ClaveRegimen ?? ""),
+    );
+    if (
+      operacionOrdinal !== undefined &&
+      expedicionOrdinal < operacionOrdinal &&
+      hasRestrictedDateOrder
+    ) {
+      add(
+        "FECHA_EXPEDICION_BEFORE_OPERACION",
+        "FechaExpedicionFactura",
+        "FechaExpedicionFactura may precede FechaOperacion only for IVA/IGIC regimes 14 or 15",
+      );
+    }
+  }
 
   // AEAT 1114/1115: TipoRectificativa is mandatory when TipoFactura is a
   // rectificativa (R1-R5) and forbidden otherwise — never optional either way.
@@ -481,7 +561,10 @@ export function validate(record: RegistroAlta | RegistroAnulacion): ValidationIs
 }
 
 /** Throws one readable, structured error when a record is unsafe to submit. */
-export function assertValid(record: RegistroAlta | RegistroAnulacion): void {
-  const errors = validate(record).filter(({ severity }) => severity === "error");
+export function assertValid(
+  record: RegistroAlta | RegistroAnulacion,
+  options: ValidationOptions = {},
+): void {
+  const errors = validate(record, options).filter(({ severity }) => severity === "error");
   if (errors.length > 0) throw new VerifactuValidationError(errors);
 }

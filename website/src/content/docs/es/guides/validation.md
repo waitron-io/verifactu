@@ -30,6 +30,18 @@ otros impuestos lo omitan. No determina si el
 código de régimen es el adecuado para tu operación; examina la respuesta de la AEAT para cada
 registro enviado.
 
+En un alta, `FechaExpedicionFactura` no puede ser anterior al 28 de octubre de 2024 ni posterior a
+la fecha actual. Tampoco puede preceder a `FechaOperacion` en una línea de IVA o IGIC, salvo que
+esa línea use el régimen `14` o `15`. La comprobación de la fecha actual usa el desfase numérico de
+`FechaHoraHusoGenRegistro`, no la zona horaria del ordenador. En pruebas o aplicaciones con un
+reloj controlado puedes pasar `{ now }` como segundo argumento de `validate` o `assertValid`.
+
+Mantén `IDEmisorFactura` igual a `Cabecera.ObligadoEmision.NIF`. `serializeEnvio` rechaza el lote
+si ambos valores difieren, antes de crear el XML. La AEAT permite un conjunto más amplio de
+caracteres ASCII imprimibles en `NumSerieFactura`, pero esta biblioteca solo acepta letras,
+dígitos, `/`, `_`, `.` y `-`. Este alfabeto más reducido evita ambigüedades cuando el número de
+factura pasa a ser un parámetro de la consulta QR.
+
 Para un identificador fiscal español de nueve caracteres, `NIF_CONTROL` señala un carácter de
 control incorrecto o un formato desconocido. Comprueba el DNI, el NIE X/Y/Z, los NIF de entidades y
 los NIF K/L/M con cuerpo numérico. La forma nueva de K/L/M puede tener letras en sus siete

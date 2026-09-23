@@ -24,7 +24,12 @@ export { createClient } from "./client.js";
 
 export type * from "./types.js";
 export type { Environment } from "./endpoints.js";
-export type { ValidationCode, ValidationIssue, ValidationSeverity } from "./validate.js";
+export type {
+  ValidationCode,
+  ValidationIssue,
+  ValidationOptions,
+  ValidationSeverity,
+} from "./validate.js";
 export type {
   Cabecera,
   CabeceraConsulta,

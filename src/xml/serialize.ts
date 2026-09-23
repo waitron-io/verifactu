@@ -373,6 +373,16 @@ export function serializeEnvio(cabecera: Cabecera, registros: EnvioRegistro[]): 
       `An envio may carry at most ${MAX_REGISTROS_POR_ENVIO} registros, received ${registros.length}`,
     );
   }
+  registros.forEach((entry, index) => {
+    if (
+      "RegistroAlta" in entry &&
+      entry.RegistroAlta.IDFactura.IDEmisorFactura !== cabecera.ObligadoEmision.NIF
+    ) {
+      throw new Error(
+        `RegistroAlta[${index}].IDFactura.IDEmisorFactura must match Cabecera.ObligadoEmision.NIF`,
+      );
+    }
+  });
   const body =
     `<sfLR:RegFactuSistemaFacturacion>` +
     cabeceraXml(cabecera) +

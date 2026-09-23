@@ -46,7 +46,9 @@ const cabecera: Cabecera = {
 
 Añade `Representante: { NombreRazon, NIF }` a `cabecera` solo si un representante presenta los
 registros. Una `Cabecera` puede incluir registros de varios SIF del mismo contribuyente en un
-envío, porque cada registro lleva su propio `SistemaInformatico`.
+envío, porque cada registro lleva su propio `SistemaInformatico`. Cada alta debe repetir
+`cabecera.ObligadoEmision.NIF` en `IDEmisorFactura`; el serializador se detiene antes del envío si
+ambos valores difieren.
 
 ## Construye y encadena dos registros
 
