@@ -335,7 +335,7 @@ export async function submitMixedRegimeProbe(client, cabecera, record) {
   return mixedRegimeSubmissionEvidence(submitted, record);
 }
 
-// AEAT may canonicalize xsd:decimal text; numeric-looking tax and regime codes stay exact strings.
+// AEAT may reformat xsd:decimal text; compare its numeric value while keeping codes exact.
 const DESGLOSE_DECIMAL_FIELDS = new Set([
   "TipoImpositivo",
   "BaseImponibleOimporteNoSujeto",

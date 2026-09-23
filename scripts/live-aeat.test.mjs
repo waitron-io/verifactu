@@ -593,8 +593,62 @@ test("the stored mixed-regime probe keeps code fields as exact strings", async (
     ...options,
     now: new Date("2026-09-23T12:34:56+02:00"),
   });
+  async function compareWithStoredCode(field, value) {
+    const storedLines = expected.Desglose.map((line) => ({ ...line }));
+    storedLines[0][field] = value;
+    return consultStoredMixedRegimeProbe(
+      {
+        async consultar() {
+          return {
+            ResultadoConsulta: "ConDatos",
+            IndicadorPaginacion: "N",
+            registros: [
+              {
+                IDFactura: expected.IDFactura,
+                DatosRegistroFacturacion: {
+                  Desglose: { DetalleDesglose: storedLines },
+                  CuotaTotal: "999",
+                  ImporteTotal: "999",
+                  FechaHoraHusoGenRegistro: expected.FechaHoraHusoGenRegistro,
+                  Huella: expected.Huella,
+                },
+                TimestampUltimaModificacion: "2026-09-23T12:35:00+02:00",
+                EstadoRegistro: "Correcto",
+              },
+            ],
+          };
+        },
+      },
+      options,
+    );
+  }
+
+  const changedTax = await compareWithStoredCode("Impuesto", "1");
+  const changedRegime = await compareWithStoredCode("ClaveRegimen", "1");
+
+  assert.equal(changedTax.CuotaTotal.status, "match");
+  assert.equal(changedTax.Desglose.status, "mismatch");
+  assert.equal(changedRegime.Desglose.status, "mismatch");
+});
+
+test("the stored mixed-regime probe rejects genuinely different decimal values", async () => {
+  const options = {
+    nif: "89890001K",
+    name: "Waitron SL",
+    systemNif: "89890001K",
+    systemName: "Waitron SL",
+    recipientNif: "11111111H",
+    recipientName: "Cliente Uno",
+    runId: "35864290069",
+    issueDate: "23-09-2026",
+    excludedRegime: "05",
+  };
+  const expected = buildMixedRegimeTestRecord({
+    ...options,
+    now: new Date("2026-09-23T12:34:56+02:00"),
+  });
   const storedLines = expected.Desglose.map((line) => ({ ...line }));
-  storedLines[0].Impuesto = "1";
+  storedLines[0].TipoImpositivo = "10";
   const client = {
     async consultar() {
       return {
@@ -605,7 +659,7 @@ test("the stored mixed-regime probe keeps code fields as exact strings", async (
             IDFactura: expected.IDFactura,
             DatosRegistroFacturacion: {
               Desglose: { DetalleDesglose: storedLines },
-              CuotaTotal: "999",
+              CuotaTotal: "998",
               ImporteTotal: "999",
               FechaHoraHusoGenRegistro: expected.FechaHoraHusoGenRegistro,
               Huella: expected.Huella,
@@ -620,7 +674,7 @@ test("the stored mixed-regime probe keeps code fields as exact strings", async (
 
   const evidence = await consultStoredMixedRegimeProbe(client, options);
 
-  assert.equal(evidence.CuotaTotal.status, "match");
+  assert.equal(evidence.CuotaTotal.status, "mismatch");
   assert.equal(evidence.Desglose.status, "mismatch");
 });
 
