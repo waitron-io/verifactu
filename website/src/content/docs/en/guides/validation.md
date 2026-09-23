@@ -28,6 +28,14 @@ IVA, IPSI, and IGIC tax lines include `ClaveRegimen`, while other tax lines omit
 establish that a regime code is
 appropriate for your transaction; inspect the AEAT response for each submitted record.
 
+Correction fields are checked together. `RechazoPrevio` values `S` and `X` require
+`Subsanacion: "S"`; `FacturasRectificadas` is limited to `R1`–`R5`; `FacturasSustituidas` is limited
+to `F3`; and `ImporteRectificacion` is required for, and allowed only with,
+`TipoRectificativa: "S"`. A present reference group must contain at least one invoice. Each
+referenced invoice receives local NIF, 1–60-character invoice-number, and real-date checks. The
+main invoice's narrower QR-safe alphabet is not applied to these references because they never
+enter the QR payload. AEAT remains responsible for confirming that a NIF is registered.
+
 For an alta, `FechaExpedicionFactura` cannot be before 28 October 2024 or after the current date.
 It also cannot be before `FechaOperacion` on an IVA or IGIC line unless that line uses regime `14`
 or `15`. The current-date check uses the numeric offset in `FechaHoraHusoGenRegistro`, rather than

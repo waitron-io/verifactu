@@ -25,6 +25,13 @@ Here `saleInput` is the input from the earlier example, including your chain lin
 is broken. For IVA, IPSI, and IGIC tax lines, also set `ClaveRegimen` to the applicable regime code.
 Omit it for other taxes.
 
+For a correction, use `FacturasRectificadas` only with `R1`–`R5`. Use `FacturasSustituidas` only
+with `F3`. `ImporteRectificacion` is required for, and allowed only with, a substitution correction
+(`TipoRectificativa: "S"`). When correcting a record after an AEAT rejection, `RechazoPrevio: "S"`
+or `"X"` also requires `Subsanacion: "S"`. A present reference group must contain at least one
+invoice. Local validation checks each referenced Spanish NIF, the invoice number's 1–60-character
+length, and its date; only AEAT can confirm that the NIF belongs to a registered taxpayer.
+
 `buildAltaRecord` returns a complete record with formatted date and money strings and a `Huella`.
 The hash uses the exact literals that XML serialization sends. Keep that returned record intact and
 store it with the sale. [Chain the next record](/verifactu/en/guides/huella-chain/) before sending.

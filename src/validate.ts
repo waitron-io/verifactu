@@ -31,12 +31,18 @@ export type ValidationCode =
   | "TIPO_RANGE"
   | "CUOTA_TOTAL_MISMATCH"
   | "IMPORTE_TOTAL_MISMATCH"
-  // AEAT error 1114: TipoRectificativa is mandatory when TipoFactura is R1-R5.
+  | "RECHAZO_PREVIO_REQUIRES_SUBSANACION"
+  // AEAT §3.1.3.3: TipoRectificativa is mandatory when TipoFactura is R1-R5.
   | "TIPO_RECTIFICATIVA_REQUIRED"
-  // AEAT error 1115: TipoRectificativa is forbidden when TipoFactura is not R1-R5.
+  // AEAT §3.1.3.3: TipoRectificativa is forbidden when TipoFactura is not R1-R5.
   | "TIPO_RECTIFICATIVA_FORBIDDEN"
-  // AEAT error 1118: ImporteRectificacion is mandatory when TipoRectificativa is "S".
+  | "FACTURAS_RECTIFICADAS_FORBIDDEN"
+  | "FACTURAS_RECTIFICADAS_EMPTY"
+  | "FACTURAS_SUSTITUIDAS_FORBIDDEN"
+  | "FACTURAS_SUSTITUIDAS_EMPTY"
+  // AEAT §3.1.3.6: ImporteRectificacion is mandatory when TipoRectificativa is "S".
   | "IMPORTE_RECTIFICACION_REQUIRED"
+  | "IMPORTE_RECTIFICACION_FORBIDDEN"
   // AEAT requires a recipient on F1/F3 and R1-R4. The XSD leaves Destinatarios
   // optional for every TipoFactura, so this rule must be checked outside the schema.
   | "DESTINATARIOS_REQUIRED"
@@ -84,7 +90,7 @@ const FECHA_PATTERN = /^(\d{2})-(\d{2})-(\d{4})$/;
  * the same magnitude bound applies to + and - alike.
  */
 const FECHA_HORA_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}([+-])(\d{2}):(\d{2})$/;
-/** AEAT error 1114/1115: TipoRectificativa is mandatory iff TipoFactura is a rectificativa. */
+/** AEAT §3.1.3.3: TipoRectificativa is mandatory iff TipoFactura is a rectificativa. */
 const TIPO_FACTURA_RECTIFICATIVA_PATTERN = /^R[1-5]$/;
 /**
  * Conservative charset for NumSerieFactura. AEAT permits printable ASCII, but
@@ -191,6 +197,11 @@ export function validate(
       add("NIF_LENGTH", field, "NIF must be exactly 9 characters");
     } else if (!hasValidNifControl(value)) {
       add("NIF_CONTROL", field, "NIF has an invalid format or control character");
+    }
+  };
+  const checkNumSerieLength = (field: string, value: string) => {
+    if (value.length < 1 || value.length > 60) {
+      add("NUMSERIE_LENGTH", field, "NumSerieFactura must be 1 to 60 characters");
     }
   };
 
@@ -336,7 +347,20 @@ export function validate(
     }
   }
 
-  // AEAT 1114/1115: TipoRectificativa is mandatory when TipoFactura is a
+  // AEAT §3.1.3.2: S and X both claim this record corrects an earlier
+  // submission outcome, so they are valid only on a subsanación.
+  if (
+    (record.RechazoPrevio === "S" || record.RechazoPrevio === "X") &&
+    record.Subsanacion !== "S"
+  ) {
+    add(
+      "RECHAZO_PREVIO_REQUIRES_SUBSANACION",
+      "RechazoPrevio",
+      "RechazoPrevio S or X requires Subsanacion S",
+    );
+  }
+
+  // AEAT §3.1.3.3: TipoRectificativa is mandatory when TipoFactura is a
   // rectificativa (R1-R5) and forbidden otherwise — never optional either way.
   const esRectificativa = TIPO_FACTURA_RECTIFICATIVA_PATTERN.test(record.TipoFactura);
   if (esRectificativa && record.TipoRectificativa === undefined) {
@@ -353,14 +377,68 @@ export function validate(
       "TipoRectificativa must not be set when TipoFactura is not R1-R5",
     );
   }
-  // AEAT 1118: a rectificativa por sustitución must carry the replaced
-  // base/cuota — ImporteRectificacion is how the substituted amounts reach
-  // AEAT at all, so it is mandatory rather than merely encouraged.
+
+  // AEAT §3.1.3.4–5: reference groups identify prior invoices only in the
+  // invoice families whose semantics include rectification or substitution.
+  if (record.FacturasRectificadas !== undefined && !esRectificativa) {
+    add(
+      "FACTURAS_RECTIFICADAS_FORBIDDEN",
+      "FacturasRectificadas",
+      "FacturasRectificadas may be set only when TipoFactura is R1-R5",
+    );
+  }
+  if (record.FacturasRectificadas?.IDFacturaRectificada.length === 0) {
+    add(
+      "FACTURAS_RECTIFICADAS_EMPTY",
+      "FacturasRectificadas",
+      "FacturasRectificadas, when present, must carry at least one IDFacturaRectificada",
+    );
+  }
+  record.FacturasRectificadas?.IDFacturaRectificada.forEach((invoice, index) => {
+    const field = `FacturasRectificadas.IDFacturaRectificada[${index}]`;
+    checkNif(`${field}.IDEmisorFactura`, invoice.IDEmisorFactura);
+    checkNumSerieLength(`${field}.NumSerieFactura`, invoice.NumSerieFactura);
+    if (fechaOrdinal(invoice.FechaExpedicionFactura) === undefined) {
+      add("FECHA_FORMAT", `${field}.FechaExpedicionFactura`, "Date must be DD-MM-YYYY");
+    }
+  });
+  if (record.FacturasSustituidas !== undefined && record.TipoFactura !== "F3") {
+    add(
+      "FACTURAS_SUSTITUIDAS_FORBIDDEN",
+      "FacturasSustituidas",
+      "FacturasSustituidas may be set only when TipoFactura is F3",
+    );
+  }
+  if (record.FacturasSustituidas?.IDFacturaSustituida.length === 0) {
+    add(
+      "FACTURAS_SUSTITUIDAS_EMPTY",
+      "FacturasSustituidas",
+      "FacturasSustituidas, when present, must carry at least one IDFacturaSustituida",
+    );
+  }
+  record.FacturasSustituidas?.IDFacturaSustituida.forEach((invoice, index) => {
+    const field = `FacturasSustituidas.IDFacturaSustituida[${index}]`;
+    checkNif(`${field}.IDEmisorFactura`, invoice.IDEmisorFactura);
+    checkNumSerieLength(`${field}.NumSerieFactura`, invoice.NumSerieFactura);
+    if (fechaOrdinal(invoice.FechaExpedicionFactura) === undefined) {
+      add("FECHA_FORMAT", `${field}.FechaExpedicionFactura`, "Date must be DD-MM-YYYY");
+    }
+  });
+
+  // AEAT §3.1.3.6: a rectificativa por sustitución must carry the replaced
+  // base/cuota, and no other correction shape may carry that aggregation.
   if (record.TipoRectificativa === "S" && record.ImporteRectificacion === undefined) {
     add(
       "IMPORTE_RECTIFICACION_REQUIRED",
       "ImporteRectificacion",
       "ImporteRectificacion is mandatory when TipoRectificativa is S (sustitución)",
+    );
+  }
+  if (record.TipoRectificativa !== "S" && record.ImporteRectificacion !== undefined) {
+    add(
+      "IMPORTE_RECTIFICACION_FORBIDDEN",
+      "ImporteRectificacion",
+      "ImporteRectificacion may be set only when TipoRectificativa is S (sustitución)",
     );
   }
 

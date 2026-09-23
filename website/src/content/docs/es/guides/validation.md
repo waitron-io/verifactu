@@ -30,6 +30,15 @@ otros impuestos lo omitan. No determina si el
 código de régimen es el adecuado para tu operación; examina la respuesta de la AEAT para cada
 registro enviado.
 
+Los campos de rectificación se comprueban en conjunto. Los valores `S` y `X` de `RechazoPrevio`
+exigen `Subsanacion: "S"`; `FacturasRectificadas` solo está permitido en `R1`–`R5`;
+`FacturasSustituidas`, solo en `F3`; e `ImporteRectificacion` es obligatorio, y solo está permitido,
+con `TipoRectificativa: "S"`. Una agrupación de referencias presente debe contener al menos una
+factura. Cada factura referenciada recibe comprobaciones locales del NIF, del número de factura de
+1–60 caracteres y de una fecha real. El alfabeto más estrecho y seguro para QR de la factura
+principal no se aplica a estas referencias porque nunca entran en el QR. La AEAT sigue siendo quien
+confirma si un NIF está censado.
+
 En un alta, `FechaExpedicionFactura` no puede ser anterior al 28 de octubre de 2024 ni posterior a
 la fecha actual. Tampoco puede preceder a `FechaOperacion` en una línea de IVA o IGIC, salvo que
 esa línea use el régimen `14` o `15`. La comprobación de la fecha actual usa el desfase numérico de
