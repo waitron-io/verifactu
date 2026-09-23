@@ -57,6 +57,11 @@ export type ValidationCode =
   | "TERCERO_ES_IDTYPE"
   | "TERCERO_IDTYPE_07_FORBIDDEN"
   | "TERCERO_VAT_ID_FORMAT"
+  | "DESTINATARIO_ID_CHOICE"
+  | "DESTINATARIO_IDTYPE_07_COUNTRY"
+  | "DESTINATARIO_ES_IDTYPE"
+  | "DESTINATARIO_VAT_ID_FORMAT"
+  | "DESTINATARIO_VAT_FACTURA_TYPE"
   // AEAT requires a recipient on F1/F3 and R1-R4. The XSD leaves Destinatarios
   // optional for every TipoFactura, so this rule must be checked outside the schema.
   | "DESTINATARIOS_REQUIRED"
@@ -177,7 +182,10 @@ function isValidEuVatId(value: string, effectiveDate: number | undefined): boole
   const suffix = value.slice(2);
   if (country === "GB" || country === "XI") {
     if (!/^(?:[A-Z0-9]{5}|[A-Z0-9]{9}|[A-Z0-9]{12})$/.test(suffix)) return false;
-    if (effectiveDate === undefined) return false;
+    // The GB/XI prefix depends on the operation date. When that date is
+    // malformed, FECHA_FORMAT already identifies the actionable error; do not
+    // misreport a structurally valid VAT number as invalid as well.
+    if (effectiveDate === undefined) return true;
     if (effectiveDate < 20210101) return country === "GB";
     if (effectiveDate <= 20210131) return country === "GB" || country === "XI";
     return country === "XI";
@@ -665,34 +673,57 @@ export function validate(
       "Destinatarios, when present, must carry at least one IDDestinatario",
     );
   }
-  // The recipient's own text is operator- or customer-supplied and reaches the record unfiltered,
-  // so it needs the same two rules the issuer's identity already gets. IDDestinatario is
-  // maxOccurs=1000 (SuministroInformacion.xsd:159), so every entry is scanned and the issue names
-  // WHICH one, the same `[index]` convention the Desglose issues below use.
-  //
-  // NombreRazon: sf:TextMax120Type, an ordinary xsd:string (SuministroInformacion.xsd:344-355,
-  // 575-579) — nothing in the schema excludes a control character, so a serialised record carrying
-  // one is not merely schema-invalid, it is unparseable XML, and the row it would be written into
-  // is append-only.
-  //
-  // NIF: sf:NIFType, which is `<restriction base="string"><length value="9"/>`
-  // (SuministroInformacion.xsd:677-683) — EXACTLY 9 characters, the identical restriction
-  // IDEmisorFactura and SistemaInformatico.NIF carry, so it earns the same
-  // length and control-character checks.
-  // The IDOtro branch of the xsd:choice is a different type (TextMax20Type, up to 15 characters per
-  // its own documentation) and is deliberately NOT length-checked here.
-  //
-  // IDOtro.ID gets the control-character scan even so: xml/serialize.ts writes it into the document
-  // as element text exactly as it writes NombreRazon, so one there makes the filing equally
-  // unparseable. No caller exercises the IDOtro branch today (a non-Spanish recipient is refused
-  // before one is built), but this is the library's OWN boundary and the whole reason this check
-  // exists is that a rule with no caller rots unnoticed. Its two siblings are enumerations, not free
-  // text, so neither is scanned.
+  // IDDestinatario is maxOccurs=1000, so every identity is validated and each
+  // issue carries the recipient index. Free text is checked before XML output;
+  // NIF uses the shared Spanish identifier checks, while the IDOtro branch
+  // follows the distinct business rules published in AEAT §3.1.3.13.
   record.Destinatarios?.IDDestinatario.forEach((destinatario, index) => {
     const field = `Destinatarios.IDDestinatario[${index}]`;
+    const hasNif = destinatario.NIF !== undefined;
+    const hasIdOtro = destinatario.IDOtro !== undefined;
     checkNoControlChars(`${field}.NombreRazon`, destinatario.NombreRazon);
     if (destinatario.NIF !== undefined) checkNif(`${field}.NIF`, destinatario.NIF);
     checkNoControlChars(`${field}.IDOtro.ID`, destinatario.IDOtro?.ID);
+    if (hasNif === hasIdOtro) {
+      add(
+        "DESTINATARIO_ID_CHOICE",
+        field,
+        "Each recipient must carry exactly one of NIF or IDOtro",
+      );
+    }
+    if (destinatario.IDOtro?.IDType === "07" && destinatario.IDOtro.CodigoPais !== "ES") {
+      add(
+        "DESTINATARIO_IDTYPE_07_COUNTRY",
+        `${field}.IDOtro.CodigoPais`,
+        "A recipient using IDType 07 must use CodigoPais ES",
+      );
+    }
+    if (
+      destinatario.IDOtro?.CodigoPais === "ES" &&
+      !["03", "07"].includes(destinatario.IDOtro.IDType)
+    ) {
+      add(
+        "DESTINATARIO_ES_IDTYPE",
+        `${field}.IDOtro.IDType`,
+        "A Spanish recipient identified through IDOtro must use IDType 03 or 07",
+      );
+    }
+    if (destinatario.IDOtro?.IDType === "02") {
+      if (!isValidEuVatId(destinatario.IDOtro.ID, effectiveOperationDate)) {
+        add(
+          "DESTINATARIO_VAT_ID_FORMAT",
+          `${field}.IDOtro.ID`,
+          "A recipient IDType 02 must match a published uppercase EU VAT-number structure",
+        );
+      }
+      if (!requiereDestinatario) {
+        add(
+          "DESTINATARIO_VAT_FACTURA_TYPE",
+          `${field}.IDOtro.IDType`,
+          "A recipient may use IDType 02 only when TipoFactura is F1, F3 or R1-R4",
+        );
+      }
+    }
   });
 
   if (record.DescripcionOperacion.length > 500) {

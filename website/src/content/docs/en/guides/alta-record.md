@@ -39,11 +39,14 @@ invoice. Local validation checks each referenced Spanish NIF, the invoice number
 length, and its date; only AEAT can confirm that the NIF belongs to a registered taxpayer.
 
 When the recipient issues the invoice, set `EmitidaPorTerceroODestinatario: "D"` and include that
-recipient in `Destinatarios`. When another party issues it, use `"T"` and provide `Tercero` with
-either a Spanish `NIF` or an `IDOtro` identity, as in `thirdPartyIssued` above.
+recipient in `Destinatarios`. Because `F2` and `R5` forbid `Destinatarios`, they cannot use
+recipient-issued (`"D"`) records. When another party issues it, use `"T"` and provide `Tercero`
+with either a Spanish `NIF` or an `IDOtro` identity, as in `thirdPartyIssued` above.
 
 The third party's Spanish NIF must differ from the invoice issuer NIF. `buildAltaRecord`,
 `serializeEnvio`, and `parseEnvio` preserve these fields at their official XSD position.
+Each recipient must also use exactly one of `NIF` and `IDOtro`. For `IDOtro`, local validation
+enforces AEAT's Spanish-country, type-07, and published EU VAT-shape rules.
 
 `buildAltaRecord` returns a complete record with formatted date and money strings and a `Huella`.
 The hash uses the exact literals that XML serialization sends. Keep that returned record intact and

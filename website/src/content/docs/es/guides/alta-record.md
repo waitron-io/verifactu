@@ -41,11 +41,15 @@ español referenciado, la longitud de 1–60 caracteres del número de factura y
 puede confirmar que el NIF pertenece a un contribuyente censado.
 
 Cuando el destinatario expida la factura, usa `EmitidaPorTerceroODestinatario: "D"` e inclúyelo en
-`Destinatarios`. Cuando la expida otra persona o entidad, usa `"T"` e indica `Tercero` con un `NIF`
-español o una identidad `IDOtro`, como en `thirdPartyIssued` arriba.
+`Destinatarios`. Como `F2` y `R5` prohíben `Destinatarios`, no pueden usar registros expedidos por
+el destinatario (`"D"`). Cuando la expida otra persona o entidad, usa `"T"` e indica `Tercero` con
+un `NIF` español o una identidad `IDOtro`, como en `thirdPartyIssued` arriba.
 
 El NIF español del tercero debe ser distinto del NIF emisor de la factura. `buildAltaRecord`,
 `serializeEnvio` y `parseEnvio` conservan estos campos en la posición oficial del XSD.
+Cada destinatario también debe usar exactamente uno de `NIF` e `IDOtro`. Para `IDOtro`, la
+validación local aplica las reglas publicadas por la AEAT sobre país español, tipo 07 y formato
+NIF-IVA de la UE.
 
 `buildAltaRecord` devuelve el registro completo, con fechas e importes formateados y su `Huella`.
 El hash usa los mismos textos que se envían en el XML. Conserva el registro devuelto sin cambios,

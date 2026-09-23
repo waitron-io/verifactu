@@ -59,6 +59,12 @@ the Spanish `IDOtro` restriction, the ban on `IDType: "07"`, and AEAT's publishe
 number shapes for `IDType: "02"`, including the dated GB/XI transition. Only AEAT can confirm that
 a well-formed NIF or VAT number is registered.
 
+Every recipient must likewise use exactly one of `NIF` and `IDOtro`. Recipient `IDType: "07"`
+requires `CodigoPais: "ES"`; Spanish recipients may use only `IDType: "03"` or `"07"`; and
+`IDType: "02"` must match a published EU VAT shape and may appear only on `F1`, `F3`, or `R1`–`R4`.
+These invoice families are also the only ones that can use recipient-issued (`"D"`) records,
+because `F2` and `R5` forbid `Destinatarios`.
+
 Keep `IDEmisorFactura` equal to `Cabecera.ObligadoEmision.NIF`. `serializeEnvio` rejects the batch
 when those values differ, before it creates XML. AEAT permits a wider printable-ASCII alphabet in
 `NumSerieFactura`, but this library accepts only letters, digits, `/`, `_`, `.`, and `-`. That

@@ -213,6 +213,19 @@ describe("parseEnvio", () => {
     expect(parseEnvio(serializeEnvio(cabecera, registros))).toEqual({ cabecera, registros });
   });
 
+  it("round-trips a Tercero identified through IDOtro", () => {
+    const full: RegistroAlta = {
+      ...alta,
+      EmitidaPorTerceroODestinatario: "T",
+      Tercero: {
+        NombreRazon: "Expediteur tiers",
+        IDOtro: { CodigoPais: "FR", IDType: "02", ID: "FR12345678901" },
+      },
+    };
+    const registros: EnvioRegistro[] = [{ RegistroAlta: full }];
+    expect(parseEnvio(serializeEnvio(cabecera, registros))).toEqual({ cabecera, registros });
+  });
+
   // Same reasoning as above, for RegistroAnulacion's own optional fields: the "round-trips an
   // anulación" fixture only sets RefExterna, leaving SinRegistroPrevio/RechazoPrevio/GeneradoPor
   // untouched by any test.

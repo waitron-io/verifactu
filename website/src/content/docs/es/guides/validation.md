@@ -62,6 +62,12 @@ del emisor de la factura, la restricción española de `IDOtro`, la prohibición
 los formatos en mayúsculas de NIF-IVA publicados por la AEAT para `IDType: "02"`, incluida la
 transición fechada GB/XI. Solo la AEAT puede confirmar que un NIF o NIF-IVA bien formado está censado.
 
+Cada destinatario también debe usar exactamente uno de `NIF` e `IDOtro`. En los destinatarios,
+`IDType: "07"` exige `CodigoPais: "ES"`; los identificados con país español solo pueden usar
+`IDType: "03"` o `"07"`; y `IDType: "02"` debe cumplir un formato NIF-IVA publicado y solo puede
+aparecer en `F1`, `F3` o `R1`–`R4`. Esos tipos de factura son también los únicos que admiten
+registros expedidos por el destinatario (`"D"`), porque `F2` y `R5` prohíben `Destinatarios`.
+
 Mantén `IDEmisorFactura` igual a `Cabecera.ObligadoEmision.NIF`. `serializeEnvio` rechaza el lote
 si ambos valores difieren, antes de crear el XML. La AEAT permite un conjunto más amplio de
 caracteres ASCII imprimibles en `NumSerieFactura`, pero esta biblioteca solo acepta letras,

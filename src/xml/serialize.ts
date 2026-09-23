@@ -6,6 +6,7 @@ import type {
   Encadenamiento,
   IDFacturaAR,
   IDOtro,
+  PersonaFisicaJuridica,
   RegistroAlta,
   RegistroAnulacion,
   SiNo,
@@ -241,17 +242,16 @@ function consultaRespuestaOptionsXml(value: DatosAdicionalesRespuesta | undefine
   );
 }
 
-/**
- * One Destinatarios/IDDestinatario entry — sf:PersonaFisicaJuridicaType. NIF and
- * IDOtro are an xsd:choice; `!== undefined` (not `in`) narrows the union, since
- * each Destinatario branch pins the other's identifier to `?: never` — the same
- * reason formatDetalle/encadenamiento use the dotted-name check.
- */
 function idDestinatarioXml(entry: Destinatario): string {
   return "<sf:IDDestinatario>" + personaFisicaJuridicaContent(entry) + "</sf:IDDestinatario>";
 }
 
-function personaFisicaJuridicaContent(entry: Destinatario): string {
+/**
+ * Shared sf:PersonaFisicaJuridicaType content. NIF and IDOtro are an xsd:choice;
+ * `!== undefined` narrows the union because each branch pins the other
+ * identifier to `?: never`.
+ */
+function personaFisicaJuridicaContent(entry: PersonaFisicaJuridica): string {
   return (
     el("sf", "NombreRazon", entry.NombreRazon) +
     (entry.NIF !== undefined ? el("sf", "NIF", entry.NIF) : idOtroXml(entry.IDOtro))

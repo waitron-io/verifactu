@@ -94,7 +94,9 @@ For K/L/M IDs with letters in their seven-character body, the check covers the s
 field at an absolute total of €100,000,000. Recipient-issued and third-party-issued invoices can be
 represented with `EmitidaPorTerceroODestinatario` and `Tercero`; the builder, XML serializer, and
 request parser preserve those fields, while validation checks their required combinations and local
-NIF or EU VAT-number structure. AEAT remains responsible for confirming registration.
+NIF or EU VAT-number structure. Recipient identities receive the corresponding identity-choice,
+Spanish-country, type-07, and EU VAT-shape checks. AEAT remains responsible for confirming
+registration.
 
 A rectificativa (`R1`-`R5`) is built the same way, with `TipoRectificativa` set to say whether it
 substitutes (`S`) or adjusts (`I`) the original invoice. `FacturasRectificadas` may identify the
