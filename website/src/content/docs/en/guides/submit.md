@@ -46,7 +46,9 @@ const cabecera: Cabecera = {
 
 Add `Representante: { NombreRazon, NIF }` to `cabecera` only when a representative submits for the
 taxpayer. One `Cabecera` may cover records from several SIF installations of the same taxpayer in
-one submission, since each record includes its own `SistemaInformatico`.
+one submission, since each record includes its own `SistemaInformatico`. Every alta must repeat
+`cabecera.ObligadoEmision.NIF` in `IDEmisorFactura`; the serializer stops before sending if they
+differ.
 
 ## Build and chain two records
 

@@ -37,7 +37,7 @@ describe("package public surface (./index.js)", () => {
     const record = buildAltaRecord({
       IDEmisorFactura: "89890001K",
       NumSerieFactura: "T01/000123",
-      FechaExpedicionFactura: new Date("2024-01-01T12:00:00Z"),
+      FechaExpedicionFactura: new Date("2024-10-28T12:00:00Z"),
       NombreRazonEmisor: "Example SL",
       TipoFactura: "F2",
       DescripcionOperacion: "Venta en establecimiento",
@@ -54,7 +54,7 @@ describe("package public surface (./index.js)", () => {
       ImporteTotal: "12.1",
       Encadenamiento: { PrimerRegistro: "S" },
       SistemaInformatico: sistema,
-      generadoEn: new Date("2024-01-01T12:00:00Z"),
+      generadoEn: new Date("2024-10-28T12:00:00Z"),
       offsetMinutes: 60,
     });
 
@@ -62,7 +62,7 @@ describe("package public surface (./index.js)", () => {
     expect(() => assertValid(record)).not.toThrow();
 
     const cabecera: Cabecera = {
-      ObligadoEmision: { NombreRazon: sistema.NombreRazon, NIF: "B12345674" },
+      ObligadoEmision: { NombreRazon: sistema.NombreRazon, NIF: "89890001K" },
     };
     const xml = serializeEnvio(cabecera, [{ RegistroAlta: record }]);
     expect(xml).toContain("<sf:RegistroAlta>");
@@ -74,7 +74,7 @@ describe("package public surface (./index.js)", () => {
     const qr = buildQrPayload(record, "production");
     expect(qr).toBe(
       "https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR" +
-        "?nif=89890001K&numserie=T01%2F000123&fecha=01-01-2024&importe=12.10",
+        "?nif=89890001K&numserie=T01%2F000123&fecha=28-10-2024&importe=12.10",
     );
 
     // createClient is re-exported too — construct one to prove it is wired,

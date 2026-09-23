@@ -371,6 +371,7 @@ describe("buildAltaRecord — TipoRectificativa, FacturasRectificadas, FacturasS
     const record = buildAltaRecord({
       ...ALTA_INPUT,
       ...RECTIFICATIVA_EXTRAS,
+      FechaExpedicionFactura: new Date("2024-10-28T00:00:00+01:00"),
       Destinatarios: {
         IDDestinatario: [{ NombreRazon: "Cliente Factura SL", NIF: "B99999997" }],
       },
@@ -389,6 +390,7 @@ describe("buildAltaRecord — TipoRectificativa, FacturasRectificadas, FacturasS
   it("builds a full rectificativa por diferencia (I) end to end, where ImporteRectificacion is not required", () => {
     const record = buildAltaRecord({
       ...ALTA_INPUT,
+      FechaExpedicionFactura: new Date("2024-10-28T00:00:00+01:00"),
       TipoFactura: "R1",
       TipoRectificativa: "I",
       Destinatarios: {

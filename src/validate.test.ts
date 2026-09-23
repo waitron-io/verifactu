@@ -18,7 +18,7 @@ import type {
 const INPUT: AltaInput = {
   IDEmisorFactura: "89890001K",
   NumSerieFactura: "12345678/G33",
-  FechaExpedicionFactura: new Date("2024-01-01T00:00:00+01:00"),
+  FechaExpedicionFactura: new Date("2024-10-28T00:00:00+01:00"),
   NombreRazonEmisor: "Waitron SL",
   TipoFactura: "F1",
   DescripcionOperacion: "Venta en establecimiento",
@@ -747,6 +747,191 @@ describe("validate", () => {
   });
 });
 
+describe("validate — IDFactura business rules (AEAT §3.1.3.1)", () => {
+  it("rejects an issue date before VERI*FACTU's 28-10-2024 floor", () => {
+    const record = valid();
+    record.IDFactura.FechaExpedicionFactura = "27-10-2024";
+    expect(codes(record)).toContain("FECHA_EXPEDICION_BEFORE_MINIMUM");
+  });
+
+  it("accepts the 28-10-2024 issue-date boundary", () => {
+    const record = valid();
+    record.IDFactura.FechaExpedicionFactura = "28-10-2024";
+    expect(codes(record)).not.toContain("FECHA_EXPEDICION_BEFORE_MINIMUM");
+  });
+
+  it("rejects an impossible calendar date even when it has the schema's DD-MM-YYYY shape", () => {
+    const record = valid();
+    record.IDFactura.FechaExpedicionFactura = "31-02-2025";
+    expect(codes(record)).toContain("FECHA_FORMAT");
+  });
+
+  it.each(["00-01-2025", "01-00-2025", "01-13-2025", "29-02-2025", "29-02-1900", "30-02-2025"])(
+    "rejects the impossible calendar date %s",
+    (fecha) => {
+      const record = valid();
+      record.IDFactura.FechaExpedicionFactura = fecha;
+      expect(codes(record)).toContain("FECHA_FORMAT");
+    },
+  );
+
+  it("rejects year zero but accepts the first Gregorian year", () => {
+    const record = valid();
+    record.IDFactura.FechaExpedicionFactura = "01-01-0000";
+    expect(codes(record)).toContain("FECHA_FORMAT");
+    record.IDFactura.FechaExpedicionFactura = "01-01-0001";
+    expect(codes(record)).not.toContain("FECHA_FORMAT");
+  });
+
+  it("accepts a real leap day", () => {
+    const record = valid();
+    record.IDFactura.FechaExpedicionFactura = "29-02-2028";
+    expect(codes(record)).not.toContain("FECHA_FORMAT");
+  });
+
+  it("accepts the Gregorian 400-year leap exception", () => {
+    const record = valid();
+    record.IDFactura.FechaExpedicionFactura = "29-02-2000";
+    expect(codes(record)).not.toContain("FECHA_FORMAT");
+  });
+
+  it("rejects an issue date after the current date in the record's numeric offset", () => {
+    const record = valid();
+    record.IDFactura.FechaExpedicionFactura = "30-03-2025";
+    record.FechaHoraHusoGenRegistro = "2025-03-29T12:00:00+01:00";
+    expect(
+      validate(record, { now: new Date("2025-03-29T22:30:00Z") }).map((issue) => issue.code),
+    ).toContain("FECHA_EXPEDICION_FUTURE");
+  });
+
+  it("accepts the current date after applying the record's numeric offset", () => {
+    const record = valid();
+    record.IDFactura.FechaExpedicionFactura = "30-03-2025";
+    record.FechaHoraHusoGenRegistro = "2025-03-29T12:00:00+01:00";
+    expect(
+      validate(record, { now: new Date("2025-03-29T23:30:00Z") }).map((issue) => issue.code),
+    ).not.toContain("FECHA_EXPEDICION_FUTURE");
+  });
+
+  it("applies a negative record offset when finding the current calendar date", () => {
+    const record = valid();
+    record.IDFactura.FechaExpedicionFactura = "01-01-2026";
+    record.FechaHoraHusoGenRegistro = "2025-12-31T12:00:00-01:00";
+    expect(
+      validate(record, { now: new Date("2026-01-01T00:30:00Z") }).map((issue) => issue.code),
+    ).toContain("FECHA_EXPEDICION_FUTURE");
+  });
+
+  it("includes the offset's minute component when finding the current calendar date", () => {
+    const record = valid();
+    record.IDFactura.FechaExpedicionFactura = "30-03-2025";
+    record.FechaHoraHusoGenRegistro = "2025-03-29T12:00:00+01:30";
+    expect(
+      validate(record, { now: new Date("2025-03-29T22:45:00Z") }).map((issue) => issue.code),
+    ).not.toContain("FECHA_EXPEDICION_FUTURE");
+  });
+
+  it("does not use an out-of-range record offset to decide the current date", () => {
+    const record = valid();
+    record.IDFactura.FechaExpedicionFactura = "31-03-2025";
+    record.FechaHoraHusoGenRegistro = "2025-03-29T12:00:00+15:00";
+    expect(
+      validate(record, { now: new Date("2025-03-29T12:00:00Z") }).map((issue) => issue.code),
+    ).not.toContain("FECHA_EXPEDICION_FUTURE");
+  });
+
+  it("passes the injected clock through assertValid", () => {
+    const record = valid();
+    record.IDFactura.FechaExpedicionFactura = "30-03-2025";
+    record.FechaHoraHusoGenRegistro = "2025-03-29T12:00:00+01:00";
+    expect(() => assertValid(record, { now: new Date("2025-03-29T22:30:00Z") })).toThrow(
+      VerifactuValidationError,
+    );
+  });
+
+  it("rejects an invalid injected clock instead of silently skipping the future-date check", () => {
+    expect(() => validate(valid(), { now: new Date("not-a-date") })).toThrow(
+      "ValidationOptions.now must be a valid Date",
+    );
+  });
+
+  it("rejects an issue date before FechaOperacion for ordinary IVA", () => {
+    const record = valid();
+    record.IDFactura.FechaExpedicionFactura = "28-10-2024";
+    record.FechaOperacion = "29-10-2024";
+    expect(codes(record)).toContain("FECHA_EXPEDICION_BEFORE_OPERACION");
+  });
+
+  it.each(["01", "03"])(
+    "applies the date-order rule when Impuesto is explicitly %s",
+    (impuesto) => {
+      const record = valid();
+      record.IDFactura.FechaExpedicionFactura = "28-10-2024";
+      record.FechaOperacion = "29-10-2024";
+      record.Desglose[0]!.Impuesto = impuesto;
+      expect(codes(record)).toContain("FECHA_EXPEDICION_BEFORE_OPERACION");
+    },
+  );
+
+  it("accepts an issue date equal to FechaOperacion for ordinary IVA", () => {
+    const record = valid();
+    record.FechaOperacion = record.IDFactura.FechaExpedicionFactura;
+    expect(codes(record)).not.toContain("FECHA_FORMAT");
+    expect(codes(record)).not.toContain("FECHA_EXPEDICION_BEFORE_OPERACION");
+  });
+
+  it("accepts an issue date after FechaOperacion for ordinary IVA", () => {
+    const record = valid();
+    record.FechaOperacion = "27-10-2024";
+    expect(codes(record)).not.toContain("FECHA_EXPEDICION_BEFORE_OPERACION");
+  });
+
+  it.each(["31-02-2025", "2025-02-31", "tomorrow"])(
+    "rejects the malformed FechaOperacion %s instead of skipping the date-order rule",
+    (fechaOperacion) => {
+      const record = valid();
+      record.FechaOperacion = fechaOperacion;
+      expect(validate(record)).toContainEqual({
+        code: "FECHA_FORMAT",
+        field: "FechaOperacion",
+        message: "Date must be DD-MM-YYYY",
+        severity: "error",
+      });
+    },
+  );
+
+  it.each(["14", "15"])(
+    "allows an issue date before FechaOperacion for IVA regime %s",
+    (claveRegimen) => {
+      const record = valid();
+      record.IDFactura.FechaExpedicionFactura = "28-10-2024";
+      record.FechaOperacion = "29-10-2024";
+      record.Desglose[0]!.ClaveRegimen = claveRegimen;
+      expect(codes(record)).not.toContain("FECHA_EXPEDICION_BEFORE_OPERACION");
+    },
+  );
+
+  it("does not apply the IVA/IGIC date-order rule to another tax", () => {
+    const record = valid();
+    record.IDFactura.FechaExpedicionFactura = "28-10-2024";
+    record.FechaOperacion = "29-10-2024";
+    record.Desglose[0]!.Impuesto = "05";
+    record.Desglose[0]!.ClaveRegimen = undefined;
+    expect(codes(record)).not.toContain("FECHA_EXPEDICION_BEFORE_OPERACION");
+  });
+
+  it("requires every applicable line in a mixed invoice to use regime 14 or 15", () => {
+    const record = valid();
+    record.IDFactura.FechaExpedicionFactura = "28-10-2024";
+    record.FechaOperacion = "29-10-2024";
+    record.Desglose = [
+      { ...record.Desglose[0]!, ClaveRegimen: "14" },
+      { ...record.Desglose[0]!, ClaveRegimen: "01" },
+    ];
+    expect(codes(record)).toContain("FECHA_EXPEDICION_BEFORE_OPERACION");
+  });
+});
+
 describe("validate — regex patterns are anchored at both ends, not just one", () => {
   // Every pattern in validate.ts is `^...$`. A junk prefix or suffix around
   // an otherwise-valid literal must still fail: losing either anchor would
@@ -1168,6 +1353,34 @@ describe("validate — pins the exact field, message and severity for every Vali
       message: "Date must be DD-MM-YYYY",
       mutate: (r) => {
         r.IDFactura.FechaExpedicionFactura = "2024-01-01";
+      },
+    },
+    {
+      description: "FECHA_EXPEDICION_BEFORE_MINIMUM",
+      code: "FECHA_EXPEDICION_BEFORE_MINIMUM",
+      field: "FechaExpedicionFactura",
+      message: "FechaExpedicionFactura must not be before 28-10-2024",
+      mutate: (r) => {
+        r.IDFactura.FechaExpedicionFactura = "27-10-2024";
+      },
+    },
+    {
+      description: "FECHA_EXPEDICION_FUTURE",
+      code: "FECHA_EXPEDICION_FUTURE",
+      field: "FechaExpedicionFactura",
+      message: "FechaExpedicionFactura must not be after the current date",
+      mutate: (r) => {
+        r.IDFactura.FechaExpedicionFactura = "31-12-9999";
+      },
+    },
+    {
+      description: "FECHA_EXPEDICION_BEFORE_OPERACION",
+      code: "FECHA_EXPEDICION_BEFORE_OPERACION",
+      field: "FechaExpedicionFactura",
+      message:
+        "FechaExpedicionFactura may precede FechaOperacion only for IVA/IGIC regimes 14 or 15",
+      mutate: (r) => {
+        r.FechaOperacion = "29-10-2024";
       },
     },
     {

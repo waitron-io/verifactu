@@ -25,6 +25,26 @@ describe("escapeXml", () => {
 });
 
 describe("serializeEnvio", () => {
+  it("rejects an alta whose invoice issuer differs from the header issuer", () => {
+    const record = buildAltaRecord(ALTA_INPUT);
+
+    expect(() =>
+      serializeEnvio({ ObligadoEmision: { NombreRazon: "Otro SL", NIF: "B12345674" } }, [
+        { RegistroAlta: record },
+      ]),
+    ).toThrow("RegistroAlta[0].IDFactura.IDEmisorFactura must match Cabecera.ObligadoEmision.NIF");
+  });
+
+  it("identifies the mismatched alta's batch index", () => {
+    const matching = buildAltaRecord(ALTA_INPUT);
+    const mismatched = buildAltaRecord({ ...ALTA_INPUT, NumSerieFactura: "OTHER/1" });
+    mismatched.IDFactura.IDEmisorFactura = "B12345674";
+
+    expect(() =>
+      serializeEnvio(CABECERA, [{ RegistroAlta: matching }, { RegistroAlta: mismatched }]),
+    ).toThrow("RegistroAlta[1].IDFactura.IDEmisorFactura");
+  });
+
   it("emits a SOAP envelope with one Cabecera and the ObligadoEmision", () => {
     const xml = serializeEnvio(CABECERA, [{ RegistroAlta: record }]);
     expect(xml).toContain("<sfLR:Cabecera>");

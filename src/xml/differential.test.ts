@@ -77,7 +77,12 @@ function buildAnulacion(alta: RegistroAlta): RegistroAnulacion {
   });
 }
 
-function buildValidAlta(input: AltaInput = ALTA_INPUT): RegistroAlta {
+const VALID_ALTA_INPUT: AltaInput = {
+  ...ALTA_INPUT,
+  FechaExpedicionFactura: new Date("2024-10-28T00:00:00+01:00"),
+};
+
+function buildValidAlta(input: AltaInput = VALID_ALTA_INPUT): RegistroAlta {
   return buildAltaRecord({
     ...input,
     Desglose: input.Desglose.map((line) => ({ ...line, ClaveRegimen: line.ClaveRegimen ?? "01" })),
@@ -154,6 +159,7 @@ describe("differential XML conformance with @inoguerols/verifactu", () => {
   it("compares optional rectification fields, a foreign recipient and escaped text", () => {
     const record = buildValidAlta({
       ...ALTA_INPUT,
+      FechaExpedicionFactura: new Date("2024-10-28T00:00:00+01:00"),
       NumSerieFactura: "R/000001",
       TipoFactura: "R1",
       TipoRectificativa: "S",
