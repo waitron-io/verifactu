@@ -11,6 +11,8 @@ import {
   SOAP_ENDPOINTS_SELLO,
 } from "../dist/index.js";
 
+const MIXED_REGIME_EXCLUSIONS = new Set(["03", "05", "06", "08", "09"]);
+
 function required(name) {
   const value = process.env[name];
   if (!value) throw new Error(`Set ${name} before running the AEAT preproduction check`);
@@ -282,9 +284,13 @@ export function buildTestRecord(options) {
 }
 
 export function buildMixedRegimeTestRecord(options) {
-  return buildTestRecordWith(options, {
-    serialPrefix: "CI-MIXED",
-    referencePrefix: "CI-MIXED",
+  const { excludedRegime = "03", ...recordOptions } = options;
+  if (!MIXED_REGIME_EXCLUSIONS.has(excludedRegime)) {
+    throw new Error("Mixed-regime exclusion must be 03, 05, 06, 08, or 09");
+  }
+  return buildTestRecordWith(recordOptions, {
+    serialPrefix: `CI-MIXED-${excludedRegime}`,
+    referencePrefix: `CI-MIXED-${excludedRegime}`,
     description: "Prueba de totales con regímenes mixtos en preproducción",
     desglose: [
       {
@@ -297,7 +303,7 @@ export function buildMixedRegimeTestRecord(options) {
       },
       {
         Impuesto: "01",
-        ClaveRegimen: "03",
+        ClaveRegimen: excludedRegime,
         CalificacionOperacion: "S1",
         TipoImpositivo: "21.00",
         BaseImponibleOimporteNoSujeto: "100.00",
@@ -479,6 +485,7 @@ async function main() {
   const runId = process.env.GITHUB_RUN_ID ?? String(now.getTime());
 
   if (mode === "mixed-regime") {
+    const excludedRegime = process.env.AEAT_TEST_EXCLUDED_REGIME ?? "03";
     const record = buildMixedRegimeTestRecord({
       nif,
       name,
@@ -488,10 +495,11 @@ async function main() {
       recipientName: recipient.NombreRazon,
       now,
       runId,
+      excludedRegime,
     });
     const evidence = await submitMixedRegimeProbe(client, cabecera, record);
     process.stdout.write(
-      "Mixed-regime probe: CuotaTotal and ImporteTotal differ by more than 10.00 under all-line and regime-01-only scopes.\n",
+      `Mixed-regime probe ${excludedRegime}: CuotaTotal and ImporteTotal differ by more than 10.00 under all-line and regime-01-only scopes.\n`,
     );
     process.stdout.write(`AEAT mixed-regime response: ${JSON.stringify(evidence)}\n`);
     return;

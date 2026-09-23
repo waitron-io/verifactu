@@ -205,42 +205,63 @@ test("the live alta is locally valid before a request is sent", () => {
   );
 });
 
-test("the mixed-regime probe makes both totals differ under every possible line scope", () => {
-  const record = buildMixedRegimeTestRecord({
-    nif: "89890001K",
-    name: "Waitron SL",
-    systemNif: "89890001K",
-    systemName: "Waitron SL",
-    recipientNif: "11111111H",
-    recipientName: "Cliente Uno",
-    now: new Date("2026-09-22T10:00:00Z"),
-    runId: "12345",
-  });
+for (const excludedRegime of ["03", "05", "06", "08", "09"]) {
+  test(`the mixed-regime probe selects excluded regime ${excludedRegime}`, () => {
+    const record = buildMixedRegimeTestRecord({
+      nif: "89890001K",
+      name: "Waitron SL",
+      systemNif: "89890001K",
+      systemName: "Waitron SL",
+      recipientNif: "11111111H",
+      recipientName: "Cliente Uno",
+      now: new Date("2026-09-22T10:00:00Z"),
+      runId: "12345",
+      excludedRegime,
+    });
 
-  assert.deepEqual(record.Desglose, [
-    {
-      Impuesto: "01",
-      ClaveRegimen: "01",
-      CalificacionOperacion: "S1",
-      TipoImpositivo: "21.00",
-      BaseImponibleOimporteNoSujeto: "1.00",
-      CuotaRepercutida: "0.21",
-    },
-    {
-      Impuesto: "01",
-      ClaveRegimen: "03",
-      CalificacionOperacion: "S1",
-      TipoImpositivo: "21.00",
-      BaseImponibleOimporteNoSujeto: "100.00",
-      CuotaRepercutida: "21.00",
-    },
-  ]);
-  assert.equal(record.CuotaTotal, "999.00");
-  assert.equal(record.ImporteTotal, "999.00");
-  assert.equal(record.RefExterna, "CI-MIXED-12345");
-  assert.deepEqual(
-    validate(record).filter(({ severity }) => severity === "error"),
-    [],
+    assert.deepEqual(record.Desglose, [
+      {
+        Impuesto: "01",
+        ClaveRegimen: "01",
+        CalificacionOperacion: "S1",
+        TipoImpositivo: "21.00",
+        BaseImponibleOimporteNoSujeto: "1.00",
+        CuotaRepercutida: "0.21",
+      },
+      {
+        Impuesto: "01",
+        ClaveRegimen: excludedRegime,
+        CalificacionOperacion: "S1",
+        TipoImpositivo: "21.00",
+        BaseImponibleOimporteNoSujeto: "100.00",
+        CuotaRepercutida: "21.00",
+      },
+    ]);
+    assert.equal(record.CuotaTotal, "999.00");
+    assert.equal(record.ImporteTotal, "999.00");
+    assert.equal(record.RefExterna, `CI-MIXED-${excludedRegime}-12345`);
+    assert.deepEqual(
+      validate(record).filter(({ severity }) => severity === "error"),
+      [],
+    );
+  });
+}
+
+test("the mixed-regime probe rejects an unsupported excluded regime", () => {
+  assert.throws(
+    () =>
+      buildMixedRegimeTestRecord({
+        nif: "89890001K",
+        name: "Waitron SL",
+        systemNif: "89890001K",
+        systemName: "Waitron SL",
+        recipientNif: "11111111H",
+        recipientName: "Cliente Uno",
+        now: new Date("2026-09-22T10:00:00Z"),
+        runId: "12345",
+        excludedRegime: "04",
+      }),
+    /Mixed-regime exclusion must be 03, 05, 06, 08, or 09/,
   );
 });
 
