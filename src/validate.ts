@@ -156,7 +156,6 @@ function fechaOrdinal(value: string): number | undefined {
 }
 
 function currentDateOrdinal(now: Date, fechaHoraHusoGenRegistro: string): number | undefined {
-  if (Number.isNaN(now.getTime())) return undefined;
   const match = FECHA_HORA_PATTERN.exec(fechaHoraHusoGenRegistro);
   if (!match || !isValidFechaHoraHusoGenRegistro(fechaHoraHusoGenRegistro)) return undefined;
   const [, sign, hours, minutes] = match;
@@ -176,6 +175,10 @@ export function validate(
   record: RegistroAlta | RegistroAnulacion,
   options: ValidationOptions = {},
 ): ValidationIssue[] {
+  const now = options.now ?? new Date();
+  if (Number.isNaN(now.getTime())) {
+    throw new TypeError("ValidationOptions.now must be a valid Date");
+  }
   const issues: ValidationIssue[] = [];
   const add = (
     code: ValidationCode,
@@ -289,6 +292,12 @@ export function validate(
 
   if (!isAlta(record)) return issues;
 
+  const operacionOrdinal =
+    record.FechaOperacion === undefined ? undefined : fechaOrdinal(record.FechaOperacion);
+  if (record.FechaOperacion !== undefined && operacionOrdinal === undefined) {
+    add("FECHA_FORMAT", "FechaOperacion", "Date must be DD-MM-YYYY");
+  }
+
   // AEAT validation §3.1.3.1: alta issue dates start when the governing
   // order entered into force, cannot be in the future, and may precede the
   // operation date only for IVA/IGIC regimes 14 and 15. Use the numeric
@@ -302,7 +311,7 @@ export function validate(
         "FechaExpedicionFactura must not be before 28-10-2024",
       );
     }
-    const today = currentDateOrdinal(options.now ?? new Date(), record.FechaHoraHusoGenRegistro);
+    const today = currentDateOrdinal(now, record.FechaHoraHusoGenRegistro);
     if (today !== undefined && expedicionOrdinal > today) {
       add(
         "FECHA_EXPEDICION_FUTURE",
@@ -310,8 +319,6 @@ export function validate(
         "FechaExpedicionFactura must not be after the current date",
       );
     }
-    const operacionOrdinal =
-      record.FechaOperacion === undefined ? undefined : fechaOrdinal(record.FechaOperacion);
     const hasRestrictedDateOrder = record.Desglose.some(
       ({ Impuesto, ClaveRegimen }) =>
         [undefined, "01", "03"].includes(Impuesto) && !["14", "15"].includes(ClaveRegimen ?? ""),

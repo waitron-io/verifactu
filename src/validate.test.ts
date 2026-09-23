@@ -849,6 +849,12 @@ describe("validate — IDFactura business rules (AEAT §3.1.3.1)", () => {
     );
   });
 
+  it("rejects an invalid injected clock instead of silently skipping the future-date check", () => {
+    expect(() => validate(valid(), { now: new Date("not-a-date") })).toThrow(
+      "ValidationOptions.now must be a valid Date",
+    );
+  });
+
   it("rejects an issue date before FechaOperacion for ordinary IVA", () => {
     const record = valid();
     record.IDFactura.FechaExpedicionFactura = "28-10-2024";
@@ -870,6 +876,7 @@ describe("validate — IDFactura business rules (AEAT §3.1.3.1)", () => {
   it("accepts an issue date equal to FechaOperacion for ordinary IVA", () => {
     const record = valid();
     record.FechaOperacion = record.IDFactura.FechaExpedicionFactura;
+    expect(codes(record)).not.toContain("FECHA_FORMAT");
     expect(codes(record)).not.toContain("FECHA_EXPEDICION_BEFORE_OPERACION");
   });
 
@@ -878,6 +885,20 @@ describe("validate — IDFactura business rules (AEAT §3.1.3.1)", () => {
     record.FechaOperacion = "27-10-2024";
     expect(codes(record)).not.toContain("FECHA_EXPEDICION_BEFORE_OPERACION");
   });
+
+  it.each(["31-02-2025", "2025-02-31", "tomorrow"])(
+    "rejects the malformed FechaOperacion %s instead of skipping the date-order rule",
+    (fechaOperacion) => {
+      const record = valid();
+      record.FechaOperacion = fechaOperacion;
+      expect(validate(record)).toContainEqual({
+        code: "FECHA_FORMAT",
+        field: "FechaOperacion",
+        message: "Date must be DD-MM-YYYY",
+        severity: "error",
+      });
+    },
+  );
 
   it.each(["14", "15"])(
     "allows an issue date before FechaOperacion for IVA regime %s",
