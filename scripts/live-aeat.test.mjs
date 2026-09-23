@@ -389,6 +389,17 @@ test("the stored mixed-regime probe queries the historical serial and compares t
     CuotaRepercutida: "21.00",
     CalificacionOperacion: "S1",
   };
+  const storedOrdinaryLine = {
+    ...ordinaryLine,
+    TipoImpositivo: "21",
+    BaseImponibleOimporteNoSujeto: "1",
+  };
+  const storedExcludedLine = {
+    ...excludedLine,
+    TipoImpositivo: "21",
+    BaseImponibleOimporteNoSujeto: "100",
+    CuotaRepercutida: "21",
+  };
   const storedHash = "D256416486DAA7C7EA064B5E09D0E6A68D0746AB8026143D6E6140DE8D60FDFE";
   const client = {
     async consultar(cabecera, filter) {
@@ -412,9 +423,9 @@ test("the stored mixed-regime probe queries the historical serial and compares t
               FechaExpedicionFactura: "23-09-2026",
             },
             DatosRegistroFacturacion: {
-              Desglose: { DetalleDesglose: [ordinaryLine, excludedLine] },
-              CuotaTotal: "999.00",
-              ImporteTotal: "999.00",
+              Desglose: { DetalleDesglose: [storedOrdinaryLine, storedExcludedLine] },
+              CuotaTotal: "999",
+              ImporteTotal: "999",
               FechaHoraHusoGenRegistro: "2026-09-23T12:34:56+02:00",
               TipoHuella: "01",
               Huella: storedHash,
@@ -443,12 +454,12 @@ test("the stored mixed-regime probe queries the historical serial and compares t
       NumSerieFactura: "CI-MIXED-05/20260923/35864290069",
       EstadoRegistro: "Correcto",
       Huella: { status: "match", expected: storedHash, stored: storedHash },
-      CuotaTotal: { status: "match", expected: "999.00", stored: "999.00" },
-      ImporteTotal: { status: "match", expected: "999.00", stored: "999.00" },
+      CuotaTotal: { status: "match", expected: "999.00", stored: "999" },
+      ImporteTotal: { status: "match", expected: "999.00", stored: "999" },
       Desglose: {
         status: "match",
         expected: [ordinaryLine, excludedLine],
-        stored: [ordinaryLine, excludedLine],
+        stored: [storedOrdinaryLine, storedExcludedLine],
       },
     },
   );
@@ -564,6 +575,53 @@ test("the stored mixed-regime probe rejects a returned value that differs from t
     () => assertStoredMixedRegimeEvidence(evidence),
     /stored mixed-regime CuotaTotal differs from the submitted fixture/,
   );
+});
+
+test("the stored mixed-regime probe keeps code fields as exact strings", async () => {
+  const options = {
+    nif: "89890001K",
+    name: "Waitron SL",
+    systemNif: "89890001K",
+    systemName: "Waitron SL",
+    recipientNif: "11111111H",
+    recipientName: "Cliente Uno",
+    runId: "35864290069",
+    issueDate: "23-09-2026",
+    excludedRegime: "05",
+  };
+  const expected = buildMixedRegimeTestRecord({
+    ...options,
+    now: new Date("2026-09-23T12:34:56+02:00"),
+  });
+  const storedLines = expected.Desglose.map((line) => ({ ...line }));
+  storedLines[0].Impuesto = "1";
+  const client = {
+    async consultar() {
+      return {
+        ResultadoConsulta: "ConDatos",
+        IndicadorPaginacion: "N",
+        registros: [
+          {
+            IDFactura: expected.IDFactura,
+            DatosRegistroFacturacion: {
+              Desglose: { DetalleDesglose: storedLines },
+              CuotaTotal: "999",
+              ImporteTotal: "999",
+              FechaHoraHusoGenRegistro: expected.FechaHoraHusoGenRegistro,
+              Huella: expected.Huella,
+            },
+            TimestampUltimaModificacion: "2026-09-23T12:35:00+02:00",
+            EstadoRegistro: "Correcto",
+          },
+        ],
+      };
+    },
+  };
+
+  const evidence = await consultStoredMixedRegimeProbe(client, options);
+
+  assert.equal(evidence.CuotaTotal.status, "match");
+  assert.equal(evidence.Desglose.status, "mismatch");
 });
 
 test("the stored mixed-regime probe rejects a record that is no longer Correcto", () => {
