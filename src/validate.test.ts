@@ -331,14 +331,25 @@ describe("validate", () => {
     },
   );
 
-  it("keeps both total mismatch warnings when one of several tax lines has an excluded regime", () => {
-    const record = valid();
-    record.Desglose.push({ ...record.Desglose[0]!, ClaveRegimen: "03" });
-    record.CuotaTotal = "999.00";
-    record.ImporteTotal = "999.00";
-    expect(codes(record)).toContain("CUOTA_TOTAL_MISMATCH");
-    expect(codes(record)).toContain("IMPORTE_TOTAL_MISMATCH");
-  });
+  it.each(["03", "05", "06", "08", "09"])(
+    "skips both total cross-checks when a mixed record contains ClaveRegimen %s in either position",
+    (claveRegimen) => {
+      const ordinary = valid().Desglose[0]!;
+      const excluded = { ...ordinary, ClaveRegimen: claveRegimen };
+
+      for (const desglose of [
+        [excluded, ordinary],
+        [ordinary, excluded],
+      ]) {
+        const record = valid();
+        record.Desglose = desglose;
+        record.CuotaTotal = "999.00";
+        record.ImporteTotal = "999.00";
+        expect(codes(record)).not.toContain("CUOTA_TOTAL_MISMATCH");
+        expect(codes(record)).not.toContain("IMPORTE_TOTAL_MISMATCH");
+      }
+    },
+  );
 
   it("marks total mismatches as warnings, not errors", () => {
     // AEAT accepts these with errors rather than rejecting, so treating them

@@ -19,8 +19,10 @@ el registro. La validación comprueba formatos locales y algunas reglas de la AE
 la AEAT sigue siendo la fuente definitiva; examina cada línea después de enviar.
 
 La comprobación de los totales admite una diferencia de 10 €. La AEAT excluye los regímenes `03`,
-`05`, `06`, `08` y `09`. `validate` omite esta comprobación si todas las líneas usan alguno de esos
-regímenes; conserva un aviso para los registros que mezclan regímenes y cuyos totales no cuadran.
+`05`, `06`, `08` y `09`. `validate` omite ambas comprobaciones si alguna línea usa uno de esos
+regímenes. La exclusión se aplica al registro completo, por lo que una factura con regímenes mixtos
+no produce un aviso por totales incoherentes. La preproducción de la AEAT confirmó este comportamiento
+para un registro que combinaba los regímenes `01` y `03`.
 
 `validate` también comprueba que el tipo de factura corresponda con la presencia de
 `Destinatarios` y que las líneas de IVA, IPSI e IGIC incluyan `ClaveRegimen`, mientras que las de
