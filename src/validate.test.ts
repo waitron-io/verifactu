@@ -1904,6 +1904,13 @@ describe("validate — AEAT §3.1.3.14–15.5", () => {
     );
   });
 
+  it("§3.1.3.15.2 suppresses total cross-checks when BaseImponibleACoste is malformed", () => {
+    const result = codes(withDetail({ ClaveRegimen: "06", BaseImponibleACoste: "9e1" }));
+    expect(result).toContain("AMOUNT_FORMAT");
+    expect(result).not.toContain("CUOTA_TOTAL_MISMATCH");
+    expect(result).not.toContain("IMPORTE_TOTAL_MISMATCH");
+  });
+
   it("§3.1.3.15.3 rejects a recargo outside the published list", () => {
     expect(
       codes(withDetail({ TipoImpositivo: "21.00", TipoRecargoEquivalencia: "9.00" })),
@@ -1932,6 +1939,12 @@ describe("validate — AEAT §3.1.3.14–15.5", () => {
 
   it("§3.1.3.15.3 does not cascade a combination error from a malformed recargo", () => {
     const record = withDetail({ TipoImpositivo: "21.00", TipoRecargoEquivalencia: "5.2" });
+    expect(codes(record)).toContain("TIPO_RANGE");
+    expect(codes(record)).not.toContain("TIPO_RECARGO_COMBINATION");
+  });
+
+  it("§3.1.3.15.3 does not cascade a combination error from a malformed TipoImpositivo", () => {
+    const record = withDetail({ TipoImpositivo: "3", TipoRecargoEquivalencia: "1.40" });
     expect(codes(record)).toContain("TIPO_RANGE");
     expect(codes(record)).not.toContain("TIPO_RECARGO_COMBINATION");
   });
@@ -2010,16 +2023,20 @@ describe("validate — AEAT §3.1.3.14–15.5", () => {
     expect(codes(record)).toContain("S2_TIPO_FACTURA");
   });
 
-  it("§3.1.3.15.4 permits S2 for F1 with zero rate and tax", () => {
-    const record = withDetail({
-      CalificacionOperacion: "S2",
-      TipoImpositivo: "0.00",
-      CuotaRepercutida: "0.00",
-    });
-    expect(codes(record)).not.toContain("S2_TIPO_FACTURA");
-    expect(codes(record)).not.toContain("S2_TIPO_IMPOSITIVO");
-    expect(codes(record)).not.toContain("S2_CUOTA_REPERCUTIDA");
-  });
+  it.each(["F1", "F3", "R1", "R2", "R3", "R4"] as const)(
+    "§3.1.3.15.4 permits S2 for %s with zero rate and tax",
+    (TipoFactura) => {
+      const record = withDetail({
+        CalificacionOperacion: "S2",
+        TipoImpositivo: "0.00",
+        CuotaRepercutida: "0.00",
+      });
+      record.TipoFactura = TipoFactura;
+      expect(codes(record)).not.toContain("S2_TIPO_FACTURA");
+      expect(codes(record)).not.toContain("S2_TIPO_IMPOSITIVO");
+      expect(codes(record)).not.toContain("S2_CUOTA_REPERCUTIDA");
+    },
+  );
 
   it.each([undefined, "21.00"])(
     "§3.1.3.15.4 requires S2 TipoImpositivo to be present and zero: %s",
@@ -2030,6 +2047,12 @@ describe("validate — AEAT §3.1.3.14–15.5", () => {
     },
   );
 
+  it.each(["", " "])("§3.1.3.15.4 rejects an empty S2 TipoImpositivo: %j", (TipoImpositivo) => {
+    expect(codes(withDetail({ CalificacionOperacion: "S2", TipoImpositivo }))).toContain(
+      "S2_TIPO_IMPOSITIVO",
+    );
+  });
+
   it.each([undefined, "21.00"])(
     "§3.1.3.15.4 requires S2 CuotaRepercutida to be present and zero: %s",
     (CuotaRepercutida) => {
@@ -2039,6 +2062,25 @@ describe("validate — AEAT §3.1.3.14–15.5", () => {
     },
   );
 
+  it.each(["", " "])("§3.1.3.15.4 rejects an empty S2 CuotaRepercutida: %j", (CuotaRepercutida) => {
+    expect(codes(withDetail({ CalificacionOperacion: "S2", CuotaRepercutida }))).toContain(
+      "S2_CUOTA_REPERCUTIDA",
+    );
+  });
+
+  it("§3.1.3.15.4 applies the S2 zero-field rules to IGIC", () => {
+    const result = codes(
+      withDetail({
+        Impuesto: "03",
+        CalificacionOperacion: "S2",
+        TipoImpositivo: "21.00",
+        CuotaRepercutida: "21.00",
+      }),
+    );
+    expect(result).toContain("S2_TIPO_IMPOSITIVO");
+    expect(result).toContain("S2_CUOTA_REPERCUTIDA");
+  });
+
   it.each([
     "TipoImpositivo",
     "CuotaRepercutida",
@@ -2046,7 +2088,7 @@ describe("validate — AEAT §3.1.3.14–15.5", () => {
     "CuotaRecargoEquivalencia",
   ] as const)("§3.1.3.15.4 forbids %s on an IVA N1/N2 line", (field) => {
     const record = withDetail({ CalificacionOperacion: "N1" });
-    record.Desglose[0]![field] = field.startsWith("Tipo") ? "1.00" : "1.00";
+    record.Desglose[0]![field] = "1.00";
     expect(codes(record)).toContain("N1_N2_TAX_FIELDS_FORBIDDEN");
   });
 
@@ -2150,6 +2192,16 @@ describe("validate — AEAT §3.1.3.14–15.5", () => {
   ] as const)("§3.1.3.15.5 forbids %s on an exempt line", (field) => {
     const record = withDetail({ OperacionExenta: "E1" });
     record.Desglose[0]![field] = "1.00";
+    expect(codes(record)).toContain("OPERACION_EXENTA_TAX_FIELDS_FORBIDDEN");
+  });
+
+  it("§3.1.3.15.5 applies the exempt-line field ban to another tax", () => {
+    const record = withDetail({
+      Impuesto: "05",
+      ClaveRegimen: undefined,
+      OperacionExenta: "E1",
+      TipoImpositivo: "1.00",
+    });
     expect(codes(record)).toContain("OPERACION_EXENTA_TAX_FIELDS_FORBIDDEN");
   });
 

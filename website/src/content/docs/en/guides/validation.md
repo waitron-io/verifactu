@@ -72,9 +72,10 @@ must match both `TipoImpositivo` and the effective operation date. The effective
 
 `BaseImponibleACoste` is available only for regime `06`, IPSI, or another tax. Reverse-charge `S2`
 lines require an eligible invoice family plus zero `TipoImpositivo` and `CuotaRepercutida`. IVA
-`N1`/`N2` and exempt lines must omit rate, charged-tax, and equivalence-surcharge fields. Exemption
-codes are checked against the IVA/IGIC lists and regime-01 restrictions; supplied recipients of an
-IVA `E5` line must use `IDOtro`. Finally, `Cupon: "S"` is valid only on `R1` and `R5`.
+`N1`/`N2` lines must omit rate, charged-tax, and equivalence-surcharge fields. All exempt lines must
+omit those fields. Exemption codes are checked against the IVA/IGIC lists and regime-01
+restrictions; supplied recipients of an IVA `E5` line must use `IDOtro`. Finally, `Cupon: "S"` is
+valid only on `R1` and `R5`.
 
 Keep `IDEmisorFactura` equal to `Cabecera.ObligadoEmision.NIF`. `serializeEnvio` rejects the batch
 when those values differ, before it creates XML. AEAT permits a wider printable-ASCII alphabet in

@@ -161,6 +161,7 @@ const TIPO_PATTERN = /^\d{1,3}\.\d{2}$/;
 const CONTROL_CHAR_PATTERN = /[\x00-\x08\x0B\x0C\x0E-\x1F]/;
 
 const IVA_S1_RATES = new Set(["0.00", "2.00", "4.00", "5.00", "7.50", "10.00", "21.00"]);
+const S2_INVOICE_TYPES = new Set(["F1", "F3", "R1", "R2", "R3", "R4"]);
 const IVA_EXEMPTION_CODES = new Set(["E1", "E2", "E3", "E4", "E5", "E6"]);
 const IGIC_EXEMPTION_CODES = new Set([...IVA_EXEMPTION_CODES, "E7", "E8"]);
 
@@ -923,8 +924,9 @@ export function validate(
       isS1 &&
       detalle.TipoRecargoEquivalencia !== undefined &&
       validTipoRecargo &&
+      validTipoImpositivo &&
       !isAllowedRecargoCombination(
-        validTipoImpositivo ? detalle.TipoImpositivo : undefined,
+        detalle.TipoImpositivo,
         detalle.TipoRecargoEquivalencia,
         effectiveOperationDate,
       )
@@ -937,21 +939,21 @@ export function validate(
     }
 
     if (detalle.CalificacionOperacion === "S2") {
-      if (!requiereDestinatario) {
+      if (!S2_INVOICE_TYPES.has(record.TipoFactura)) {
         add(
           "S2_TIPO_FACTURA",
           `${field}.CalificacionOperacion`,
           "CalificacionOperacion S2 is allowed only when TipoFactura is F1, F3 or R1-R4",
         );
       }
-      if (Number(detalle.TipoImpositivo) !== 0) {
+      if (detalle.TipoImpositivo !== "0.00") {
         add(
           "S2_TIPO_IMPOSITIVO",
           `${field}.TipoImpositivo`,
           "CalificacionOperacion S2 requires TipoImpositivo to be present and zero",
         );
       }
-      if (Number(detalle.CuotaRepercutida) !== 0) {
+      if (detalle.CuotaRepercutida !== "0.00") {
         add(
           "S2_CUOTA_REPERCUTIDA",
           `${field}.CuotaRepercutida`,
