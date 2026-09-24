@@ -211,6 +211,12 @@ dynamically formatted month; the runtime boundary enforces the published list.
 `parseConsulta` checks the literal XML leaf without trimming it, so spaces inside either code-list
 element also fail locally. This keeps the parser's lossless-text policy; a hand-written fixture
 should indent between elements, not inside `Periodo` or `IndicadorRepresentante`.
+Service description §6.4.1 and the `ConsultaLR.xsd` annotation require a recipient consulta to
+omit `MostrarSistemaInformatico` or set it to `N`. The serializer and request parser reject `S`
+for that header before the fake or a real transport receives the request; issuer queries may use
+`S`. `src/xml/serialize.test.ts` and `src/xml/parse-request.test.ts` cover the rejected and
+allowed forms. The library still leaves other consultation code-list values to AEAT unless
+separately noted here.
 An `xmllint --xpath` extraction of the bundled XSD confirmed exactly `01`–`12` and `S`. A full
 offline `xmllint --schema` check of a consultation request could not compile because the bundled
 common schema imports the external XML-signature schema; these tests do not claim whole-request

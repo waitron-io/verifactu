@@ -169,6 +169,22 @@ describe("createClient", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("does not send a recipient consulta requesting software details", async () => {
+    const fetch = fakeFetch(CONSULTA_OK);
+    const client = createClient({ endpoint: "https://example.test/soap", fetch });
+    await expect(
+      client.consultar(
+        { Destinatario: { NombreRazon: "Cliente Uno", NIF: "11111111H" } },
+        {
+          Ejercicio: "2024",
+          Periodo: "01",
+          DatosAdicionalesRespuesta: { MostrarSistemaInformatico: "S" },
+        },
+      ),
+    ).rejects.toThrow("Consulta MostrarSistemaInformatico must be N or omitted for Destinatario");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("reports a SOAP fault returned with HTTP 200", async () => {
     const client = createClient({
       endpoint: "https://example.test/soap",

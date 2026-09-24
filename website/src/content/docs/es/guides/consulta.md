@@ -64,7 +64,8 @@ indicadores de uso son opcionales.
 Pide `DatosAdicionalesRespuesta` solo cuando necesites el nombre del emisor o los datos del
 software en cada resultado. `ConsultaLR.xsd` de la AEAT indica que estos campos pueden ralentizar
 la respuesta. La misma norma exige que omitas `MostrarSistemaInformatico` o uses `"N"` si consultas
-como destinatario. El cliente coloca estas opciones después de `FiltroConsulta` en el XML.
+como destinatario. El cliente rechaza `"S"` para un destinatario antes del envío y coloca las
+opciones válidas después de `FiltroConsulta` en el XML.
 
 El destinatario usa otra cabecera de consulta e identifica al emisor como contraparte, como muestra
 la consulta `recibidas` anterior.
