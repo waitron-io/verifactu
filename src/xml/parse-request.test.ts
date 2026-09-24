@@ -583,6 +583,18 @@ describe("parseConsulta full header and date choice", () => {
 });
 
 describe("parseConsulta", () => {
+  it.each(["MostrarNombreRazonEmisor", "MostrarSistemaInformatico"] as const)(
+    "rejects an invalid %s value in raw issuer XML",
+    (field) => {
+      const xml = serializeConsulta(cabecera, {
+        Ejercicio: "2026",
+        Periodo: "07",
+        DatosAdicionalesRespuesta: { [field]: "S" },
+      }).replace(`<sfLRC:${field}>S</sfLRC:${field}>`, `<sfLRC:${field}>X</sfLRC:${field}>`);
+      expect(() => parseConsulta(xml)).toThrow(`Consulta ${field} must be S or N`);
+    },
+  );
+
   it.each(["S", "X"])(
     "rejects recipient consulta software-details value %s in raw XML",
     (value) => {

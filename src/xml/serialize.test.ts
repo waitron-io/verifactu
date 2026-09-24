@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { escapeXml } from "./escape.js";
 import { serializeConsulta, serializeEnvio } from "./serialize.js";
-import type { Cabecera, CabeceraConsulta, EnvioRegistro } from "./serialize.js";
+import type {
+  Cabecera,
+  CabeceraConsulta,
+  DatosAdicionalesRespuesta,
+  EnvioRegistro,
+} from "./serialize.js";
 import { buildAltaRecord, buildAnulacionRecord } from "../records.js";
 import { ALTA_INPUT, CABECERA, SISTEMA, withoutNif } from "../../test/fixtures.js";
 import type { AltaInput, AnulacionInput } from "../types.js";
@@ -1246,6 +1251,33 @@ describe("serializeConsulta", () => {
         DatosAdicionalesRespuesta: { MostrarSistemaInformatico: "S" },
       }),
     ).toContain("<sfLRC:MostrarSistemaInformatico>S</sfLRC:MostrarSistemaInformatico>");
+  });
+
+  it.each(["MostrarNombreRazonEmisor", "MostrarSistemaInformatico"] as const)(
+    "rejects an untyped %s value outside the XSD's S/N enumeration",
+    (field) => {
+      const options = { [field]: "X" } as unknown as DatosAdicionalesRespuesta;
+      expect(() =>
+        serializeConsulta(CABECERA, {
+          Ejercicio: "2024",
+          Periodo: "01",
+          DatosAdicionalesRespuesta: options,
+        }),
+      ).toThrow(`Consulta ${field} must be S or N`);
+    },
+  );
+
+  it("allows both published S/N values for the issuer's response options", () => {
+    const xml = serializeConsulta(CABECERA, {
+      Ejercicio: "2024",
+      Periodo: "01",
+      DatosAdicionalesRespuesta: {
+        MostrarNombreRazonEmisor: "N",
+        MostrarSistemaInformatico: "S",
+      },
+    });
+    expect(xml).toContain("<sfLRC:MostrarNombreRazonEmisor>N</sfLRC:MostrarNombreRazonEmisor>");
+    expect(xml).toContain("<sfLRC:MostrarSistemaInformatico>S</sfLRC:MostrarSistemaInformatico>");
   });
 
   it("serializes the alternative invoice-date range", () => {
