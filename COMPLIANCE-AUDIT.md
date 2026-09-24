@@ -8,8 +8,8 @@ is accepted. The [source watch](sources/README.md) checks for publication change
 
 | AEAT publication                                                                                                                                                   | Version                                    | Audit status                                                                                                               |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| [Validation rules and errors](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Validaciones_Errores_Veri-Factu.pdf)          | 1.2.2, 8 April 2026                        | In progress; selected rules below                                                                                          |
-| [Web service description](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_Descripcion_SWeb.pdf)             | 1.0.3, 28 July 2025                        | Pending systematic review                                                                                                  |
+| [Validation rules and errors](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Validaciones_Errores_Veri-Factu.pdf)          | 1.2.2, 8 April 2026                        | In progress; §§3.1.1–3.1.5 substantially checked, §§4–6 partial                                                            |
+| [Web service description](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_Descripcion_SWeb.pdf)             | 1.0.3, 28 July 2025                        | In progress; section coverage map below                                                                                    |
 | [Hash specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_especificaciones_huella_hash_registros.pdf) | 0.1.2, 27 August 2024                      | §§2–7 checked for alta and cancellation; event records out of scope; decimal-variant comparison pending AEAT preproduction |
 | [QR specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf)               | 0.5.0, 10 December 2025                    | §§2–10 and 12 classified; verifiable QR URL rules checked; printed layout and lookup responses outside library scope       |
 | [Developer FAQ](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/FAQs-Desarrolladores.pdf)                              | 1.3, 4 December 2025                       | Pending entry-by-entry review                                                                                              |
@@ -78,6 +78,18 @@ a distinct and locally valid NIF, a NIF for `E`, the published Spanish `IDOtro` 
 `src/records.test.ts`, `src/xml/*.test.ts`, and `src/validate.test.ts` cover these paths,
 including XML order, round trips, and exact issue details. AEAT alone can confirm that a NIF or
 EU VAT identity is registered.
+
+### Tax-code meanings — validation §§5.1–5.2
+
+The clarification glossary distinguishes `N1` (not subject under the applicable tax's
+non-taxation provisions) from `N2` (not subject because of place-of-supply rules) for IVA,
+IGIC, and IPSI. It maps exemption codes to different legal provisions for each tax: `E1`–`E6`
+for IVA and IPSI, and `E1`–`E8` for IGIC. `validate` checks the IVA and IGIC exemption-code
+lists and their published combinations, but it cannot determine whether a transaction legally
+qualifies for any classification. Validation §3.1.3.15.5 specifies the IVA/IGIC list checks;
+it does not impose an equivalent local IPSI list check. The English and Spanish validation
+guides now explain the choice and this limit. This is a terminology and guidance audit, not
+evidence of an AEAT acceptance result for every tax-code combination.
 
 ### Submission header and record wrappers — validation §3.1.1–2
 

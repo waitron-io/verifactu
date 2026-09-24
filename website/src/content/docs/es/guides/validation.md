@@ -134,6 +134,14 @@ códigos de exención se contrastan con las listas IVA/IGIC y las restricciones 
 destinatarios informados en una línea IVA `E5` deben usar `IDOtro`. Por último, `Cupon: "S"` solo es
 válido en `R1` y `R5`.
 
+Elige `N1` cuando la operación no esté sujeta según los supuestos de no sujeción de la ley del
+IVA, IGIC o IPSI que corresponda; elige `N2` cuando la no sujeción se deba a las reglas de
+localización. En las operaciones exentas, un mismo número `E` puede referirse a disposiciones
+legales distintas según el impuesto. El [glosario de validaciones de la AEAT](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Validaciones_Errores_Veri-Factu.pdf)
+§5.2 enumera `E1`–`E6` para IVA e IPSI y `E1`–`E8` para IGIC. Un resultado correcto de
+`validate` no demuestra que la operación cumpla los requisitos legales del código elegido: la
+biblioteca comprueba las combinaciones admitidas, no los hechos de tu operación.
+
 La validación específica de regímenes cubre las condiciones publicadas sobre operación, tipo,
 base a coste, tipo de factura, identificación del destinatario y fecha de operación para los
 regímenes IVA/IGIC `02`, `03`, `04`, `06`, `07`, `08`, `10`, `11`, `14` y el régimen IGIC `20`.
