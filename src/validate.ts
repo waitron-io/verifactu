@@ -45,6 +45,11 @@ export type ValidationCode =
   | "REGIMEN_14_DESTINATARIO_ID"
   | "REGIMEN_14_TIPO_FACTURA"
   | "REGIMEN_20_IGIC_CALIFICACION"
+  | "CUOTA_REPERCUTIDA_NONZERO_FORBIDDEN"
+  | "S1_TIPO_IMPOSITIVO_REQUIRED"
+  | "S1_CUOTA_REPERCUTIDA_REQUIRED"
+  | "S1_CUOTA_REPERCUTIDA_SIGN"
+  | "S1_CUOTA_REPERCUTIDA_FORMULA"
   | "TIPO_RANGE"
   | "CUOTA_TOTAL_MISMATCH"
   | "IMPORTE_TOTAL_MISMATCH"
@@ -975,6 +980,74 @@ export function validate(
     const validTipoRecargo =
       detalle.TipoRecargoEquivalencia === undefined ||
       TIPO_PATTERN.test(detalle.TipoRecargoEquivalencia);
+
+    // AEAT validation §3.1.3.15.7 allows a nonzero charged tax only on S1.
+    // The narrower S2, IVA N1/N2, and exemption checks already report those
+    // branches, so this fills the remaining tax/qualification combinations
+    // without duplicating an issue for the same field.
+    const validCuotaRepercutida =
+      detalle.CuotaRepercutida === undefined || isValidAmount(detalle.CuotaRepercutida);
+    const cuotaRepercutidaNonzero =
+      detalle.CuotaRepercutida !== undefined &&
+      validCuotaRepercutida &&
+      Number(detalle.CuotaRepercutida) !== 0;
+    const nonS1CuotaAlreadyReported =
+      detalle.CalificacionOperacion === "S2" ||
+      (isIva && ["N1", "N2"].includes(detalle.CalificacionOperacion ?? "")) ||
+      detalle.OperacionExenta !== undefined;
+    if (cuotaRepercutidaNonzero && !isS1 && !nonS1CuotaAlreadyReported) {
+      add(
+        "CUOTA_REPERCUTIDA_NONZERO_FORBIDDEN",
+        `${field}.CuotaRepercutida`,
+        "CuotaRepercutida may be nonzero only when CalificacionOperacion is S1",
+      );
+    }
+
+    if (isS1) {
+      if (detalle.TipoImpositivo === undefined) {
+        add(
+          "S1_TIPO_IMPOSITIVO_REQUIRED",
+          `${field}.TipoImpositivo`,
+          "TipoImpositivo is mandatory when CalificacionOperacion is S1",
+        );
+      }
+      if (detalle.CuotaRepercutida === undefined) {
+        add(
+          "S1_CUOTA_REPERCUTIDA_REQUIRED",
+          `${field}.CuotaRepercutida`,
+          "CuotaRepercutida is mandatory when CalificacionOperacion is S1",
+        );
+      }
+
+      const formulaBase = detalle.BaseImponibleACoste ?? detalle.BaseImponibleOimporteNoSujeto;
+      const formulaInputsValid =
+        detalle.TipoImpositivo !== undefined &&
+        validTipoImpositivo &&
+        detalle.CuotaRepercutida !== undefined &&
+        validCuotaRepercutida &&
+        isValidAmount(formulaBase);
+      const formulaExempt =
+        record.TipoRectificativa === "I" || ["R2", "R3"].includes(record.TipoFactura);
+      if (formulaInputsValid && !formulaExempt) {
+        const base = Number(formulaBase);
+        const cuota = Number(detalle.CuotaRepercutida);
+        const rate = Number(detalle.TipoImpositivo);
+        if (base !== 0 && cuota !== 0 && base < 0 !== cuota < 0) {
+          add(
+            "S1_CUOTA_REPERCUTIDA_SIGN",
+            `${field}.CuotaRepercutida`,
+            "CuotaRepercutida and its applicable base must have the same sign",
+          );
+        }
+        if (Math.abs(cuota - (base * rate) / 100) > TOTAL_TOLERANCE) {
+          add(
+            "S1_CUOTA_REPERCUTIDA_FORMULA",
+            `${field}.CuotaRepercutida`,
+            "CuotaRepercutida must equal its applicable base times TipoImpositivo within 10.00",
+          );
+        }
+      }
+    }
 
     if (isIvaOrIgic) {
       if (detalle.ClaveRegimen === "02" && detalle.OperacionExenta === undefined) {

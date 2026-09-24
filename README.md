@@ -107,7 +107,9 @@ list, including each special rule for regimes `02`, `03`, `04`, `06`, `07`, `08`
 matching AEAT's acceptance window, and becomes an error on 1 January 2027. The boundary uses the
 current instant in the numeric offset carried by `FechaHoraHusoGenRegistro`. A malformed timestamp
 already produces `FECHA_HORA_FORMAT`, so the IPSI issue stays a warning rather than adding a second
-date-derived error.
+date-derived error. Every `S1` line must include `TipoImpositivo` and `CuotaRepercutida`; validation
+checks the applicable base, sign, and AEAT's ±€10 formula tolerance, except for the published
+correction cases. A nonzero `CuotaRepercutida` is otherwise rejected.
 
 A rectificativa (`R1`-`R5`) is built the same way, with `TipoRectificativa` set to say whether it
 substitutes (`S`) or adjusts (`I`) the original invoice. `FacturasRectificadas` may identify the

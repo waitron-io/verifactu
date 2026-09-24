@@ -384,7 +384,11 @@ describe("buildAltaRecord — TipoRectificativa, FacturasRectificadas, FacturasS
       Destinatarios: {
         IDDestinatario: [{ NombreRazon: "Cliente Factura SL", NIF: "B99999997" }],
       },
-      Desglose: [{ ...ALTA_INPUT.Desglose[0]!, ClaveRegimen: "01" }],
+      // The shared fixture reproduces an AEAT hash example, not a §15.7
+      // validation example. Use a charged tax that matches 111.10 × 21%.
+      Desglose: [{ ...ALTA_INPUT.Desglose[0]!, ClaveRegimen: "01", CuotaRepercutida: "23.33" }],
+      CuotaTotal: "23.33",
+      ImporteTotal: "134.43",
     });
     expect(record.TipoFactura).toBe("R1");
     expect(record.TipoRectificativa).toBe("S");

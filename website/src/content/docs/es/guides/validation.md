@@ -96,6 +96,15 @@ regímenes IVA/IGIC `02`, `03`, `04`, `06`, `07`, `08`, `10`, `11`, `14` y el r�
 En particular, el régimen `14` exige una `FechaOperacion` posterior a la fecha de expedición y
 destinatarios cuyo NIF empiece por `P`, `Q`, `S` o `V`.
 
+Cada línea `S1` debe incluir `TipoImpositivo` y `CuotaRepercutida`. Salvo que el registro sea una
+rectificación por diferencias (`TipoRectificativa: "I"`) o una factura `R2`/`R3`, la cuota debe
+tener el mismo signo que la base aplicable y ser igual a esa base multiplicada por el tipo dentro
+del margen de ±10 € de la AEAT. Si existe `BaseImponibleACoste`, esa es la base aplicable; en caso
+contrario, la comprobación usa `BaseImponibleOimporteNoSujeto`. No se permite una
+`CuotaRepercutida` distinta de cero fuera de `S1`. Los errores más específicos ya existentes
+señalan la misma infracción para `S2`, IVA `N1`/`N2` y líneas exentas, para que recibas un solo
+problema útil en vez de mensajes duplicados.
+
 Mantén `IDEmisorFactura` igual a `Cabecera.ObligadoEmision.NIF`. `serializeEnvio` rechaza el lote
 si ambos valores difieren, antes de crear el XML. La AEAT permite un conjunto más amplio de
 caracteres ASCII imprimibles en `NumSerieFactura`, pero esta biblioteca solo acepta letras,

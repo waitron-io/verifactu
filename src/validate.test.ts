@@ -11,10 +11,9 @@ import type {
   RegistroAnulacion,
 } from "./types.js";
 
-// Deliberately NOT test/fixtures.ts's ALTA_INPUT. Both fixtures' Desglose
-// lines already carry CalificacionOperacion (so that alone isn't why this
-// file needs its own copy) — the actual difference is that this line omits
-// TipoImpositivo, which ALTA_INPUT's carries (see test/fixtures.ts).
+// Deliberately NOT test/fixtures.ts's ALTA_INPUT. This fixture carries the
+// recipient required by F1 and values that exercise the validator's own
+// record-level rules without depending on the serialization fixture.
 const INPUT: AltaInput = {
   IDEmisorFactura: "89890001K",
   NumSerieFactura: "12345678/G33",
@@ -33,6 +32,7 @@ const INPUT: AltaInput = {
     {
       ClaveRegimen: "01",
       CalificacionOperacion: "S1",
+      TipoImpositivo: "10.00",
       BaseImponibleOimporteNoSujeto: "111.10",
       CuotaRepercutida: "12.35",
     },
@@ -1761,7 +1761,7 @@ describe("validate — AEAT §3.1.3.7–12", () => {
   });
 });
 
-describe("validate — AEAT §3.1.3.14–15.6", () => {
+describe("validate — AEAT §3.1.3.14–15.7", () => {
   const withDetail = (overrides: Partial<DetalleDesglose>) => {
     const record = valid();
     const detail = { ...record.Desglose[0]!, ...overrides } as DetalleDesglose;
@@ -1933,9 +1933,9 @@ describe("validate — AEAT §3.1.3.14–15.6", () => {
   );
 
   it("§3.1.3.15.3 rejects a recargo with no TipoImpositivo", () => {
-    expect(codes(withDetail({ TipoRecargoEquivalencia: "1.40" }))).toContain(
-      "TIPO_RECARGO_COMBINATION",
-    );
+    expect(
+      codes(withDetail({ TipoImpositivo: undefined, TipoRecargoEquivalencia: "1.40" })),
+    ).toContain("TIPO_RECARGO_COMBINATION");
   });
 
   it("§3.1.3.15.3 does not cascade a combination error from a malformed recargo", () => {
@@ -2710,6 +2710,227 @@ describe("validate — AEAT §3.1.3.14–15.6", () => {
       validate(record).filter(({ code }) => code === "REGIMEN_10_DESTINATARIO_ID"),
     ).toHaveLength(1);
   });
+
+  it("§3.1.3.15.7 requires TipoImpositivo on every S1 line", () => {
+    expect(codes(withDetail({ TipoImpositivo: undefined }))).toContain(
+      "S1_TIPO_IMPOSITIVO_REQUIRED",
+    );
+    expect(
+      codes(withDetail({ Impuesto: "02", ClaveRegimen: "01", TipoImpositivo: undefined })),
+    ).toContain("S1_TIPO_IMPOSITIVO_REQUIRED");
+  });
+
+  it("§3.1.3.15.7 requires CuotaRepercutida on every S1 line", () => {
+    expect(codes(withDetail({ CuotaRepercutida: undefined }))).toContain(
+      "S1_CUOTA_REPERCUTIDA_REQUIRED",
+    );
+  });
+
+  it.each([
+    { Impuesto: "02", ClaveRegimen: "01", CalificacionOperacion: "N1" },
+    { Impuesto: "03", ClaveRegimen: "01", CalificacionOperacion: "N2" },
+    { Impuesto: "05", ClaveRegimen: undefined, CalificacionOperacion: "N1" },
+  ] satisfies Array<Partial<DetalleDesglose>>)(
+    "§3.1.3.15.7 forbids a nonzero charged tax outside S1: %o",
+    (operation) => {
+      expect(codes(withDetail({ ...operation, CuotaRepercutida: "1.00" }))).toContain(
+        "CUOTA_REPERCUTIDA_NONZERO_FORBIDDEN",
+      );
+    },
+  );
+
+  it("§3.1.3.15.7 permits zero charged tax outside S1", () => {
+    expect(
+      codes(
+        withDetail({
+          Impuesto: "03",
+          ClaveRegimen: "01",
+          CalificacionOperacion: "N1",
+          CuotaRepercutida: "0.00",
+        }),
+      ),
+    ).not.toContain("CUOTA_REPERCUTIDA_NONZERO_FORBIDDEN");
+  });
+
+  it("§3.1.3.15.7 does not duplicate narrower S2 and exemption issues", () => {
+    const s2 = codes(
+      withDetail({
+        CalificacionOperacion: "S2",
+        TipoImpositivo: "0.00",
+        CuotaRepercutida: "1.00",
+      }),
+    );
+    expect(s2).toContain("S2_CUOTA_REPERCUTIDA");
+    expect(s2).not.toContain("CUOTA_REPERCUTIDA_NONZERO_FORBIDDEN");
+
+    const exempt = codes(withDetail({ OperacionExenta: "E1", CuotaRepercutida: "1.00" }));
+    expect(exempt).toContain("OPERACION_EXENTA_TAX_FIELDS_FORBIDDEN");
+    expect(exempt).not.toContain("CUOTA_REPERCUTIDA_NONZERO_FORBIDDEN");
+  });
+
+  it.each(["N1", "N2"] as const)(
+    "§3.1.3.15.7 does not duplicate the narrower IVA %s issue",
+    (CalificacionOperacion) => {
+      const result = codes(
+        withDetail({
+          CalificacionOperacion,
+          CuotaRepercutida: "1.00",
+        }),
+      );
+      expect(result).toContain("N1_N2_TAX_FIELDS_FORBIDDEN");
+      expect(result).not.toContain("CUOTA_REPERCUTIDA_NONZERO_FORBIDDEN");
+    },
+  );
+
+  it("§3.1.3.15.7 does not require S1 fields on another qualification", () => {
+    const result = codes(
+      withDetail({
+        Impuesto: "03",
+        ClaveRegimen: "01",
+        CalificacionOperacion: "N1",
+        TipoImpositivo: undefined,
+        CuotaRepercutida: undefined,
+      }),
+    );
+    expect(result).not.toContain("S1_TIPO_IMPOSITIVO_REQUIRED");
+    expect(result).not.toContain("S1_CUOTA_REPERCUTIDA_REQUIRED");
+  });
+
+  it.each([
+    ["31.00", false],
+    ["31.01", true],
+    ["11.00", false],
+    ["10.99", true],
+  ] as const)(
+    "§3.1.3.15.7 applies the inclusive ±10 formula tolerance to CuotaRepercutida %s",
+    (CuotaRepercutida, rejected) => {
+      const result = codes(
+        withDetail({
+          TipoImpositivo: "21.00",
+          BaseImponibleOimporteNoSujeto: "100.00",
+          CuotaRepercutida,
+        }),
+      );
+      expect(result.includes("S1_CUOTA_REPERCUTIDA_FORMULA")).toBe(rejected);
+    },
+  );
+
+  it("§3.1.3.15.7 checks the charged-tax sign independently of the tolerance", () => {
+    expect(
+      codes(
+        withDetail({
+          TipoImpositivo: "21.00",
+          BaseImponibleOimporteNoSujeto: "10.00",
+          CuotaRepercutida: "-1.00",
+        }),
+      ),
+    ).toContain("S1_CUOTA_REPERCUTIDA_SIGN");
+  });
+
+  it("§3.1.3.15.7 accepts matching negative signs", () => {
+    const result = codes(
+      withDetail({
+        TipoImpositivo: "21.00",
+        BaseImponibleOimporteNoSujeto: "-100.00",
+        CuotaRepercutida: "-21.00",
+      }),
+    );
+    expect(result).not.toContain("S1_CUOTA_REPERCUTIDA_SIGN");
+    expect(result).not.toContain("S1_CUOTA_REPERCUTIDA_FORMULA");
+  });
+
+  it("§3.1.3.15.7 accepts zero tax on a positive base at rate zero", () => {
+    const result = codes(
+      withDetail({
+        TipoImpositivo: "0.00",
+        BaseImponibleOimporteNoSujeto: "100.00",
+        CuotaRepercutida: "0.00",
+      }),
+    );
+    expect(result).not.toContain("S1_CUOTA_REPERCUTIDA_SIGN");
+    expect(result).not.toContain("S1_CUOTA_REPERCUTIDA_FORMULA");
+  });
+
+  it("§3.1.3.15.7 uses BaseImponibleACoste when it is present", () => {
+    const result = codes(
+      withDetail({
+        ClaveRegimen: "06",
+        TipoImpositivo: "10.00",
+        BaseImponibleOimporteNoSujeto: "100.00",
+        BaseImponibleACoste: "300.00",
+        CuotaRepercutida: "30.00",
+      }),
+    );
+    expect(result).not.toContain("S1_CUOTA_REPERCUTIDA_FORMULA");
+  });
+
+  it("§3.1.3.15.7 skips sign and formula checks for correction by differences", () => {
+    const record = withDetail({
+      TipoImpositivo: "21.00",
+      BaseImponibleOimporteNoSujeto: "100.00",
+      CuotaRepercutida: "-999.00",
+    });
+    record.TipoFactura = "R1";
+    record.TipoRectificativa = "I";
+    const result = codes(record);
+    expect(result).not.toContain("S1_CUOTA_REPERCUTIDA_SIGN");
+    expect(result).not.toContain("S1_CUOTA_REPERCUTIDA_FORMULA");
+  });
+
+  it("§3.1.3.15.7 still requires rate and charged tax on correction by differences", () => {
+    const record = withDetail({ TipoImpositivo: undefined, CuotaRepercutida: undefined });
+    record.TipoFactura = "R1";
+    record.TipoRectificativa = "I";
+    const result = codes(record);
+    expect(result).toContain("S1_TIPO_IMPOSITIVO_REQUIRED");
+    expect(result).toContain("S1_CUOTA_REPERCUTIDA_REQUIRED");
+  });
+
+  it.each(["R2", "R3"] as const)(
+    "§3.1.3.15.7 skips sign and formula checks for invoice type %s",
+    (TipoFactura) => {
+      const record = withDetail({
+        TipoImpositivo: "21.00",
+        BaseImponibleOimporteNoSujeto: "100.00",
+        CuotaRepercutida: "-999.00",
+      });
+      record.TipoFactura = TipoFactura;
+      record.TipoRectificativa = "S";
+      record.ImporteRectificacion = { BaseRectificada: "100.00", CuotaRectificada: "21.00" };
+      const result = codes(record);
+      expect(result).not.toContain("S1_CUOTA_REPERCUTIDA_SIGN");
+      expect(result).not.toContain("S1_CUOTA_REPERCUTIDA_FORMULA");
+    },
+  );
+
+  it("§3.1.3.15.7 still checks an R4 substitution", () => {
+    const record = withDetail({
+      TipoImpositivo: "21.00",
+      BaseImponibleOimporteNoSujeto: "100.00",
+      CuotaRepercutida: "-999.00",
+    });
+    record.TipoFactura = "R4";
+    record.TipoRectificativa = "S";
+    record.ImporteRectificacion = { BaseRectificada: "100.00", CuotaRectificada: "21.00" };
+    const result = codes(record);
+    expect(result).toContain("S1_CUOTA_REPERCUTIDA_SIGN");
+    expect(result).toContain("S1_CUOTA_REPERCUTIDA_FORMULA");
+  });
+
+  it.each([
+    { TipoImpositivo: "bad" },
+    { BaseImponibleOimporteNoSujeto: "bad" },
+    { CuotaRepercutida: "bad" },
+    { ClaveRegimen: "06", BaseImponibleACoste: "bad" },
+  ] satisfies Array<Partial<DetalleDesglose>>)(
+    "§3.1.3.15.7 does not cascade sign or formula errors from malformed numbers: %o",
+    (overrides) => {
+      const result = codes(withDetail(overrides));
+      expect(result).toContain(overrides.TipoImpositivo ? "TIPO_RANGE" : "AMOUNT_FORMAT");
+      expect(result).not.toContain("S1_CUOTA_REPERCUTIDA_SIGN");
+      expect(result).not.toContain("S1_CUOTA_REPERCUTIDA_FORMULA");
+    },
+  );
 });
 
 describe("validate — Destinatarios rules (F1/F3/R1-R4 require, F2/R5 forbid)", () => {
@@ -3903,6 +4124,57 @@ describe("validate — pins the exact field, message and severity for every Vali
       mutate: (r) => {
         r.Desglose[0]!.Impuesto = "03";
         r.Desglose[0]!.ClaveRegimen = "20";
+      },
+    },
+    {
+      description: "CUOTA_REPERCUTIDA_NONZERO_FORBIDDEN",
+      code: "CUOTA_REPERCUTIDA_NONZERO_FORBIDDEN",
+      field: "Desglose[0].CuotaRepercutida",
+      message: "CuotaRepercutida may be nonzero only when CalificacionOperacion is S1",
+      mutate: (r) => {
+        r.Desglose[0]!.Impuesto = "03";
+        r.Desglose[0]!.CalificacionOperacion = "N1";
+        r.Desglose[0]!.CuotaRepercutida = "1.00";
+      },
+    },
+    {
+      description: "S1_TIPO_IMPOSITIVO_REQUIRED",
+      code: "S1_TIPO_IMPOSITIVO_REQUIRED",
+      field: "Desglose[0].TipoImpositivo",
+      message: "TipoImpositivo is mandatory when CalificacionOperacion is S1",
+      mutate: (r) => {
+        r.Desglose[0]!.TipoImpositivo = undefined;
+      },
+    },
+    {
+      description: "S1_CUOTA_REPERCUTIDA_REQUIRED",
+      code: "S1_CUOTA_REPERCUTIDA_REQUIRED",
+      field: "Desglose[0].CuotaRepercutida",
+      message: "CuotaRepercutida is mandatory when CalificacionOperacion is S1",
+      mutate: (r) => {
+        r.Desglose[0]!.CuotaRepercutida = undefined;
+      },
+    },
+    {
+      description: "S1_CUOTA_REPERCUTIDA_SIGN",
+      code: "S1_CUOTA_REPERCUTIDA_SIGN",
+      field: "Desglose[0].CuotaRepercutida",
+      message: "CuotaRepercutida and its applicable base must have the same sign",
+      mutate: (r) => {
+        r.Desglose[0]!.TipoImpositivo = "21.00";
+        r.Desglose[0]!.BaseImponibleOimporteNoSujeto = "10.00";
+        r.Desglose[0]!.CuotaRepercutida = "-1.00";
+      },
+    },
+    {
+      description: "S1_CUOTA_REPERCUTIDA_FORMULA",
+      code: "S1_CUOTA_REPERCUTIDA_FORMULA",
+      field: "Desglose[0].CuotaRepercutida",
+      message: "CuotaRepercutida must equal its applicable base times TipoImpositivo within 10.00",
+      mutate: (r) => {
+        r.Desglose[0]!.TipoImpositivo = "21.00";
+        r.Desglose[0]!.BaseImponibleOimporteNoSujeto = "100.00";
+        r.Desglose[0]!.CuotaRepercutida = "31.01";
       },
     },
     {

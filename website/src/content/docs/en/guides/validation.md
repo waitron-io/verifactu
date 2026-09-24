@@ -92,6 +92,14 @@ recipient-identity, and operation-date conditions for IVA/IGIC regimes `02`, `03
 `FechaOperacion` after the invoice issue date and recipients whose NIF begins with `P`, `Q`, `S`,
 or `V`.
 
+Every `S1` line must include `TipoImpositivo` and `CuotaRepercutida`. Unless the record is a
+correction by differences (`TipoRectificativa: "I"`) or an `R2`/`R3` invoice, the charged tax must
+have the same sign as its applicable base and equal that base multiplied by the rate within AEAT's
+±€10 tolerance. When `BaseImponibleACoste` is present, it is the applicable base; otherwise the
+check uses `BaseImponibleOimporteNoSujeto`. A nonzero `CuotaRepercutida` is not permitted outside
+`S1`. Existing, more specific issues report the same violation for `S2`, IVA `N1`/`N2`, and exempt
+lines, so you receive one useful issue instead of duplicate messages.
+
 Keep `IDEmisorFactura` equal to `Cabecera.ObligadoEmision.NIF`. `serializeEnvio` rejects the batch
 when those values differ, before it creates XML. AEAT permits a wider printable-ASCII alphabet in
 `NumSerieFactura`, but this library accepts only letters, digits, `/`, `_`, `.`, and `-`. That
