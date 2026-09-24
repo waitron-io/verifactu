@@ -140,6 +140,21 @@ go when its `TiempoEsperaEnvio` expires or the queue reaches the maximum 1,000 r
 comes first. The example's full-interval scheduler remains a conservative choice. The library
 exposes the response wait and batch maximum but does not own the caller's queue or retry timing.
 
+### XML text and escaping — service description §§6.7, 6.9
+
+AEAT trims leading and trailing whitespace from XML text fields before storing and returning them.
+`buildCadenaAlta` and `buildCadenaAnulacion` use `trimValue` on each hash-input value; the exact
+U+0020 boundary, preserved interior space, and published alta example are tested in
+`src/format.test.ts` and `src/huella.test.ts`. The serializer escapes `&` and `<` as §6.9 requires,
+along with the other XML metacharacters. `src/xml/serialize.test.ts` pins the escaping order, and
+`src/xml/parse-request.test.ts` checks that escaped text round-trips without silently trimming the
+submitted literal. That parser represents what the caller sent, not AEAT's later stored value.
+
+The fake AEAT does not emulate AEAT's text trimming. A focused submission probe stored
+`RefExterna: "  ref & <1>  "` with its edge spaces intact. Use AEAT preproduction, not the fake, to
+check behavior that depends on the agency's trimmed response or stored value. The exact Unicode
+scope of AEAT's whitespace normalization remains unverified by a live response.
+
 ### Own-record hash validation
 
 Validation §3.1.3.23 and §3.1.4.7 require the submitted alta or cancellation hash to match
