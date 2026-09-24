@@ -163,7 +163,7 @@ describe("parseEnvio", () => {
   it("round-trips a cabecera with a Representante", () => {
     const c: Cabecera = {
       ...cabecera,
-      Representante: { NombreRazon: "Gestoría X", NIF: "B12345678" },
+      Representante: { NombreRazon: "Gestoría X", NIF: "B12345674" },
     };
     const registros: EnvioRegistro[] = [{ RegistroAlta: alta }];
     expect(parseEnvio(serializeEnvio(c, registros))).toEqual({ cabecera: c, registros });

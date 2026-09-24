@@ -36,6 +36,7 @@ export type {
   ConsultaFiltro,
   DatosAdicionalesRespuesta,
   EnvioRegistro,
+  SerializeEnvioOptions,
   SistemaInformaticoConsulta,
 } from "./xml/serialize.js";
 export type {
