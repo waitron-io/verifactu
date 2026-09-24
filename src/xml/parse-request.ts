@@ -1,5 +1,5 @@
 import { asArray, parser } from "./parse-common.js";
-import { MAX_REGISTROS_POR_ENVIO } from "./serialize.js";
+import { isValidConsultaPeriodo, MAX_REGISTROS_POR_ENVIO } from "./serialize.js";
 import type {
   Cabecera,
   CabeceraConsulta,
@@ -147,12 +147,18 @@ function cabeceraOf(raw: RawCabecera): Cabecera {
 
 function cabeceraConsultaOf(raw: RawCabecera): CabeceraConsulta {
   if (raw.ObligadoEmision) {
+    if (raw.IndicadorRepresentante !== undefined && raw.IndicadorRepresentante !== "S") {
+      throw new Error("Consulta IndicadorRepresentante must be S");
+    }
     return {
       ObligadoEmision: { ...raw.ObligadoEmision },
       ...(raw.IndicadorRepresentante !== undefined && {
         IndicadorRepresentante: raw.IndicadorRepresentante,
       }),
     };
+  }
+  if (raw.IndicadorRepresentante !== undefined) {
+    throw new Error("Consulta IndicadorRepresentante requires ObligadoEmision");
   }
   if (raw.Destinatario) return { Destinatario: { ...raw.Destinatario } };
   throw new Error("Consulta Cabecera does not identify an issuer or recipient");
@@ -348,6 +354,9 @@ export function parseConsulta(xml: string): { cabecera: CabeceraConsulta; filtro
   const f = body.FiltroConsulta;
   if (!f.PeriodoImputacion)
     throw new Error("Consulta FiltroConsulta does not contain a PeriodoImputacion");
+  if (!isValidConsultaPeriodo(f.PeriodoImputacion.Periodo)) {
+    throw new Error("Consulta Periodo must be 01 through 12");
+  }
   const filtro: ConsultaFiltro = {
     Ejercicio: f.PeriodoImputacion.Ejercicio,
     Periodo: f.PeriodoImputacion.Periodo,

@@ -57,7 +57,7 @@ export type CabeceraConsulta =
   | {
       ObligadoEmision: { NombreRazon: string; NIF: string };
       Destinatario?: never;
-      IndicadorRepresentante?: SiNo;
+      IndicadorRepresentante?: "S";
     }
   | {
       Destinatario: { NombreRazon: string; NIF: string };
@@ -103,6 +103,11 @@ export interface ConsultaFiltro {
   RangoFechaExpedicion?: { Desde?: string; Hasta?: string };
 }
 
+/** AEAT §6.5.1 / sf:TipoPeriodoType permits only the twelve zero-padded months. */
+export function isValidConsultaPeriodo(value: unknown): value is string {
+  return typeof value === "string" && /^(?:0[1-9]|1[0-2])$/.test(value);
+}
+
 function el(prefix: string, name: string, value: string | undefined): string {
   return value === undefined ? "" : `<${prefix}:${name}>${escapeXml(value)}</${prefix}:${name}>`;
 }
@@ -118,10 +123,16 @@ function obligadoEmisionXml(obligado: Cabecera["ObligadoEmision"]): string {
 
 function consultaCabeceraXml(cabecera: CabeceraConsulta): string {
   if (cabecera.ObligadoEmision !== undefined) {
+    if (cabecera.IndicadorRepresentante !== undefined && cabecera.IndicadorRepresentante !== "S") {
+      throw new Error("Consulta IndicadorRepresentante must be S");
+    }
     return (
       obligadoEmisionXml(cabecera.ObligadoEmision) +
       el("sf", "IndicadorRepresentante", cabecera.IndicadorRepresentante)
     );
+  }
+  if (cabecera.IndicadorRepresentante !== undefined) {
+    throw new Error("Consulta IndicadorRepresentante requires ObligadoEmision");
   }
   return (
     "<sf:Destinatario>" +
@@ -532,6 +543,9 @@ export function serializeEnvio(
 
 /** Serialises a consulta. PeriodoImputacion is mandatory even for one invoice. */
 export function serializeConsulta(cabecera: CabeceraConsulta, filtro: ConsultaFiltro): string {
+  if (!isValidConsultaPeriodo(filtro.Periodo)) {
+    throw new Error("Consulta Periodo must be 01 through 12");
+  }
   if (filtro.FechaExpedicionFactura !== undefined && filtro.RangoFechaExpedicion !== undefined) {
     throw new Error("Use either FechaExpedicionFactura or RangoFechaExpedicion, not both");
   }

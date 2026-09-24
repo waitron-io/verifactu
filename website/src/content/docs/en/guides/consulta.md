@@ -48,6 +48,10 @@ const received = await client.consultar(
 );
 ```
 
+Give `Periodo` a zero-padded month from `"01"` through `"12"`, as in the `"07"` query above.
+The client rejects an invalid value before sending XML to AEAT. If you derive the month from a
+date, pad it to two digits rather than sending `"7"`.
+
 `NumSerieFactura` and `FechaExpedicionFactura` narrow the query; omit them to sweep the period.
 Use `RangoFechaExpedicion` with `Desde` and `Hasta` when you need a date range. It is an
 alternative to `FechaExpedicionFactura`; the serializer rejects a request that sends both.
@@ -66,7 +70,8 @@ A recipient uses a different consulta header and identifies the issuer as the co
 `received` query above demonstrates.
 
 Set `IndicadorRepresentante: "S"` alongside `ObligadoEmision` when the certificate holder queries
-as that issuer's representative.
+as that issuer's representative. `"N"` is not a valid consultation value; omit the flag when the
+query is not on behalf of a representative. Do not include it in a recipient query.
 
 When `IndicadorPaginacion` is `"S"`, send `ClavePaginacion` from the response in your next query.
 Do not try to recover a submission's CSV here: consulta does not return it.
