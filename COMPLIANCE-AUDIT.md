@@ -164,6 +164,13 @@ same checks to a parsed request; the public header type now excludes `N`. Bounda
 and recipient-header cases are covered in `src/xml/serialize.test.ts` and
 `src/xml/parse-request.test.ts`. `ConsultaFiltro.Periodo` remains a `string` so callers can supply a
 dynamically formatted month; the runtime boundary enforces the published list.
+`parseConsulta` checks the literal XML leaf without trimming it, so spaces inside either code-list
+element also fail locally. This keeps the parser's lossless-text policy; a hand-written fixture
+should indent between elements, not inside `Periodo` or `IndicadorRepresentante`.
+An `xmllint --xpath` extraction of the bundled XSD confirmed exactly `01`–`12` and `S`. A full
+offline `xmllint --schema` check of a consultation request could not compile because the bundled
+common schema imports the external XML-signature schema; these tests do not claim whole-request
+XSD validity.
 
 ### Own-record hash validation
 

@@ -552,6 +552,25 @@ describe("parseConsulta full header and date choice", () => {
     expect(() => parseConsulta(xml)).toThrow("Consulta Periodo must be 01 through 12");
   });
 
+  it("rejects a consultation period padded inside its XML leaf", () => {
+    const xml = serializeConsulta(cabecera, { Ejercicio: "2026", Periodo: "07" }).replace(
+      "<sf:Periodo>07</sf:Periodo>",
+      "<sf:Periodo>\n  07\n</sf:Periodo>",
+    );
+    expect(() => parseConsulta(xml)).toThrow("Consulta Periodo must be 01 through 12");
+  });
+
+  it("rejects a representative flag padded inside its XML leaf", () => {
+    const xml = serializeConsulta(
+      { ObligadoEmision: cabecera.ObligadoEmision, IndicadorRepresentante: "S" },
+      { Ejercicio: "2026", Periodo: "07" },
+    ).replace(
+      "<sf:IndicadorRepresentante>S</sf:IndicadorRepresentante>",
+      "<sf:IndicadorRepresentante> S </sf:IndicadorRepresentante>",
+    );
+    expect(() => parseConsulta(xml)).toThrow("Consulta IndicadorRepresentante must be S");
+  });
+
   it("rejects a consulta header without an issuer or recipient", () => {
     const xml = serializeConsulta(cabecera, { Ejercicio: "2026", Periodo: "07" }).replace(
       /<sf:ObligadoEmision>.*<\/sf:ObligadoEmision>/,
