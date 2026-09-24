@@ -1465,6 +1465,34 @@ describe("validate — rectificativa rules (AEAT §3.1.3.3 and §3.1.3.6)", () =
     expect(validate(rectificativa())).toEqual([]);
   });
 
+  it.each(["BaseRectificada", "CuotaRectificada", "CuotaRecargoRectificado"] as const)(
+    "rejects a leading zero in ImporteRectificacion.%s",
+    (name) => {
+      const record = rectificativa();
+      record.ImporteRectificacion![name] = "011.11";
+      expect(validate(record)).toContainEqual(
+        expect.objectContaining({
+          code: "AMOUNT_FORMAT",
+          severity: "error",
+          field: `ImporteRectificacion.${name}`,
+        }),
+      );
+      expect(() => assertValid(record)).toThrow(VerifactuValidationError);
+    },
+  );
+
+  it("rejects a nonnumeric rectification amount as malformed", () => {
+    const record = rectificativa();
+    record.ImporteRectificacion!.CuotaRectificada = "not-a-number";
+    expect(validate(record)).toContainEqual(
+      expect.objectContaining({
+        code: "AMOUNT_FORMAT",
+        severity: "error",
+        field: "ImporteRectificacion.CuotaRectificada",
+      }),
+    );
+  });
+
   it("returns no issues for a well-formed rectificativa por diferencia (I), without ImporteRectificacion", () => {
     const record = buildAltaRecord({ ...INPUT, TipoFactura: "R1", TipoRectificativa: "I" });
     expect(validate(record)).toEqual([]);

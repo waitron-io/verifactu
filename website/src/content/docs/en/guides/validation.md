@@ -23,6 +23,9 @@ not allow leading zeroes: write `11.11`, not `011.11`, and `0.00`, not `00.00`. 
 `AMOUNT_FORMAT` for an amount or `TIPO_RANGE` for a tax rate that breaks this rule. The record
 builders produce the right form for you. They also use exactly two decimal places, so a value
 such as `11.10` keeps its trailing zero.
+Keep the leading zero in a text-valued code such as `ClaveRegimen: "01"`: it identifies a code,
+not a numeric amount. After fixing `AMOUNT_FORMAT`, run `validate` again: checks that compare
+amounts wait until those amounts have a valid format.
 
 `assertValid` checks a record, not the submission header. `serializeEnvio` checks the header's
 issuer and representative NIF forms, its mutually exclusive remittance blocks, the required

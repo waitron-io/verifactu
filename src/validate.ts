@@ -904,6 +904,23 @@ export function validate(
       "ImporteRectificacion may be set only when TipoRectificativa is S (sustitución)",
     );
   }
+  if (record.ImporteRectificacion !== undefined) {
+    const rectificacion = record.ImporteRectificacion;
+    const fields: Array<[string, string | undefined]> = [
+      ["BaseRectificada", rectificacion.BaseRectificada],
+      ["CuotaRectificada", rectificacion.CuotaRectificada],
+      ["CuotaRecargoRectificado", rectificacion.CuotaRecargoRectificado],
+    ];
+    for (const [name, value] of fields) {
+      if (value !== undefined && !isValidAmount(value)) {
+        add(
+          "AMOUNT_FORMAT",
+          `ImporteRectificacion.${name}`,
+          `${name} must be a decimal with exactly two decimal places, no leading + and no leading zeroes`,
+        );
+      }
+    }
+  }
 
   // AEAT §3.1.3.8–9: these two legal-status flags may carry S only for the
   // invoice families named by the corresponding rule. N remains permitted

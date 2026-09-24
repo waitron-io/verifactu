@@ -23,6 +23,9 @@ numéricos del XML. La AEAT no permite ceros a la izquierda: escribe `11.11`, no
 `0.00`, no `00.00`. `validate` devuelve `AMOUNT_FORMAT` para un importe o `TIPO_RANGE` para un
 tipo impositivo que incumpla esta regla. Los constructores generan la forma correcta. También
 usan exactamente dos decimales, por lo que un valor como `11.10` conserva el cero final.
+Mantén el cero inicial de un código de texto como `ClaveRegimen: "01"`: identifica un código,
+no un importe numérico. Después de corregir `AMOUNT_FORMAT`, vuelve a ejecutar `validate`:
+las comprobaciones que comparan importes esperan a que estos tengan un formato válido.
 
 `assertValid` comprueba un registro, no la cabecera del envío. `serializeEnvio` comprueba la forma
 de los NIF del obligado y del representante, que los bloques de remisión sean excluyentes, la
