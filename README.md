@@ -85,6 +85,9 @@ from A to Z or digits. The software name and both `TipoUsoPosible...` flags must
 Local validation checks these published rules, but only AEAT can confirm that an identity is
 registered.
 
+When you upgrade, correct any one-character or lowercase system ID and any blank software name or
+usage flag before deploying. Earlier versions accepted those values; `assertValid` now blocks them.
+
 Use `validate` when you want to show several issues in a form. Call `assertValid` immediately before
 submission when invalid records should stop the operation. It throws `VerifactuValidationError`
 with a readable message such as `SistemaInformatico.NombreSistemaInformatico: ... at most 30

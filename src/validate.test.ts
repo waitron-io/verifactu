@@ -774,7 +774,7 @@ describe("validate — AEAT §3.1.5 SistemaInformatico", () => {
     expect(codes(record)).toContain("ID_SISTEMA_LENGTH");
   });
 
-  it("reports a missing IdSistemaInformatico instead of throwing for untyped input", () => {
+  it("reports a missing IdSistemaInformatico field instead of throwing", () => {
     const record = valid();
     record.SistemaInformatico = { ...record.SistemaInformatico };
     delete (record.SistemaInformatico as Partial<SistemaInformatico>).IdSistemaInformatico;

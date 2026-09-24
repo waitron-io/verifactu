@@ -139,3 +139,7 @@ en mayúsculas publicadas por la AEAT. La regla GB/XI sigue la fecha efectiva de
 `NombreSistemaInformatico`, `TipoUsoPosibleSoloVerifactu` y `TipoUsoPosibleMultiOT` deben tener
 contenido. Estas comprobaciones se aplican a los registros de alta y anulación. Solo la AEAT puede
 confirmar que una identidad del productor bien formada está censada.
+
+Al actualizar, corrige antes del despliegue cualquier identificador del sistema de un solo carácter
+o con minúsculas, y cualquier nombre del programa o indicador de uso vacío. Las versiones anteriores
+aceptaban esos valores; ahora `assertValid` los bloquea.

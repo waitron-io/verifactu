@@ -132,3 +132,6 @@ two uppercase A-Z letters or digits, and `NombreSistemaInformatico`,
 `TipoUsoPosibleSoloVerifactu`, and `TipoUsoPosibleMultiOT` must contain a value. These checks apply
 to alta and cancellation records. Only AEAT can confirm that a locally well-formed producer
 identity is registered.
+
+When you upgrade, correct any one-character or lowercase system ID and any blank software name or
+usage flag before deploying. Earlier versions accepted those values; `assertValid` now blocks them.
