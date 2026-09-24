@@ -821,6 +821,55 @@ describe("validate", () => {
     expect(codes(record)).toContain("AMOUNT_FORMAT");
   });
 
+  it.each([
+    ["CuotaTotal", (record: RegistroAlta) => (record.CuotaTotal = "011.11")],
+    ["ImporteTotal", (record: RegistroAlta) => (record.ImporteTotal = "0122.21")],
+    [
+      "Desglose[0].BaseImponibleOimporteNoSujeto",
+      (record: RegistroAlta) => (record.Desglose[0]!.BaseImponibleOimporteNoSujeto = "0111.10"),
+    ],
+    [
+      "Desglose[0].BaseImponibleACoste",
+      (record: RegistroAlta) => {
+        record.Desglose[0]!.ClaveRegimen = "06";
+        record.Desglose[0]!.BaseImponibleACoste = "0111.10";
+      },
+    ],
+    [
+      "Desglose[0].CuotaRepercutida",
+      (record: RegistroAlta) => (record.Desglose[0]!.CuotaRepercutida = "011.11"),
+    ],
+    [
+      "Desglose[0].CuotaRecargoEquivalencia",
+      (record: RegistroAlta) => (record.Desglose[0]!.CuotaRecargoEquivalencia = "01.11"),
+    ],
+  ])("rejects leading zeroes in %s", (field, mutate) => {
+    const record = valid();
+    mutate(record);
+    expect(validate(record)).toContainEqual(
+      expect.objectContaining({ code: "AMOUNT_FORMAT", severity: "error", field }),
+    );
+  });
+
+  it("does not calculate total mismatches from a leading-zero amount", () => {
+    const record = valid();
+    record.CuotaTotal = "0999.00";
+    record.ImporteTotal = "0999.00";
+    record.Desglose[0]!.CuotaRepercutida = "0999.00";
+    const result = codes(record);
+    expect(result).toContain("AMOUNT_FORMAT");
+    expect(result).not.toContain("CUOTA_TOTAL_MISMATCH");
+    expect(result).not.toContain("IMPORTE_TOTAL_MISMATCH");
+  });
+
+  it("rejects a leading zero after a negative sign but accepts a single zero", () => {
+    const record = valid();
+    record.CuotaTotal = "-011.11";
+    expect(codes(record)).toContain("AMOUNT_FORMAT");
+    record.CuotaTotal = "0.00";
+    expect(codes(record)).not.toContain("AMOUNT_FORMAT");
+  });
+
   it("accepts a well-formed negative amount", () => {
     const record = valid();
     record.CuotaTotal = "-12.35";
@@ -950,6 +999,30 @@ describe("validate", () => {
   it("accepts a well-formed TipoImpositivo", () => {
     const record = valid();
     record.Desglose[0]!.TipoImpositivo = "21.00";
+    expect(codes(record)).not.toContain("TIPO_RANGE");
+  });
+
+  it.each([
+    ["TipoImpositivo", (record: RegistroAlta) => (record.Desglose[0]!.TipoImpositivo = "010.00")],
+    [
+      "TipoRecargoEquivalencia",
+      (record: RegistroAlta) => (record.Desglose[0]!.TipoRecargoEquivalencia = "01.00"),
+    ],
+  ])("rejects leading zeroes in %s", (name, mutate) => {
+    const record = valid();
+    mutate(record);
+    expect(validate(record)).toContainEqual(
+      expect.objectContaining({
+        code: "TIPO_RANGE",
+        severity: "error",
+        field: `Desglose[0].${name}`,
+      }),
+    );
+  });
+
+  it("accepts a single zero before the decimal point in a rate", () => {
+    const record = valid();
+    record.Desglose[0]!.TipoImpositivo = "0.00";
     expect(codes(record)).not.toContain("TIPO_RANGE");
   });
 
@@ -1390,6 +1463,34 @@ describe("validate — rectificativa rules (AEAT §3.1.3.3 and §3.1.3.6)", () =
 
   it("returns no issues for a well-formed rectificativa por sustitución", () => {
     expect(validate(rectificativa())).toEqual([]);
+  });
+
+  it.each(["BaseRectificada", "CuotaRectificada", "CuotaRecargoRectificado"] as const)(
+    "rejects a leading zero in ImporteRectificacion.%s",
+    (name) => {
+      const record = rectificativa();
+      record.ImporteRectificacion![name] = "011.11";
+      expect(validate(record)).toContainEqual(
+        expect.objectContaining({
+          code: "AMOUNT_FORMAT",
+          severity: "error",
+          field: `ImporteRectificacion.${name}`,
+        }),
+      );
+      expect(() => assertValid(record)).toThrow(VerifactuValidationError);
+    },
+  );
+
+  it("rejects a nonnumeric rectification amount as malformed", () => {
+    const record = rectificativa();
+    record.ImporteRectificacion!.CuotaRectificada = "not-a-number";
+    expect(validate(record)).toContainEqual(
+      expect.objectContaining({
+        code: "AMOUNT_FORMAT",
+        severity: "error",
+        field: "ImporteRectificacion.CuotaRectificada",
+      }),
+    );
   });
 
   it("returns no issues for a well-formed rectificativa por diferencia (I), without ImporteRectificacion", () => {
@@ -5159,7 +5260,8 @@ describe("validate — pins the exact field, message and severity for every Vali
       description: "AMOUNT_FORMAT on CuotaTotal",
       code: "AMOUNT_FORMAT",
       field: "CuotaTotal",
-      message: "CuotaTotal must be a decimal with exactly two decimal places and no leading +",
+      message:
+        "CuotaTotal must be a decimal with exactly two decimal places, no leading + and no leading zeroes",
       mutate: (r) => {
         r.CuotaTotal = "not-a-number";
       },
@@ -5168,7 +5270,8 @@ describe("validate — pins the exact field, message and severity for every Vali
       description: "AMOUNT_FORMAT on ImporteTotal",
       code: "AMOUNT_FORMAT",
       field: "ImporteTotal",
-      message: "ImporteTotal must be a decimal with exactly two decimal places and no leading +",
+      message:
+        "ImporteTotal must be a decimal with exactly two decimal places, no leading + and no leading zeroes",
       mutate: (r) => {
         r.ImporteTotal = "not-a-number";
       },
@@ -5178,7 +5281,7 @@ describe("validate — pins the exact field, message and severity for every Vali
       code: "AMOUNT_FORMAT",
       field: "Desglose[0].BaseImponibleOimporteNoSujeto",
       message:
-        "BaseImponibleOimporteNoSujeto must be a decimal with exactly two decimal places and no leading +",
+        "BaseImponibleOimporteNoSujeto must be a decimal with exactly two decimal places, no leading + and no leading zeroes",
       mutate: (r) => {
         r.Desglose[0]!.BaseImponibleOimporteNoSujeto = "111.1";
       },
@@ -5188,7 +5291,7 @@ describe("validate — pins the exact field, message and severity for every Vali
       code: "AMOUNT_FORMAT",
       field: "Desglose[0].CuotaRepercutida",
       message:
-        "CuotaRepercutida must be a decimal with exactly two decimal places and no leading +",
+        "CuotaRepercutida must be a decimal with exactly two decimal places, no leading + and no leading zeroes",
       mutate: (r) => {
         r.Desglose[0]!.CuotaRepercutida = "12.5";
       },
@@ -5198,7 +5301,7 @@ describe("validate — pins the exact field, message and severity for every Vali
       code: "AMOUNT_FORMAT",
       field: "Desglose[0].CuotaRecargoEquivalencia",
       message:
-        "CuotaRecargoEquivalencia must be a decimal with exactly two decimal places and no leading +",
+        "CuotaRecargoEquivalencia must be a decimal with exactly two decimal places, no leading + and no leading zeroes",
       mutate: (r) => {
         r.Desglose[0]!.CuotaRecargoEquivalencia = "5.5";
       },
@@ -5220,7 +5323,7 @@ describe("validate — pins the exact field, message and severity for every Vali
       code: "TIPO_RANGE",
       field: "Desglose[0].TipoImpositivo",
       message:
-        "TipoImpositivo must be unsigned with at most 3 integer digits and exactly 2 decimal digits",
+        "TipoImpositivo must be unsigned with at most 3 integer digits, exactly 2 decimal digits and no leading zeroes",
       mutate: (r) => {
         r.Desglose[0]!.TipoImpositivo = "1234.50";
       },
@@ -5230,7 +5333,7 @@ describe("validate — pins the exact field, message and severity for every Vali
       code: "TIPO_RANGE",
       field: "Desglose[0].TipoRecargoEquivalencia",
       message:
-        "TipoRecargoEquivalencia must be unsigned with at most 3 integer digits and exactly 2 decimal digits",
+        "TipoRecargoEquivalencia must be unsigned with at most 3 integer digits, exactly 2 decimal digits and no leading zeroes",
       mutate: (r) => {
         r.Desglose[0]!.TipoRecargoEquivalencia = "1234.50";
       },

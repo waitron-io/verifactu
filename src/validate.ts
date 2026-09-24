@@ -186,19 +186,20 @@ const TOTAL_CHECK_EXEMPT_REGIMES = new Set(["03", "05", "06", "08", "09"]);
 /**
  * AEAT's schema type for these fields is `(\+|-)?\d{1,12}(\.\d{0,2})?`, but
  * this project's own serialisation policy (see formatAmountExact) is
- * stricter: always exactly two decimal places, never a leading `+`. Records
- * reaching validate() should already conform to that policy, so anything
- * looser is treated as malformed rather than merely off-spec.
+ * stricter: always exactly two decimal places, never a leading `+`. AEAT's
+ * service description §6.8 also forbids leading zeroes in numeric values.
+ * Records reaching validate() should already conform to that policy, so
+ * anything looser is treated as malformed rather than merely off-spec.
  */
-const AMOUNT_PATTERN = /^-?\d{1,12}\.\d{2}$/;
+const AMOUNT_PATTERN = /^-?(?:0|[1-9]\d{0,11})\.\d{2}$/;
 /**
  * AEAT's schema type for TipoImpositivo/TipoRecargoEquivalencia is
  * `Tipo2.2Type`: `\d{1,3}(\.\d{0,2})?` — unsigned, at most 3 integer digits.
  * formatAmountExact always emits exactly two decimal places and never a
- * leading `+`, so the tighter (but still schema-conformant) shape reaching
+ * leading `+`; AEAT §6.8 forbids leading zeroes, so the tighter shape reaching
  * validate() should always match this.
  */
-const TIPO_PATTERN = /^\d{1,3}\.\d{2}$/;
+const TIPO_PATTERN = /^(?:0|[1-9]\d{0,2})\.\d{2}$/;
 /**
  * XML 1.0's Char production excludes these code points entirely — not just
  * "unusual", but not legal XML content at all. Tab (U+0009), LF (U+000A) and
@@ -903,6 +904,23 @@ export function validate(
       "ImporteRectificacion may be set only when TipoRectificativa is S (sustitución)",
     );
   }
+  if (record.ImporteRectificacion !== undefined) {
+    const rectificacion = record.ImporteRectificacion;
+    const fields: Array<[string, string | undefined]> = [
+      ["BaseRectificada", rectificacion.BaseRectificada],
+      ["CuotaRectificada", rectificacion.CuotaRectificada],
+      ["CuotaRecargoRectificado", rectificacion.CuotaRecargoRectificado],
+    ];
+    for (const [name, value] of fields) {
+      if (value !== undefined && !isValidAmount(value)) {
+        add(
+          "AMOUNT_FORMAT",
+          `ImporteRectificacion.${name}`,
+          `${name} must be a decimal with exactly two decimal places, no leading + and no leading zeroes`,
+        );
+      }
+    }
+  }
 
   // AEAT §3.1.3.8–9: these two legal-status flags may carry S only for the
   // invoice families named by the corresponding rule. N remains permitted
@@ -1142,7 +1160,7 @@ export function validate(
       add(
         "AMOUNT_FORMAT",
         field,
-        `${field} must be a decimal with exactly two decimal places and no leading +`,
+        `${field} must be a decimal with exactly two decimal places, no leading + and no leading zeroes`,
       );
     }
     return valid;
@@ -1225,7 +1243,7 @@ export function validate(
         add(
           "AMOUNT_FORMAT",
           `Desglose[${index}].${name}`,
-          `${name} must be a decimal with exactly two decimal places and no leading +`,
+          `${name} must be a decimal with exactly two decimal places, no leading + and no leading zeroes`,
         );
       }
     }
@@ -1243,7 +1261,7 @@ export function validate(
         add(
           "TIPO_RANGE",
           `Desglose[${index}].${name}`,
-          `${name} must be unsigned with at most 3 integer digits and exactly 2 decimal digits`,
+          `${name} must be unsigned with at most 3 integer digits, exactly 2 decimal digits and no leading zeroes`,
         );
       }
     }
