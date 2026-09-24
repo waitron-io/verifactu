@@ -368,18 +368,30 @@ describe("validate", () => {
     expect(codes(record)).toContain("HUELLA_FORMAT");
   });
 
-  it("rejects a predecessor huella that is not 64 uppercase hex characters", () => {
-    const record = valid();
-    record.Encadenamiento = {
-      RegistroAnterior: {
-        IDEmisorFactura: "89890001K",
-        NumSerieFactura: "12345677/G32",
-        FechaExpedicionFactura: "01-01-2024",
-        Huella: "TOO-SHORT",
-      },
-    };
-    expect(codes(record)).toContain("HUELLA_ANTERIOR_FORMAT");
-  });
+  it.each([
+    ["alta", valid],
+    ["anulación", validAnulacion],
+  ] as const)(
+    "reports a malformed predecessor huella as an advisory warning for %s",
+    (_kind, makeRecord) => {
+      const record = makeRecord();
+      record.Encadenamiento = {
+        RegistroAnterior: {
+          IDEmisorFactura: "89890001K",
+          NumSerieFactura: "12345677/G32",
+          FechaExpedicionFactura: "01-01-2024",
+          Huella: "TOO-SHORT",
+        },
+      };
+      expect(validate(record)).toContainEqual(
+        expect.objectContaining({
+          code: "HUELLA_ANTERIOR_FORMAT",
+          severity: "warning",
+        }),
+      );
+      expect(() => assertValid(record)).not.toThrow();
+    },
+  );
 
   it("rejects a predecessor huella equal to the record's own", () => {
     const record = valid();
@@ -3701,6 +3713,7 @@ describe("validate — pins the exact field, message and severity for every Vali
       code: "HUELLA_ANTERIOR_FORMAT",
       field: "Encadenamiento.RegistroAnterior.Huella",
       message: "Predecessor huella must be 64 uppercase hexadecimal characters",
+      severity: "warning",
       mutate: (r) => {
         r.Encadenamiento = {
           RegistroAnterior: {
