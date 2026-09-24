@@ -16,6 +16,21 @@ is accepted. The [source watch](sources/README.md) checks for publication change
 | [Public FAQ](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes.html)                                 | Pages listed by AEAT on 22 September 2026  | Pending entry-by-entry review                                                                                              |
 | [XSD and WSDL files](schemas/README.md)                                                                                                                            | Versions and checksums in the linked index | Pending element-by-element review                                                                                          |
 
+## Web-service description coverage map
+
+The 101-page service description is not yet a completed audit. This map distinguishes a checked
+rule from a section whose examples or tables still need line-by-line comparison.
+
+| Section                                                        | Checked here or in earlier branches                                                                  | Still to check                                                                        |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| §§1–2: introduction and revision history                       | Published version and intended voluntary/under-requirement modes identified                          | Reconcile each revision note with the bundled schemas and current behavior            |
+| §3: operating model                                            | Global and per-line statuses, CSV absence on complete rejection, and mode-specific correction advice | Remaining diagram and edge cases against the request/response paths                   |
+| §§4–5: standards, transport, faults                            | SOAP 1.1 document/literal, UTF-8, HTTPS/certificate responsibility, and fault retry guidance         | Real certificate and transport acceptance in AEAT preproduction                       |
+| §§6.1–6.6: messages, consultation, response, code lists, modes | Selected header/wrapper, consulta, response, flow-control, and endpoint rules recorded below         | All remaining message diagrams, field tables, pagination rules, and code-list entries |
+| §§6.7–6.9: text and numeric XML                                | Whitespace, leading-zero, and escaping rules recorded below                                          | AEAT's exact Unicode trim boundary needs a controlled live probe                      |
+| §§7–8: test and production annexes                             | Four published under-requirement endpoints and voluntary endpoint constants                          | Each schema/WSDL link, binding, and element in both environments                      |
+| §§9–11: worked operating flows                                 | Selected voluntary/requirement correction policy and consulta behavior                               | Every worked XML example and remaining flow variant                                   |
+
 ## Rules checked in this branch
 
 | Rule                                                                                                                                                                     | Library check                                                                                                                                                                                                                                              | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Limit                                                                                                                                                                                                                                                                                |
@@ -153,6 +168,21 @@ also state the voluntary flow-control condition exactly: after a response, the n
 go when its `TiempoEsperaEnvio` expires or the queue reaches the maximum 1,000 records, whichever
 comes first. The example's full-interval scheduler remains a conservative choice. The library
 exposes the response wait and batch maximum but does not own the caller's queue or retry timing.
+
+### SOAP transport and authentication — service description §§4.1–4.3
+
+AEAT requires UTF-8 XML in a SOAP 1.1 document/literal message over HTTPS, authenticated with
+a qualified client certificate. Both request serializers emit a UTF-8 XML declaration and a
+SOAP 1.1 `Envelope`/`Body`; the bundled WSDL declares document/literal binding and an empty
+`soapAction` for its operations. `createClient` posts `text/xml; charset=utf-8` with the empty
+`SOAPAction` header. Exact request XML in `src/xml/serialize.test.ts`, the transport assertions
+in `src/client.test.ts`, and the bundled `schemas/*.wsdl` support those wire-format checks.
+
+The library accepts an injected `fetch` and endpoint. It neither loads certificates nor enforces
+HTTPS or proves that a certificate is qualified or authorized for the taxpayer; the calling
+deployment must supply that transport. Both submission guides show a certificate-bearing HTTPS
+configuration and direct you to check it against AEAT preproduction. AEAT validates NIFs against
+its own register, which cannot be established by local syntax and control-digit checks.
 
 ### XML text and escaping — service description §§6.7, 6.9
 
