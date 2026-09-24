@@ -284,6 +284,28 @@ describe("fake AEAT — submit", () => {
     });
   });
 
+  it("reactivates a stored cancellation made without a prior alta", async () => {
+    const aeat = createFakeAeat();
+    const client = aeat.client();
+    const cancellation = { ...anulacionFixture("A/NO-ALTA"), SinRegistroPrevio: "S" as const };
+    await client.submit(cabecera, [{ RegistroAnulacion: cancellation }]);
+
+    const correction = {
+      ...altaFixture("A/NO-ALTA"),
+      Subsanacion: "S" as const,
+      Huella: "H-NEW-ALTA",
+    };
+    const response = await client.submit(cabecera, [{ RegistroAlta: correction }]);
+
+    expect(response.RespuestaLinea[0]?.EstadoRegistro).toBe("Correcto");
+    expect(aeat.stored()[0]).toMatchObject({
+      key: keyOf(correction),
+      huella: "H-NEW-ALTA",
+      estado: "Correcto",
+      tipo: "alta",
+    });
+  });
+
   it("accepts explicit RechazoPrevio N on a normal alta subsanación", async () => {
     const aeat = createFakeAeat();
     const client = aeat.client();
@@ -313,6 +335,39 @@ describe("fake AEAT — submit", () => {
     expect(response.RespuestaLinea[0]).toMatchObject({
       EstadoRegistro: "Incorrecto",
       CodigoErrorRegistro: 3002,
+    });
+    expect(response.EstadoEnvio).toBe("Incorrecto");
+    expect(response.CSV).toBeUndefined();
+    expect(aeat.stored()).toEqual([]);
+  });
+
+  it("rejects RechazoPrevio S when there is no existing record to correct", async () => {
+    const aeat = createFakeAeat();
+    const correction = {
+      ...altaFixture("A/MISSING-S"),
+      Subsanacion: "S" as const,
+      RechazoPrevio: "S" as const,
+    };
+
+    const response = await aeat.client().submit(cabecera, [{ RegistroAlta: correction }]);
+
+    expect(response.RespuestaLinea[0]).toMatchObject({
+      EstadoRegistro: "Incorrecto",
+      CodigoErrorRegistro: 3002,
+    });
+    expect(aeat.stored()).toEqual([]);
+  });
+
+  it("keeps a forced rejection ahead of the no-prior subsanación check", async () => {
+    const aeat = createFakeAeat();
+    const correction = { ...altaFixture("A/FORCED"), Subsanacion: "S" as const };
+    aeat.reject(keyOf(correction), 1100, "Forced test rejection");
+
+    const response = await aeat.client().submit(cabecera, [{ RegistroAlta: correction }]);
+
+    expect(response.RespuestaLinea[0]).toMatchObject({
+      EstadoRegistro: "Incorrecto",
+      CodigoErrorRegistro: 1100,
     });
     expect(aeat.stored()).toEqual([]);
   });

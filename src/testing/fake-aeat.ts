@@ -186,19 +186,13 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
       const existing = store.get(key);
       const forced = rejections.get(key);
       const future = fechaToDate(fecha).getTime() > serverNow.getTime();
-      const replacesExistingAlta =
-        existing !== undefined &&
-        "RegistroAlta" in entry &&
-        entry.RegistroAlta.Subsanacion === "S" &&
-        (entry.RegistroAlta.RechazoPrevio === undefined ||
-          entry.RegistroAlta.RechazoPrevio === "N");
+      const alta = "RegistroAlta" in entry ? entry.RegistroAlta : undefined;
+      const isNormalSubsanacion =
+        alta?.Subsanacion === "S" &&
+        (alta.RechazoPrevio === undefined || alta.RechazoPrevio === "N");
+      const replacesExistingAlta = existing !== undefined && isNormalSubsanacion;
       // A normal subsanación replaces an AEAT record; only RechazoPrevio=X permits no prior record.
-      if (
-        !existing &&
-        "RegistroAlta" in entry &&
-        entry.RegistroAlta.Subsanacion === "S" &&
-        (entry.RegistroAlta.RechazoPrevio === undefined || entry.RegistroAlta.RechazoPrevio === "N")
-      ) {
+      if (!forced && !existing && alta?.Subsanacion === "S" && alta.RechazoPrevio !== "X") {
         rejectedCount += 1;
         lineas.push(
           lineaXml(idf, "Incorrecto", 3002, "No existe el registro de facturación", ref, operacion),
