@@ -87,6 +87,7 @@ describe("fake AEAT — submit", () => {
     expect(respuesta.CSV).toMatch(/./);
     expect(respuesta.TiempoEsperaEnvio).toBe(60);
     expect(respuesta.RespuestaLinea[0]?.EstadoRegistro).toBe("Correcto");
+    expect(respuesta.RespuestaLinea[0]?.Operacion).toEqual({ TipoOperacion: "Alta" });
     expect(aeat.stored()).toEqual([
       {
         key: keyOf(altaFixture("A/1")),
@@ -96,6 +97,29 @@ describe("fake AEAT — submit", () => {
         refExterna: undefined,
       },
     ]);
+  });
+
+  it("echoes correction indicators in the structured operation on both record kinds", async () => {
+    const aeat = createFakeAeat();
+    const alta = { ...altaFixture("A/2"), Subsanacion: "S" as const, RechazoPrevio: "X" as const };
+    const accepted = await aeat.client().submit(cabecera, [{ RegistroAlta: alta }]);
+    expect(accepted.RespuestaLinea[0]?.Operacion).toEqual({
+      TipoOperacion: "Alta",
+      Subsanacion: "S",
+      RechazoPrevio: "X",
+    });
+
+    const anulacion = {
+      ...anulacionFixture("A/2"),
+      RechazoPrevio: "S" as const,
+      SinRegistroPrevio: "N" as const,
+    };
+    const cancelled = await aeat.client().submit(cabecera, [{ RegistroAnulacion: anulacion }]);
+    expect(cancelled.RespuestaLinea[0]?.Operacion).toEqual({
+      TipoOperacion: "Anulacion",
+      RechazoPrevio: "S",
+      SinRegistroPrevio: "N",
+    });
   });
 
   it("rejects a record on the configured reject list, marking the envío ParcialmenteCorrecto", async () => {
@@ -166,6 +190,7 @@ describe("fake AEAT — submit", () => {
       .client()
       .submit(cabecera, [{ RegistroAnulacion: anulacionFixture("A/1") }]);
     expect(cancelled.RespuestaLinea[0]?.EstadoRegistro).toBe("Correcto");
+    expect(cancelled.RespuestaLinea[0]?.Operacion).toEqual({ TipoOperacion: "Anulacion" });
     expect(aeat.stored()[0]).toMatchObject({
       key: keyOf(altaFixture("A/1")),
       estado: "Anulado",

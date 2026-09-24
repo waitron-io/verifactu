@@ -179,6 +179,7 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
     const csv = `CSV-${String(++csvSequence).padStart(8, "0")}`;
     for (const entry of registros) {
       const { idf, tipo, huella, ref, fecha } = identityOf(entry);
+      const operacion = operacionXml(entry);
       const key = keyOfIdentity(idf);
       const existing = store.get(key);
       const forced = rejections.get(key);
@@ -192,12 +193,12 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
         // RegistroDuplicado; resolveEstadoEfectivo reads that inner state.
         anyRejected = true;
         const detail = noDuplicadoDetail.has(key) ? undefined : duplicateStateOf(existing.estado);
-        lineas.push(duplicadoLineaXml(idf, detail, ref));
+        lineas.push(duplicadoLineaXml(idf, detail, ref, operacion));
         continue;
       }
       if (forced) {
         anyRejected = true;
-        lineas.push(lineaXml(idf, "Incorrecto", forced.code, forced.message, ref));
+        lineas.push(lineaXml(idf, "Incorrecto", forced.code, forced.message, ref, operacion));
       } else {
         const estado =
           tipo === "anulacion" ? "Anulado" : future ? "AceptadoConErrores" : "Correcto";
@@ -235,10 +236,11 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
               2004,
               "Fecha de expedición posterior a la fecha del sistema",
               ref,
+              operacion,
             ),
           );
         } else {
-          lineas.push(lineaXml(idf, "Correcto", undefined, undefined, ref));
+          lineas.push(lineaXml(idf, "Correcto", undefined, undefined, ref, operacion));
         }
       }
     }
@@ -380,12 +382,31 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
 // Namespace prefixes below are arbitrary: parse-common's shared parser has removeNSPrefix:true,
 // so only the local element names need to match what parse-suministro.ts reads.
 
+function operacionXml(entry: EnvioRegistro): string {
+  const alta = "RegistroAlta" in entry ? entry.RegistroAlta : undefined;
+  const anulacion = "RegistroAnulacion" in entry ? entry.RegistroAnulacion : undefined;
+  const rechazoPrevio = alta?.RechazoPrevio ?? anulacion?.RechazoPrevio;
+  return (
+    "<sfR:Operacion>" +
+    `<sf:TipoOperacion>${alta ? "Alta" : "Anulacion"}</sf:TipoOperacion>` +
+    (alta?.Subsanacion !== undefined
+      ? `<sf:Subsanacion>${alta.Subsanacion}</sf:Subsanacion>`
+      : "") +
+    (rechazoPrevio !== undefined ? `<sf:RechazoPrevio>${rechazoPrevio}</sf:RechazoPrevio>` : "") +
+    (anulacion?.SinRegistroPrevio !== undefined
+      ? `<sf:SinRegistroPrevio>${anulacion.SinRegistroPrevio}</sf:SinRegistroPrevio>`
+      : "") +
+    "</sfR:Operacion>"
+  );
+}
+
 function lineaXml(
   idf: IDFactura,
   estado: EstadoRegistroSuministro,
   code: number | undefined,
   message: string | undefined,
   ref: string | undefined,
+  operacion: string,
 ): string {
   return (
     "<sfR:RespuestaLinea>" +
@@ -394,6 +415,7 @@ function lineaXml(
     `<sf:NumSerieFactura>${escapeXml(idf.NumSerieFactura)}</sf:NumSerieFactura>` +
     `<sf:FechaExpedicionFactura>${escapeXml(idf.FechaExpedicionFactura)}</sf:FechaExpedicionFactura>` +
     "</sfR:IDFactura>" +
+    operacion +
     (ref !== undefined ? `<sfR:RefExterna>${escapeXml(ref)}</sfR:RefExterna>` : "") +
     `<sfR:EstadoRegistro>${estado}</sfR:EstadoRegistro>` +
     (code !== undefined ? `<sfR:CodigoErrorRegistro>${code}</sfR:CodigoErrorRegistro>` : "") +
@@ -429,6 +451,7 @@ function duplicadoLineaXml(
   idf: IDFactura,
   estadoDuplicado: EstadoRegistroDuplicado | undefined,
   ref: string | undefined,
+  operacion: string,
 ): string {
   return (
     "<sfR:RespuestaLinea>" +
@@ -437,6 +460,7 @@ function duplicadoLineaXml(
     `<sf:NumSerieFactura>${escapeXml(idf.NumSerieFactura)}</sf:NumSerieFactura>` +
     `<sf:FechaExpedicionFactura>${escapeXml(idf.FechaExpedicionFactura)}</sf:FechaExpedicionFactura>` +
     "</sfR:IDFactura>" +
+    operacion +
     (ref !== undefined ? `<sfR:RefExterna>${escapeXml(ref)}</sfR:RefExterna>` : "") +
     "<sfR:EstadoRegistro>Incorrecto</sfR:EstadoRegistro>" +
     "<sfR:CodigoErrorRegistro>3000</sfR:CodigoErrorRegistro>" +

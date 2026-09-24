@@ -14,9 +14,16 @@ export interface RegistroDuplicado {
   DescripcionErrorRegistro?: string;
 }
 
+export interface OperacionRespuesta {
+  TipoOperacion: "Alta" | "Anulacion";
+  Subsanacion?: "S" | "N";
+  RechazoPrevio?: "S" | "N" | "X";
+  SinRegistroPrevio?: "S" | "N";
+}
+
 export interface RespuestaLinea {
   IDFactura: IDFactura;
-  Operacion?: string;
+  Operacion?: OperacionRespuesta;
   RefExterna?: string;
   EstadoRegistro: EstadoRegistroSuministro;
   CodigoErrorRegistro?: number;
@@ -54,7 +61,12 @@ interface RawRegistroDuplicado {
 
 interface RawRespuestaLinea {
   IDFactura: IDFactura;
-  Operacion?: string;
+  Operacion?: {
+    TipoOperacion?: string;
+    Subsanacion?: string;
+    RechazoPrevio?: string;
+    SinRegistroPrevio?: string;
+  };
   RefExterna?: string;
   EstadoRegistro: string;
   CodigoErrorRegistro?: string;
@@ -89,6 +101,38 @@ function parseRegistroDuplicado(
   };
 }
 
+function siNoOperacion(value: string | undefined, field: string): "S" | "N" | undefined {
+  if (value !== undefined && value !== "S" && value !== "N") {
+    throw new Error(`Operacion.${field} must be S or N, received ${value}`);
+  }
+  return value;
+}
+
+function parseOperacion(raw: RawRespuestaLinea["Operacion"]): OperacionRespuesta | undefined {
+  if (raw === undefined) return undefined;
+  if (raw.TipoOperacion !== "Alta" && raw.TipoOperacion !== "Anulacion") {
+    throw new Error(
+      `Operacion.TipoOperacion must be Alta or Anulacion, received ${String(raw.TipoOperacion)}`,
+    );
+  }
+  const subsanacion = siNoOperacion(raw.Subsanacion, "Subsanacion");
+  const sinRegistroPrevio = siNoOperacion(raw.SinRegistroPrevio, "SinRegistroPrevio");
+  if (
+    raw.RechazoPrevio !== undefined &&
+    raw.RechazoPrevio !== "S" &&
+    raw.RechazoPrevio !== "N" &&
+    raw.RechazoPrevio !== "X"
+  ) {
+    throw new Error(`Operacion.RechazoPrevio must be S, N, or X, received ${raw.RechazoPrevio}`);
+  }
+  return {
+    TipoOperacion: raw.TipoOperacion,
+    ...(subsanacion !== undefined && { Subsanacion: subsanacion }),
+    ...(raw.RechazoPrevio !== undefined && { RechazoPrevio: raw.RechazoPrevio }),
+    ...(sinRegistroPrevio !== undefined && { SinRegistroPrevio: sinRegistroPrevio }),
+  };
+}
+
 function parseRespuestaLinea(raw: RawRespuestaLinea): RespuestaLinea {
   return {
     IDFactura: {
@@ -96,7 +140,7 @@ function parseRespuestaLinea(raw: RawRespuestaLinea): RespuestaLinea {
       NumSerieFactura: raw.IDFactura.NumSerieFactura,
       FechaExpedicionFactura: raw.IDFactura.FechaExpedicionFactura,
     },
-    Operacion: raw.Operacion,
+    Operacion: parseOperacion(raw.Operacion),
     RefExterna: raw.RefExterna,
     EstadoRegistro: raw.EstadoRegistro as EstadoRegistroSuministro,
     CodigoErrorRegistro: asNumber(raw.CodigoErrorRegistro, "RespuestaLinea.CodigoErrorRegistro"),

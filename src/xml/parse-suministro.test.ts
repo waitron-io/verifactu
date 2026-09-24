@@ -127,6 +127,29 @@ describe("parseRespuestaSuministro", () => {
     expect(linea?.EstadoRegistro).toBe("Correcto");
   });
 
+  it("preserves AEAT's structured operation and its optional correction flags", () => {
+    const xml = ACCEPTED.replace(
+      "<EstadoRegistro>Correcto</EstadoRegistro>",
+      "<Operacion><TipoOperacion>Alta</TipoOperacion><Subsanacion>S</Subsanacion><RechazoPrevio>X</RechazoPrevio></Operacion><EstadoRegistro>Correcto</EstadoRegistro>",
+    );
+    const operation = parseRespuestaSuministro(xml).RespuestaLinea[0]?.Operacion;
+    expect(operation).toEqual({ TipoOperacion: "Alta", Subsanacion: "S", RechazoPrevio: "X" });
+    expect(operation?.TipoOperacion).toBe("Alta");
+  });
+
+  it.each([
+    ["TipoOperacion", "Other"],
+    ["Subsanacion", "X"],
+    ["RechazoPrevio", "Z"],
+    ["SinRegistroPrevio", "X"],
+  ] as const)("rejects an invalid response Operacion.%s", (field, value) => {
+    const xml = ACCEPTED.replace(
+      "<EstadoRegistro>Correcto</EstadoRegistro>",
+      `<Operacion><TipoOperacion>${field === "TipoOperacion" ? value : "Anulacion"}</TipoOperacion>${field === "TipoOperacion" ? "" : `<${field}>${value}</${field}>`}</Operacion><EstadoRegistro>Correcto</EstadoRegistro>`,
+    );
+    expect(() => parseRespuestaSuministro(xml)).toThrow(`Operacion.${field}`);
+  });
+
   it("normalises a single line into an array", () => {
     // fast-xml-parser collapses a lone repeated element into an object; a
     // caller iterating the result would otherwise break on single-record
