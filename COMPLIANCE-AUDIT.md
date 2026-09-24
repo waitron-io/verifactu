@@ -135,10 +135,12 @@ AEAT returns `Correcto` only when every response line is `Correcto`,
 accepted and rejected lines, and `Incorrecto` when every line is rejected. An all-rejected
 response has no CSV; a partially correct response has one. The fake AEAT now follows these
 batch-level rules. `src/testing/fake-aeat.test.ts` covers a wholly accepted batch, a
-future-dated `AceptadoConErrores` line, a mixed batch, and an all-rejected two-line batch,
-including CSV presence or absence. The real response parser exposes AEAT's global and
-per-line values without reconciling them; the fake remains a transport test double, not
-proof of a schema-valid AEAT response.
+future-dated `AceptadoConErrores` line, a mixed batch, an all-rejected two-line batch,
+and a duplicate-only retry, including CSV presence or absence. The duplicate test also
+checks the raw XML omits `CSV` and that `resolveEstadoEfectivo` finds the previously
+accepted record despite the rejected retry. The real response parser exposes AEAT's global
+and per-line values without reconciling them; the fake remains a transport test double,
+not proof of a schema-valid AEAT response.
 
 ### SOAP faults and voluntary flow control — service description §§5.1, 6.4.4.1
 
