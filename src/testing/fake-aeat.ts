@@ -155,6 +155,7 @@ function fechaToDate(ddMmYyyy: string): Date {
 
 export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
   const store = new Map<FacturaKey, StoredRecord>();
+  // A duplicate echoes the petition that stored the earlier record, not the current request.
   const petitionIds = new Map<FacturaKey, string>();
   const metadata = new Map<FacturaKey, StoredMetadata>();
   const rejections = new Map<FacturaKey, { code: number; message: string }>();
