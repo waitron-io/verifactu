@@ -109,6 +109,17 @@ reference or invalid remittance flag rather than returning a misleading `Cabecer
 inputs, the year transition, and exact issue messages. The existing fake-AEAT identity tests retain
 their two-taxpayer assertions with valid synthetic NIFs.
 
+### Per-record response operation — service description §6.4.4 and response XSD
+
+`RespuestaSuministro.xsd` requires an `Operacion` block on every response line, with a nested
+`TipoOperacion` (`Alta` or `Anulacion`) and optional correction indicators in the order defined by
+`SuministroInformacion.xsd`. `parseRespuestaSuministro` now exposes that structured block with
+checked code values instead of typing it as a string, and the fake AEAT emits it for accepted,
+rejected, and duplicate records. Parser and fake-AEAT tests cover both operation kinds, correction
+indicators, and invalid codes. The parser continues to accept an omitted block for partial test
+fixtures; it is not a full XSD validator and cannot establish that AEAT returned a schema-valid
+response.
+
 ### Own-record hash validation
 
 Validation §3.1.3.23 and §3.1.4.7 require the submitted alta or cancellation hash to match
