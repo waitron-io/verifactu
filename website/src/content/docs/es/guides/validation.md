@@ -20,12 +20,16 @@ la AEAT sigue siendo la fuente definitiva; examina cada línea después de envia
 
 `assertValid` comprueba un registro, no la cabecera del envío. `serializeEnvio` comprueba la forma
 de los NIF del obligado y del representante, que los bloques de remisión sean excluyentes, la
-referencia obligatoria del requerimiento y su límite de 18 caracteres, y cualquier
+referencia obligatoria del requerimiento y su límite de 18 caracteres, los dos indicadores
+opcionales `S`/`N`, y cualquier
 `FechaFinVeriFactu`. Esta debe ser una fecha real, usar el año actual o el anterior en Madrid y,
 desde el 1 de enero de 2027, tener la forma `31-12-20XX`. Pasa `{ now }` como tercer argumento de
 `serializeEnvio` para probar ese límite. Solo la AEAT puede confirmar la existencia de las
 identidades y de la referencia y determinar su fecha exacta. El serializador y el analizador
 también exigen entre 1 y 1000 bloques de registro, cada uno con un solo tipo de registro.
+El analizador rechaza una referencia ausente o un indicador de remisión incorrecto, pero no
+repite todas las comprobaciones locales del serializador ni sustituye la validación del esquema
+por la AEAT.
 
 La huella anterior debe contener exactamente 64 caracteres hexadecimales en mayúsculas. `validate`
 devuelve el aviso `HUELLA_ANTERIOR_FORMAT` tanto para altas como para anulaciones. La AEAT no

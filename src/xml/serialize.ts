@@ -416,8 +416,24 @@ export function serializeEnvio(
   registros: EnvioRegistro[],
   options: SerializeEnvioOptions = {},
 ): string {
+  if (registros.length === 0) {
+    throw new Error("An envio must contain at least one registro");
+  }
+  if (registros.length > MAX_REGISTROS_POR_ENVIO) {
+    throw new Error(
+      `An envio may carry at most ${MAX_REGISTROS_POR_ENVIO} registros, received ${registros.length}`,
+    );
+  }
   if (cabecera.RemisionVoluntaria !== undefined && cabecera.RemisionRequerimiento !== undefined) {
     throw new Error("Cabecera must not contain both RemisionVoluntaria and RemisionRequerimiento");
+  }
+  for (const [field, value] of [
+    ["RemisionVoluntaria.Incidencia", cabecera.RemisionVoluntaria?.Incidencia],
+    ["RemisionRequerimiento.FinRequerimiento", cabecera.RemisionRequerimiento?.FinRequerimiento],
+  ] as const) {
+    if (value !== undefined && value !== "S" && value !== "N") {
+      throw new Error(`Cabecera.${field} must be S or N`);
+    }
   }
   for (const [field, nif] of [
     ["ObligadoEmision", cabecera.ObligadoEmision.NIF],
@@ -471,14 +487,6 @@ export function serializeEnvio(
     if (currentYear >= 2027 && !/^31-12-20\d{2}$/.test(fechaFin)) {
       throw new Error(`${field} must be 31-12-20XX from 2027`);
     }
-  }
-  if (registros.length === 0) {
-    throw new Error("An envio must contain at least one registro");
-  }
-  if (registros.length > MAX_REGISTROS_POR_ENVIO) {
-    throw new Error(
-      `An envio may carry at most ${MAX_REGISTROS_POR_ENVIO} registros, received ${registros.length}`,
-    );
   }
   registros.forEach((entry, index) => {
     const hasAlta = entry != null && typeof entry === "object" && "RegistroAlta" in entry;

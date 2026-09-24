@@ -75,6 +75,11 @@ describe("parseEnvio", () => {
     expect(() => parseEnvio(tooMany)).toThrow(
       "Envio may contain at most 1000 RegistroFactura wrappers",
     );
+    const maximum = one.replace(
+      "</sfLR:RegFactuSistemaFacturacion>",
+      wrapper.repeat(999) + "</sfLR:RegFactuSistemaFacturacion>",
+    );
+    expect(parseEnvio(maximum).registros).toHaveLength(1000);
   });
 
   it("round-trips a foreign software producer on alta and cancellation records", () => {
@@ -191,6 +196,29 @@ describe("parseEnvio", () => {
     );
     expect(() => parseEnvio(xml)).toThrow(
       "Cabecera must not contain both RemisionVoluntaria and RemisionRequerimiento",
+    );
+  });
+
+  it("rejects a requirement header without its mandatory reference", () => {
+    const xml = serializeEnvio(remittanceHeaders[1]!, [{ RegistroAlta: alta }]).replace(
+      "<sf:RefRequerimiento>REQ-123</sf:RefRequerimiento>",
+      "",
+    );
+    expect(() => parseEnvio(xml)).toThrow(
+      "Cabecera.RemisionRequerimiento.RefRequerimiento is required",
+    );
+  });
+
+  it.each([
+    ["Incidencia", remittanceHeaders[0]!, "<sf:Incidencia>S</sf:Incidencia>"],
+    ["FinRequerimiento", remittanceHeaders[1]!, "<sf:FinRequerimiento>N</sf:FinRequerimiento>"],
+  ] as const)("rejects an invalid parsed %s flag", (field, header, validTag) => {
+    const xml = serializeEnvio(header, [{ RegistroAlta: alta }]).replace(
+      validTag,
+      validTag.replace(/>[SN]</, ">X<"),
+    );
+    expect(() => parseEnvio(xml)).toThrow(
+      `Cabecera.${field === "Incidencia" ? "RemisionVoluntaria" : "RemisionRequerimiento"}.${field} must be S or N`,
     );
   });
 

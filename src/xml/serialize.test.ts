@@ -123,6 +123,19 @@ describe("serializeEnvio", () => {
     );
   });
 
+  it.each([
+    ["Incidencia", { RemisionVoluntaria: { Incidencia: "X" } }],
+    [
+      "FinRequerimiento",
+      { RemisionRequerimiento: { RefRequerimiento: "REQ-123", FinRequerimiento: "X" } },
+    ],
+  ] as const)("rejects an invalid untyped %s flag", (field, remittance) => {
+    const cabecera = { ...CABECERA, ...remittance } as unknown as Cabecera;
+    expect(() => serializeEnvio(cabecera, [{ RegistroAlta: record }])).toThrow(
+      `Cabecera.${field === "Incidencia" ? "RemisionVoluntaria" : "RemisionRequerimiento"}.${field} must be S or N`,
+    );
+  });
+
   it("types the two header remittance modes as exclusive", () => {
     // @ts-expect-error Both remittance blocks cannot appear on a Cabecera.
     const both: Cabecera = {
@@ -224,6 +237,18 @@ describe("serializeEnvio", () => {
     expect(serializeEnvio(cabecera, [{ RegistroAlta: record }], { now: new Date(now) })).toContain(
       `<sf:FechaFinVeriFactu>${FechaFinVeriFactu}</sf:FechaFinVeriFactu>`,
     );
+  });
+
+  it("applies the 2027 shape rule to a previous-year date too", () => {
+    const cabecera: Cabecera = {
+      ObligadoEmision: CABECERA.ObligadoEmision,
+      RemisionVoluntaria: { FechaFinVeriFactu: "30-09-2026" },
+    };
+    expect(() =>
+      serializeEnvio(cabecera, [{ RegistroAlta: record }], {
+        now: new Date("2027-01-02T12:00:00Z"),
+      }),
+    ).toThrow("Cabecera.RemisionVoluntaria.FechaFinVeriFactu must be 31-12-20XX from 2027");
   });
 
   it("emits the record's literals verbatim so the huella still verifies", () => {
@@ -486,6 +511,9 @@ describe("serializeEnvio", () => {
 
   it("rejects an empty batch", () => {
     expect(() => serializeEnvio(CABECERA, [])).toThrow(/at least one/i);
+    expect(() =>
+      serializeEnvio({ ObligadoEmision: { NombreRazon: "Bad", NIF: "B12345678" } }, []),
+    ).toThrow("An envio must contain at least one registro");
   });
 
   it("escapes text content", () => {

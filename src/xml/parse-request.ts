@@ -95,6 +95,14 @@ function cabeceraOf(raw: RawCabecera): Cabecera {
   if (raw.RemisionVoluntaria !== undefined && raw.RemisionRequerimiento !== undefined) {
     throw new Error("Cabecera must not contain both RemisionVoluntaria and RemisionRequerimiento");
   }
+  for (const [field, value] of [
+    ["RemisionVoluntaria.Incidencia", raw.RemisionVoluntaria?.Incidencia],
+    ["RemisionRequerimiento.FinRequerimiento", raw.RemisionRequerimiento?.FinRequerimiento],
+  ] as const) {
+    if (value !== undefined && value !== "S" && value !== "N") {
+      throw new Error(`Cabecera.${field} must be S or N`);
+    }
+  }
   const cabecera = {
     ObligadoEmision: { NombreRazon: raw.ObligadoEmision.NombreRazon, NIF: raw.ObligadoEmision.NIF },
     ...(raw.Representante !== undefined && {
@@ -118,6 +126,12 @@ function cabeceraOf(raw: RawCabecera): Cabecera {
     };
   }
   if (raw.RemisionRequerimiento !== undefined) {
+    if (
+      typeof raw.RemisionRequerimiento.RefRequerimiento !== "string" ||
+      raw.RemisionRequerimiento.RefRequerimiento.trim().length === 0
+    ) {
+      throw new Error("Cabecera.RemisionRequerimiento.RefRequerimiento is required");
+    }
     return {
       ...cabecera,
       RemisionRequerimiento: {

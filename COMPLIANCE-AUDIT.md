@@ -79,14 +79,17 @@ stores. `SOAP_ENDPOINTS_REQUERIMIENTO` and `SOAP_ENDPOINTS_REQUERIMIENTO_SELLO` 
 published addresses in `src/endpoints.test.ts`; callers must select one for those submissions,
 not a voluntary Veri*Factu endpoint. Consulta is available only on the voluntary service. The
 library's generic `createClient` accepts a caller-provided endpoint and cannot establish that the
-caller chose the right mode or holds a valid AEAT requirement.
+caller chose the right mode or holds a valid AEAT requirement. The current fake AEAT is a
+shared-store transport double; it does not model the separate under-requirement service or its
+absence of consulta. Use AEAT preproduction for those integration claims.
 
-The serializer locally checks issuer and representative NIF form/control, required reference
-content and its 18-XML-character maximum, and a real `FechaFinVeriFactu` in the current or
+The serializer locally checks issuer and representative NIF form/control, both optional `S`/`N`
+remittance flags, required reference content and its 18-XML-character maximum, and a real `FechaFinVeriFactu` in the current or
 preceding Madrid calendar year. From 1 January 2027 the supplied date must also be `31-12-20XX`.
 AEAT alone can establish that these identities and the reference are registered, and its system
 clock is authoritative. The parser and serializer both enforce 1–1000 `RegistroFactura` wrappers
-with exactly one alta or cancellation per wrapper. TDD cases in `src/xml/serialize.test.ts` and
+with exactly one alta or cancellation per wrapper; the parser also rejects a missing requirement
+reference or invalid remittance flag rather than returning a misleading `Cabecera` value. TDD cases in `src/xml/serialize.test.ts` and
 `src/xml/parse-request.test.ts` cover each boundary, XML order, round trips, untyped malformed
 inputs, the year transition, and exact issue messages. The existing fake-AEAT identity tests retain
 their two-taxpayer assertions with valid synthetic NIFs.
