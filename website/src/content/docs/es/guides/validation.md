@@ -21,7 +21,17 @@ la AEAT sigue siendo la fuente definitiva; examina cada línea después de envia
 La huella anterior debe contener exactamente 64 caracteres hexadecimales en mayúsculas. `validate`
 devuelve el aviso `HUELLA_ANTERIOR_FORMAT` tanto para altas como para anulaciones. La AEAT no
 rechaza el registro por este problema de formato, por lo que `assertValid` no impide el envío, pero
-debes investigarlo antes de confiar en la cadena.
+debes investigarlo antes de confiar en la cadena. Una huella anterior de más de 64 caracteres o
+con un carácter de control XML sí impide el envío porque incumple el esquema o impide analizarlo.
+
+Si cambias un registro después de que el constructor calcule su huella, `validate` devuelve
+`HUELLA_MISMATCH`. Una huella que no tenga 64 caracteres hexadecimales en mayúsculas genera
+`HUELLA_FORMAT`. Ambos son avisos si el valor cabe en el límite de 64 caracteres del esquema XML
+de la AEAT y no contiene caracteres de control XML: `assertValid` no impide enviar un registro que
+la Agencia podría aceptar con errores.
+Un valor más largo incumple el esquema XML y sigue siendo un error. También lo son una huella
+ausente y un carácter de control XML. Comprueba los avisos antes de enviar el registro; que la
+AEAT lo acepte no significa que la huella sea correcta.
 
 `FechaHoraHusoGenRegistro` debe representar un instante real del calendario con un desfase
 numérico. Un valor que supere en más de un minuto la hora actual genera el aviso
