@@ -105,6 +105,12 @@ base aplicable o el tipo también es cero. No se permite una `CuotaRepercutida` 
 fuera de `S1`. Los errores más específicos ya existentes señalan la misma infracción para `S2`, IVA
 `N1`/`N2` y líneas exentas, para que recibas un solo problema útil en vez de mensajes duplicados.
 
+En una factura simplificada `F2`, la suma de `BaseImponibleOimporteNoSujeto` y
+`CuotaRepercutida` de todas las líneas puede alcanzar 3010 €, incluido el margen de aceptación de
++10 € de la AEAT. El límite no se aplica si indicas `NumRegistroAcuerdoFacturacion` o
+`FacturaSinIdentifDestinatarioArt61d: "S"`. El número de acuerdo tiene el máximo de 15 caracteres
+del XSD; solo la AEAT puede confirmar que un número bien formado está registrado.
+
 Mantén `IDEmisorFactura` igual a `Cabecera.ObligadoEmision.NIF`. `serializeEnvio` rechaza el lote
 si ambos valores difieren, antes de crear el XML. La AEAT permite un conjunto más amplio de
 caracteres ASCII imprimibles en `NumSerieFactura`, pero esta biblioteca solo acepta letras,

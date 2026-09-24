@@ -78,6 +78,22 @@ describe("serializeEnvio", () => {
     );
   });
 
+  it("emits NumRegistroAcuerdoFacturacion at its XSD ordinal", () => {
+    const withAgreement = {
+      ...record,
+      NumRegistroAcuerdoFacturacion: "ACUERDO-1",
+    };
+    const xml = serializeEnvio(CABECERA, [{ RegistroAlta: withAgreement }]);
+    const generatedAt = xml.indexOf("<sf:FechaHoraHusoGenRegistro>");
+    const agreement = xml.indexOf("<sf:NumRegistroAcuerdoFacturacion>");
+    const hashType = xml.indexOf("<sf:TipoHuella>");
+    expect(xml).toContain(
+      "<sf:NumRegistroAcuerdoFacturacion>ACUERDO-1</sf:NumRegistroAcuerdoFacturacion>",
+    );
+    expect(generatedAt).toBeLessThan(agreement);
+    expect(agreement).toBeLessThan(hashType);
+  });
+
   it("emits PrimerRegistro for a first record and no RegistroAnterior", () => {
     const xml = serializeEnvio(CABECERA, [{ RegistroAlta: record }]);
     expect(xml).toContain("<sf:PrimerRegistro>S</sf:PrimerRegistro>");
@@ -326,6 +342,7 @@ describe("element order — sequence is load-bearing, not just presence", () => 
     SistemaInformatico: SISTEMA,
     generadoEn: new Date("2024-01-01T19:20:30+01:00"),
     offsetMinutes: 60,
+    NumRegistroAcuerdoFacturacion: "ACUERDO-ORDER",
   };
 
   it("pins registroAlta's full element order, from Cabecera through the Huella tail", () => {
@@ -383,7 +400,7 @@ describe("element order — sequence is load-bearing, not just presence", () => 
       "CuotaTotal",
       "ImporteTotal",
       // Proves the Encadenamiento/SistemaInformatico/FechaHoraHusoGenRegistro/
-      // TipoHuella/Huella tail is not reordered.
+      // NumRegistroAcuerdoFacturacion/TipoHuella/Huella tail is not reordered.
       "Encadenamiento",
       "RegistroAnterior",
       "IDEmisorFactura",
@@ -401,6 +418,7 @@ describe("element order — sequence is load-bearing, not just presence", () => 
       "TipoUsoPosibleMultiOT",
       "IndicadorMultiplesOT",
       "FechaHoraHusoGenRegistro",
+      "NumRegistroAcuerdoFacturacion",
       "TipoHuella",
       "Huella",
     ]);
@@ -571,6 +589,7 @@ describe("exact document output — pins the complete serialised string, not fra
       SistemaInformatico: SISTEMA,
       generadoEn: new Date("2024-01-01T19:20:30+01:00"),
       offsetMinutes: 60,
+      NumRegistroAcuerdoFacturacion: "ACUERDO-EXACT",
     };
     const alta = buildAltaRecord(altaInput);
 
@@ -694,6 +713,7 @@ describe("exact document output — pins the complete serialised string, not fra
       `</sf:RegistroAnterior></sf:Encadenamiento>` +
       sistemaInformaticoXml +
       `<sf:FechaHoraHusoGenRegistro>2024-01-01T19:20:30+01:00</sf:FechaHoraHusoGenRegistro>` +
+      `<sf:NumRegistroAcuerdoFacturacion>ACUERDO-EXACT</sf:NumRegistroAcuerdoFacturacion>` +
       `<sf:TipoHuella>01</sf:TipoHuella>` +
       `<sf:Huella>${alta.Huella}</sf:Huella>` +
       `</sf:RegistroAlta>` +

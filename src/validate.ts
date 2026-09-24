@@ -1,4 +1,4 @@
-import { MAX_OFFSET_MINUTES } from "./format.js";
+import { MAX_OFFSET_MINUTES, trimValue } from "./format.js";
 import { hasValidNifControl } from "./nif.js";
 import { isAlta } from "./types.js";
 import type { RegistroAlta, RegistroAnulacion } from "./types.js";
@@ -50,6 +50,8 @@ export type ValidationCode =
   | "S1_CUOTA_REPERCUTIDA_REQUIRED"
   | "S1_CUOTA_REPERCUTIDA_SIGN"
   | "S1_CUOTA_REPERCUTIDA_FORMULA"
+  | "F2_AMOUNT_LIMIT"
+  | "NUM_REGISTRO_ACUERDO_LENGTH"
   | "TIPO_RANGE"
   | "CUOTA_TOTAL_MISMATCH"
   | "IMPORTE_TOTAL_MISMATCH"
@@ -157,6 +159,9 @@ const NUMSERIE_PATTERN = /^[A-Za-z0-9/_.-]+$/;
 const TOTAL_TOLERANCE = 10;
 /** AEAT applies a separate +/- 10.00 euro tolerance to the charged-tax formula. */
 const CUOTA_REPERCUTIDA_TOLERANCE = 10;
+/** Exact-cent bounds for AEAT §3.1.3.15.8: 3,000 euros plus a 10-euro margin. */
+const F2_AMOUNT_LIMIT_CENTS = 300_000;
+const F2_AMOUNT_TOLERANCE_CENTS = 1_000;
 /** AEAT validation §3.1.3.16–17 omits both total cross-checks for these regimes. */
 const TOTAL_CHECK_EXEMPT_REGIMES = new Set(["03", "05", "06", "08", "09"]);
 /**
@@ -352,6 +357,17 @@ function currentDateOrdinal(now: Date, fechaHoraHusoGenRegistro: string): number
 
 function sum(values: Array<string | undefined>): number {
   return values.reduce<number>((total, value) => total + (value ? Number(value) : 0), 0);
+}
+
+/**
+ * Converts a validated two-decimal amount literal to cents. Twelve maximum-size
+ * lines still sum below Number.MAX_SAFE_INTEGER, so the aggregate stays exact.
+ */
+function amountInCents(value: string): number {
+  const negative = value.startsWith("-");
+  const unsigned = negative ? value.slice(1) : value;
+  const cents = Number(unsigned.replace(".", ""));
+  return negative ? -cents : cents;
 }
 
 export function validate(
@@ -851,6 +867,17 @@ export function validate(
   }
   checkNoControlChars("DescripcionOperacion", record.DescripcionOperacion);
   checkNoControlChars("NombreRazonEmisor", record.NombreRazonEmisor);
+  if (
+    record.NumRegistroAcuerdoFacturacion !== undefined &&
+    record.NumRegistroAcuerdoFacturacion.length > 15
+  ) {
+    add(
+      "NUM_REGISTRO_ACUERDO_LENGTH",
+      "NumRegistroAcuerdoFacturacion",
+      "NumRegistroAcuerdoFacturacion is at most 15 characters",
+    );
+  }
+  checkNoControlChars("NumRegistroAcuerdoFacturacion", record.NumRegistroAcuerdoFacturacion);
   if (record.Desglose.length < 1 || record.Desglose.length > 12) {
     add("DESGLOSE_COUNT", "Desglose", "Desglose must carry 1 to 12 detail lines");
   }
@@ -1333,6 +1360,35 @@ export function validate(
       "OPERACION_EXENTA_E5_DESTINATARIO_ID",
       "Destinatarios",
       "Recipients of an IVA E5 line must be identified through IDOtro",
+    );
+  }
+
+  // Only the two fields named by §15.8 gate this check. A malformed surcharge
+  // is independently invalid but cannot corrupt a sum that excludes it.
+  const f2AmountsValid = record.Desglose.every(
+    ({ BaseImponibleOimporteNoSujeto, CuotaRepercutida }) =>
+      isValidAmount(BaseImponibleOimporteNoSujeto) &&
+      (CuotaRepercutida === undefined || isValidAmount(CuotaRepercutida)),
+  );
+  const hasBillingAgreementNumber = trimValue(record.NumRegistroAcuerdoFacturacion).length > 0;
+  if (
+    record.TipoFactura === "F2" &&
+    !hasBillingAgreementNumber &&
+    record.FacturaSinIdentifDestinatarioArt61d !== "S" &&
+    f2AmountsValid &&
+    record.Desglose.reduce(
+      (total, { BaseImponibleOimporteNoSujeto, CuotaRepercutida }) =>
+        total +
+        amountInCents(BaseImponibleOimporteNoSujeto) +
+        amountInCents(CuotaRepercutida ?? "0.00"),
+      0,
+    ) >
+      F2_AMOUNT_LIMIT_CENTS + F2_AMOUNT_TOLERANCE_CENTS
+  ) {
+    add(
+      "F2_AMOUNT_LIMIT",
+      "Desglose",
+      "F2 base plus charged-tax total exceeds 3,000.00 beyond the 10.00 tolerance",
     );
   }
 

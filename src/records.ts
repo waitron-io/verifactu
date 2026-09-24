@@ -142,6 +142,9 @@ export function buildAltaRecord(input: AltaInput): RegistroAlta {
     Encadenamiento: input.Encadenamiento,
     SistemaInformatico: input.SistemaInformatico,
     FechaHoraHusoGenRegistro: formatDateTime(input.generadoEn, input.offsetMinutes),
+    ...(input.NumRegistroAcuerdoFacturacion !== undefined && {
+      NumRegistroAcuerdoFacturacion: input.NumRegistroAcuerdoFacturacion,
+    }),
     TipoHuella: "01",
     Huella: "",
   };

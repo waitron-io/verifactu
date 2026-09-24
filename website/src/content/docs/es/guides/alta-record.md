@@ -32,6 +32,11 @@ simplificadas `F2` y sus rectificaciones `R5`. `validate(fullInvoice)` devuelve 
 el envío si incumples cualquiera de estas reglas. En las líneas de IVA, IPSI e IGIC, indica también
 el código de régimen aplicable en `ClaveRegimen`. Omítelo para otros impuestos.
 
+Una `F2` normalmente no puede superar 3010 € al sumar la base y la cuota repercutida de todas sus
+líneas. Si la factura pertenece a un acuerdo de facturación registrado en la AEAT, indica su número
+en `NumRegistroAcuerdoFacturacion`; el constructor y el ciclo XML conservan este campo, que no forma
+parte de la huella. Solo la AEAT puede confirmar que el número está registrado.
+
 En una rectificación, usa `FacturasRectificadas` solo con `R1`–`R5`. Usa
 `FacturasSustituidas` solo con `F3`. `ImporteRectificacion` es obligatorio, y solo está permitido,
 en una rectificación por sustitución (`TipoRectificativa: "S"`). Al corregir un registro después de

@@ -110,7 +110,9 @@ already produces `FECHA_HORA_FORMAT`, so the IPSI issue stays a warning rather t
 date-derived error. Every `S1` line must include `TipoImpositivo` and `CuotaRepercutida`; validation
 checks the applicable base, sign, and AEAT's ±€10 formula tolerance, except for the published
 correction cases. A zero charged tax is valid only when its base or rate is zero. A nonzero
-`CuotaRepercutida` is otherwise rejected outside `S1`.
+`CuotaRepercutida` is otherwise rejected outside `S1`. For an `F2`, the sum of every line's base
+and charged tax may reach €3,010 including AEAT's +€10 margin. The cap does not apply when you set
+`NumRegistroAcuerdoFacturacion` or `FacturaSinIdentifDestinatarioArt61d: "S"`.
 
 A rectificativa (`R1`-`R5`) is built the same way, with `TipoRectificativa` set to say whether it
 substitutes (`S`) or adjusts (`I`) the original invoice. `FacturasRectificadas` may identify the

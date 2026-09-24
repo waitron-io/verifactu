@@ -316,6 +316,7 @@ function registroAlta(record: RegistroAlta): string {
     encadenamiento(record.Encadenamiento) +
     sistemaInformatico(record.SistemaInformatico) +
     el("sf", "FechaHoraHusoGenRegistro", record.FechaHoraHusoGenRegistro) +
+    el("sf", "NumRegistroAcuerdoFacturacion", record.NumRegistroAcuerdoFacturacion) +
     el("sf", "TipoHuella", record.TipoHuella) +
     el("sf", "Huella", record.Huella) +
     "</sf:RegistroAlta>"
