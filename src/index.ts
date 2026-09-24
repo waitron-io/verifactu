@@ -11,7 +11,13 @@ export {
 export { buildAltaRecord, buildAnulacionRecord } from "./records.js";
 export { assertValid, validate, VerifactuValidationError } from "./validate.js";
 export { buildQrPayload } from "./qr.js";
-export { QR_ENDPOINTS, SOAP_ENDPOINTS, SOAP_ENDPOINTS_SELLO } from "./endpoints.js";
+export {
+  QR_ENDPOINTS,
+  SOAP_ENDPOINTS,
+  SOAP_ENDPOINTS_REQUERIMIENTO,
+  SOAP_ENDPOINTS_REQUERIMIENTO_SELLO,
+  SOAP_ENDPOINTS_SELLO,
+} from "./endpoints.js";
 export { MAX_REGISTROS_POR_ENVIO, serializeConsulta, serializeEnvio } from "./xml/serialize.js";
 export {
   ERROR_DUPLICADO,

@@ -126,6 +126,21 @@ generator using `IDOtro`, `D` permits `IDType: "03"` or `"07"`, while `T` requir
 forbids `"07"` in any country. Local validation also checks NIF shape and EU VAT-number structure;
 only AEAT can confirm registration.
 
+The submission header accepts either `RemisionVoluntaria` (optional `FechaFinVeriFactu` and
+`Incidencia`) or `RemisionRequerimiento` (required `RefRequerimiento`, optional
+`FinRequerimiento`), never both. Omit both blocks for an ordinary voluntary Veri*Factu submission.
+If you are submitting non-verifiable records under an AEAT requirement, supply the requirement
+block explicitly and use `SOAP_ENDPOINTS_REQUERIMIENTO` (or
+`SOAP_ENDPOINTS_REQUERIMIENTO_SELLO` with a sello certificate) when you create the client. AEAT
+keeps that service and its records separate from voluntary Veri*Factu; consulta is available only
+for voluntary submissions. This library does not determine the operating mode for you. `serializeEnvio`
+checks header NIF form, the reference's 18-character XML limit, and the end date. The date's year
+must be the current or preceding year in Madrid; from 1 January 2027 it must be `31-12-20XX`.
+Pass `{ now }` as its third argument for a controlled local clock. AEAT alone confirms NIF and
+requirement-reference registration and uses its own clock. Each submission holds 1–1000 separate
+record wrappers, each with exactly one alta or cancellation; serialization and parsing enforce that
+shape at runtime.
+
 `FechaHoraHusoGenRegistro` must identify a real calendar instant with a numeric offset. When it is
 more than one minute ahead of the current time, `validate` returns the non-blocking
 `FECHA_HORA_FUTURE` warning for both alta and cancellation records. Pass `{ now }` as the second

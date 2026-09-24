@@ -21,6 +21,8 @@ import {
   createClient,
   resolveEstadoEfectivo,
   SOAP_ENDPOINTS,
+  SOAP_ENDPOINTS_REQUERIMIENTO,
+  SOAP_ENDPOINTS_REQUERIMIENTO_SELLO,
   SOAP_ENDPOINTS_SELLO,
   validate,
   type Cabecera,
@@ -49,6 +51,23 @@ registros. Una `Cabecera` puede incluir registros de varios SIF del mismo contri
 envío, porque cada registro lleva su propio `SistemaInformatico`. Cada alta debe repetir
 `cabecera.ObligadoEmision.NIF` en `IDEmisorFactura`; el serializador se detiene antes del envío si
 ambos valores difieren.
+
+Para un envío voluntario VERI*FACTU ordinario, deja ausentes los bloques de remisión de la
+cabecera. Puedes añadir `RemisionVoluntaria: { FechaFinVeriFactu, Incidencia }` cuando proceda.
+Si envías registros no verificables por requerimiento de la AEAT, usa en su lugar
+`RemisionRequerimiento: { RefRequerimiento, FinRequerimiento }`; la referencia es obligatoria.
+No combines ambos bloques. La AEAT mantiene los envíos bajo requerimiento en un servicio
+separado: elige `SOAP_ENDPOINTS_REQUERIMIENTO` o `SOAP_ENDPOINTS_REQUERIMIENTO_SELLO` para ese
+cliente, nunca el par voluntario `SOAP_ENDPOINTS` que se muestra abajo. La consulta solo está
+disponible para los envíos voluntarios VERI*FACTU. La biblioteca representa ese XML, pero no
+determina la modalidad de tu SIF ni confirma que la AEAT haya emitido el requerimiento.
+
+El serializador comprueba la forma del NIF del obligado y del representante antes del envío.
+También comprueba el límite de 18 caracteres de la referencia y una `FechaFinVeriFactu` indicada:
+su año debe ser el actual o el anterior y, desde el 1 de enero de 2027, la fecha debe tener la
+forma `31-12-20XX`. La AEAT usa su propio reloj y censo, por lo que su respuesta es la fuente
+definitiva. Un lote admite entre 1 y 1000 bloques separados, cada uno con un alta o una anulación.
+El analizador también rechaza los bloques incorrectos.
 
 ## Construye y encadena dos registros
 
@@ -144,7 +163,8 @@ const client = createClient({ endpoint: endpoints[environment], fetch: certifica
 ```
 
 `SOAP_ENDPOINTS_SELLO` usa el servidor específico para un certificado de _sello de entidad_. Ambos
-conjuntos tienen URL de producción y preproducción; envío y consulta usan la misma URL elegida.
+conjuntos tienen URL de producción y preproducción; el envío voluntario y la consulta usan la
+misma URL elegida. Para el envío bajo requerimiento, elige el conjunto `*_REQUERIMIENTO` correspondiente.
 Guarda certificado y contraseña en el almacén de secretos de tu despliegue y cierra el
 `dispatcher` cuando termine el proceso. El ejemplo comprobable de este sitio ejercita la
 adaptación de `fetch` contra la AEAT falsa; comprueba también tu certificado real en

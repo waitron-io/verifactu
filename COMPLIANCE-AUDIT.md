@@ -64,6 +64,33 @@ a distinct and locally valid NIF, a NIF for `E`, the published Spanish `IDOtro` 
 including XML order, round trips, and exact issue details. AEAT alone can confirm that a NIF or
 EU VAT identity is registered.
 
+### Submission header and record wrappers — validation §3.1.1–2
+
+The public `Cabecera` type preserves the optional voluntary-remittance block or the alternative
+under-requirement block, including `FechaFinVeriFactu`, `Incidencia`, `RefRequerimiento`, and
+`FinRequerimiento`. `serializeEnvio` and `parseEnvio` preserve the XSD order and reject both modes
+together as a local mode policy; the shared XSD itself declares two optional fields rather than an
+exclusive choice. Absence of both blocks remains the backward-compatible voluntary default; a caller
+submitting non-verifiable records under requirement must select that mode explicitly. The library
+does not infer the SIF's operating mode or prove that a requirement was issued.
+
+Service description §6.6 and the WSDL declare separate under-requirement URLs and AEAT record
+stores. `SOAP_ENDPOINTS_REQUERIMIENTO` and `SOAP_ENDPOINTS_REQUERIMIENTO_SELLO` pin all four
+published addresses in `src/endpoints.test.ts`; callers must select one for those submissions,
+not a voluntary Veri*Factu endpoint. Consulta is available only on the voluntary service. The
+library's generic `createClient` accepts a caller-provided endpoint and cannot establish that the
+caller chose the right mode or holds a valid AEAT requirement.
+
+The serializer locally checks issuer and representative NIF form/control, required reference
+content and its 18-XML-character maximum, and a real `FechaFinVeriFactu` in the current or
+preceding Madrid calendar year. From 1 January 2027 the supplied date must also be `31-12-20XX`.
+AEAT alone can establish that these identities and the reference are registered, and its system
+clock is authoritative. The parser and serializer both enforce 1–1000 `RegistroFactura` wrappers
+with exactly one alta or cancellation per wrapper. TDD cases in `src/xml/serialize.test.ts` and
+`src/xml/parse-request.test.ts` cover each boundary, XML order, round trips, untyped malformed
+inputs, the year transition, and exact issue messages. The existing fake-AEAT identity tests retain
+their two-taxpayer assertions with valid synthetic NIFs.
+
 ### Own-record hash validation
 
 Validation §3.1.3.23 and §3.1.4.7 require the submitted alta or cancellation hash to match
