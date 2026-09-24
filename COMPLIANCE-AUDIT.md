@@ -52,6 +52,18 @@ is accepted. The [source watch](sources/README.md) checks for publication change
 | Hash specification examples                                                                                                                                              | Canonicalization and `computeHuella` match three published examples                                                                                                                                                                                        | `src/upstream-conformance.test.ts`, fixtures in `test/upstream/`                                                                                                                                                                                                                                                                                                                                                                                                                                                 | The fixtures are packaged by a third party; AEAT's PDF is authoritative                                                                                                                                                                                                              |
 | QR specification examples                                                                                                                                                | QR URL helper matches three supported published examples                                                                                                                                                                                                   | `src/upstream-conformance.test.ts`, fixtures in `test/upstream/`                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Further QR cases and rendering details remain to be audited                                                                                                                                                                                                                          |
 
+### Cancellation generator — validation §3.1.4.1–3
+
+`serializeEnvio` requires `RegistroAnulacion.IDFactura.IDEmisorFacturaAnulada` to match
+`Cabecera.ObligadoEmision.NIF` for every `GeneradoPor` value. The cancellation builder, XML
+serializer, and request parser preserve the optional `GeneradoPor`/`Generador` pair; neither
+field enters the hash. `validate` requires both fields together, exactly one generator identity,
+a distinct and locally valid NIF, a NIF for `E`, the published Spanish `IDOtro` combinations for
+`D`/`T`, no `07` for `T`, and the published EU VAT-number shape for `IDType: "02"`.
+`src/records.test.ts`, `src/xml/*.test.ts`, and `src/validate.test.ts` cover these paths,
+including XML order, round trips, and exact issue details. AEAT alone can confirm that a NIF or
+EU VAT identity is registered.
+
 ### Own-record hash validation
 
 Validation §3.1.3.23 and §3.1.4.7 require the submitted alta or cancellation hash to match

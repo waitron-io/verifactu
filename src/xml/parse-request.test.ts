@@ -294,6 +294,32 @@ describe("parseEnvio", () => {
     expect(parseEnvio(serializeEnvio(cabecera, registros))).toEqual({ cabecera, registros });
   });
 
+  it.each([
+    { NombreRazon: "Cliente Factura SL", NIF: "B99999997" },
+    {
+      NombreRazon: "Client SARL",
+      IDOtro: { CodigoPais: "FR", IDType: "02" as const, ID: "FR12345678901" },
+    },
+  ])("round-trips a cancellation Generador identity", (Generador) => {
+    const anulacion: RegistroAnulacion = {
+      IDVersion: "1.0",
+      IDFactura: {
+        IDEmisorFacturaAnulada: "89890001K",
+        NumSerieFacturaAnulada: "A/1",
+        FechaExpedicionFacturaAnulada: "20-07-2026",
+      },
+      GeneradoPor: "D",
+      Generador,
+      Encadenamiento: { PrimerRegistro: "S" },
+      SistemaInformatico: alta.SistemaInformatico,
+      FechaHoraHusoGenRegistro: "2026-07-20T19:20:30+02:00",
+      TipoHuella: "01",
+      Huella: "XYZ",
+    };
+    const registros: EnvioRegistro[] = [{ RegistroAnulacion: anulacion }];
+    expect(parseEnvio(serializeEnvio(cabecera, registros))).toEqual({ cabecera, registros });
+  });
+
   // toEqual treats an explicit `{ RefExterna: undefined }` as equal to `{}` — it cannot tell
   // pick() correctly skipping an absent key apart from a mutant that copies it through as an
   // explicit undefined (`if (raw[key] !== undefined)` mutated to `if (true)`). toStrictEqual can:

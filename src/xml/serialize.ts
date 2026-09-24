@@ -263,6 +263,11 @@ function terceroXml(value: RegistroAlta["Tercero"]): string {
   return "<sf:Tercero>" + personaFisicaJuridicaContent(value) + "</sf:Tercero>";
 }
 
+function generadorXml(value: RegistroAnulacion["Generador"]): string {
+  if (value === undefined) return "";
+  return "<sf:Generador>" + personaFisicaJuridicaContent(value) + "</sf:Generador>";
+}
+
 function destinatariosXml(value: RegistroAlta["Destinatarios"]): string {
   if (value === undefined) return "";
   return (
@@ -337,6 +342,7 @@ function registroAnulacion(record: RegistroAnulacion): string {
     el("sf", "SinRegistroPrevio", record.SinRegistroPrevio) +
     el("sf", "RechazoPrevio", record.RechazoPrevio) +
     el("sf", "GeneradoPor", record.GeneradoPor) +
+    generadorXml(record.Generador) +
     encadenamiento(record.Encadenamiento) +
     sistemaInformatico(record.SistemaInformatico) +
     el("sf", "FechaHoraHusoGenRegistro", record.FechaHoraHusoGenRegistro) +

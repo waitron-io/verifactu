@@ -149,5 +149,12 @@ two uppercase A-Z letters or digits, and `NombreSistemaInformatico`,
 to alta and cancellation records. Only AEAT can confirm that a locally well-formed producer
 identity is registered.
 
+For cancellations, `GeneradoPor` and `Generador` must either both be present or both be absent.
+`Generador` needs exactly one NIF or `IDOtro`. Its NIF must differ from the taxpayer's; `E`
+requires a NIF. With Spanish `IDOtro`, `D` accepts types `03` and `07`, while `T` requires `03`
+and never accepts `07`. An `IDType: "02"` number must match an uppercase EU VAT-number structure.
+These are blocking local checks. `serializeEnvio` also rejects a cancelled-invoice issuer that
+differs from the submission header. AEAT alone can confirm a tax identity is registered.
+
 When you upgrade, correct any one-character or lowercase system ID and any blank software name or
 usage flag before deploying. Earlier versions accepted those values; `assertValid` now blocks them.

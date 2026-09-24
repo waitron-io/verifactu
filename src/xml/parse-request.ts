@@ -265,6 +265,7 @@ function anulacionOf(raw: RawRecord): RegistroAnulacion {
     Huella: raw.Huella,
   } as RegistroAnulacion;
   pick(record, raw, ["RefExterna", "SinRegistroPrevio", "RechazoPrevio", "GeneradoPor"]);
+  if (raw.Generador !== undefined) record.Generador = destinatarioOf(raw.Generador as RawRecord);
   return record;
 }
 

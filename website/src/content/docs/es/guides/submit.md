@@ -238,6 +238,14 @@ const cancellationResponse = await client.submit(cabecera, [
 Conserva el CSV, interpreta cada línea y respeta el tiempo de espera igual que en un alta.
 Programa este envío de anulación para después de la espera indicada por el envío anterior.
 
+Mantén `IDEmisorFacturaAnulada` igual a `cabecera.ObligadoEmision.NIF`: el serializador rechaza
+otro emisor. Si indicas `GeneradoPor`, incluye también `Generador` con su nombre y un NIF o
+`IDOtro`; la misma regla se aplica a la inversa. El NIF del generador debe ser distinto del del
+obligado. `GeneradoPor: "E"` exige un NIF. Para un `IDOtro` español, `D` permite los tipos `03` y
+`07`, mientras que `T` solo permite `03` y prohíbe `07` con cualquier país. El constructor conserva
+estos campos sin incluirlos en la huella de la anulación. Solo la AEAT puede confirmar que un
+identificador consta en sus registros.
+
 ## Prueba todo sin conexión
 
 En las pruebas sustituye la conexión con certificado por la AEAT falsa del paquete:

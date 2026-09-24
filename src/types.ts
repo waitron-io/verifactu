@@ -194,6 +194,7 @@ export interface RegistroAnulacion {
   SinRegistroPrevio?: SiNo;
   RechazoPrevio?: SiNo;
   GeneradoPor?: "E" | "D" | "T";
+  Generador?: PersonaFisicaJuridica;
   Encadenamiento: Encadenamiento;
   SistemaInformatico: SistemaInformatico;
   FechaHoraHusoGenRegistro: string;
@@ -322,4 +323,5 @@ export interface AnulacionInput extends RecordInputBase {
   SinRegistroPrevio?: SiNo;
   RechazoPrevio?: SiNo;
   GeneradoPor?: "E" | "D" | "T";
+  Generador?: PersonaFisicaJuridica;
 }

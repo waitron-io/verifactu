@@ -159,6 +159,14 @@ en mayúsculas publicadas por la AEAT. La regla GB/XI sigue la fecha efectiva de
 contenido. Estas comprobaciones se aplican a los registros de alta y anulación. Solo la AEAT puede
 confirmar que una identidad del productor bien formada está censada.
 
+En una anulación, indica `GeneradoPor` y `Generador` juntos, o no indiques ninguno. `Generador`
+necesita exactamente un NIF o `IDOtro`. Su NIF debe ser distinto del del obligado, y `E` exige un
+NIF. Para un `IDOtro` español, `D` permite los tipos `03` y `07`; `T` exige `03` y prohíbe `07`
+con cualquier país. Un identificador `IDType: "02"` debe seguir la estructura NIF-IVA de la UE
+en mayúsculas. Estas comprobaciones locales bloquean el registro. `serializeEnvio` también
+rechaza una anulación cuyo emisor no coincida con el NIF de la cabecera. Solo la AEAT puede
+confirmar que un identificador está censado.
+
 Al actualizar, corrige antes del despliegue cualquier identificador del sistema de un solo carácter
 o con minúsculas, y cualquier nombre del programa o indicador de uso vacío. Las versiones anteriores
 aceptaban esos valores; ahora `assertValid` los bloquea.

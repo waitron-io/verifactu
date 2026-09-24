@@ -238,6 +238,14 @@ const cancellationResponse = await client.submit(cabecera, [
 Handle this response, its CSV, and its wait time the same way as an alta. Schedule the cancellation
 submission after the wait returned by the previous submission.
 
+Keep `IDEmisorFacturaAnulada` equal to `cabecera.ObligadoEmision.NIF`; the serializer rejects a
+different issuer. When you set `GeneradoPor`, also supply `Generador` with its name and either a
+NIF or `IDOtro`. The reverse is required too. The generator's NIF must differ from the taxpayer's.
+`GeneradoPor: "E"` requires a NIF. For a Spanish `IDOtro`, `D` accepts ID types `03` and `07`,
+while `T` accepts only `03` and forbids `07` regardless of country. The builder preserves these
+fields without adding them to the cancellation hash. AEAT remains responsible for checking whether
+an identity is registered.
+
 ## Run the flow offline first
 
 Replace the certificate transport with the package's fake AEAT when testing:
