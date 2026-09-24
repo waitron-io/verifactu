@@ -16,6 +16,7 @@ export type ValidationCode =
   | "FECHA_EXPEDICION_FUTURE"
   | "FECHA_EXPEDICION_BEFORE_OPERACION"
   | "FECHA_HORA_FORMAT"
+  | "FECHA_HORA_FUTURE"
   | "HUELLA_FORMAT"
   | "ID_SISTEMA_LENGTH"
   | "ID_SISTEMA_CHARSET"
@@ -145,15 +146,14 @@ const FECHA_PATTERN = /^(\d{2})-(\d{2})-(\d{4})$/;
 /**
  * Pins FechaHoraHusoGenRegistro's full literal shape: `YYYY-MM-DDThh:mm:ss`
  * plus a numeric `+hh:mm`/`-hh:mm` offset (formatDateTime never emits `Z`).
- * The offset's hh:mm is captured separately so its magnitude can be bounded
- * below — a record built from a stale formatter, or one that crossed a
- * runtime boundary (parsed JSON, a database row), might carry an offset like
- * "+166:39" or otherwise outside xs:dateTime's -14:00..+14:00 range even
- * though it matches this shape syntactically. The sign is captured for the
- * current-date calculation below. The hh:mm parts remain non-negative, so
- * the same magnitude bound applies to + and - alike.
+ * Every component is captured so calendar validity and the represented
+ * instant can be checked independently. That separation also lets date-only
+ * rules keep using a valid numeric offset when another timestamp component is
+ * malformed.
  */
-const FECHA_HORA_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}([+-])(\d{2}):(\d{2})$/;
+const FECHA_HORA_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})([+-])(\d{2}):(\d{2})$/;
+/** Order HAC/1177/2024 art. 7(f): the permitted system-clock error is one minute. */
+const GENERATION_TIME_FUTURE_MARGIN_MS = 60_000;
 /** AEAT §3.1.3.3: TipoRectificativa is mandatory iff TipoFactura is a rectificativa. */
 const TIPO_FACTURA_RECTIFICATIVA_PATTERN = /^R[1-5]$/;
 /**
@@ -322,18 +322,63 @@ function isValidAmount(value: string): boolean {
   return AMOUNT_PATTERN.test(value);
 }
 
-function isValidFechaHoraHusoGenRegistro(value: string): boolean {
+interface FechaHoraParts {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+  offsetMinutes: number;
+}
+
+interface ParsedFechaHora extends FechaHoraParts {
+  instant: number;
+}
+
+function isGregorianDate(year: number, month: number, day: number): boolean {
+  if (year < 1 || month < 1 || month > 12) return false;
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return day >= 1 && day <= daysInMonth[month - 1]!;
+}
+
+function parseFechaHoraParts(value: string): FechaHoraParts | undefined {
   const match = FECHA_HORA_PATTERN.exec(value);
-  if (!match) return false;
-  const [, , hh, mm] = match;
+  if (!match) return undefined;
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText, sign, hh, mm] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
   // The pattern only constrains each half to two digits, so "60".."99" match
   // it syntactically — an xs:dateTime offset's minute component must itself
   // be 00-59, independent of the total-minutes bound below. "+00:60" is
   // malformed even though its total (60) is well within +/-14:00, so this
   // check cannot be folded into the total-minutes comparison.
-  if (Number(mm) >= 60) return false;
-  const offsetMinutes = Number(hh) * 60 + Number(mm);
-  return offsetMinutes <= MAX_OFFSET_MINUTES;
+  if (Number(mm) >= 60) return undefined;
+  const offsetMagnitude = Number(hh) * 60 + Number(mm);
+  if (offsetMagnitude > MAX_OFFSET_MINUTES) return undefined;
+  const offsetMinutes = sign === "-" ? -offsetMagnitude : offsetMagnitude;
+  return { year, month, day, hour, minute, second, offsetMinutes };
+}
+
+function parseFechaHoraHusoGenRegistro(value: string): ParsedFechaHora | undefined {
+  const parts = parseFechaHoraParts(value);
+  if (!parts) return undefined;
+  const { year, month, day, hour, minute, second, offsetMinutes } = parts;
+  if (!isGregorianDate(year, month, day)) return undefined;
+  // SuministroInformacion.xsd declares this field as xs:dateTime, whose
+  // lexical space permits 24:00:00 as the following midnight and no other
+  // value in hour 24. The project deliberately omits fractional seconds.
+  if (hour > 24 || minute >= 60 || second >= 60) return undefined;
+  if (hour === 24 && (minute !== 0 || second !== 0)) return undefined;
+  const local = new Date(0);
+  local.setUTCFullYear(year, month - 1, day);
+  local.setUTCHours(hour, minute, second, 0);
+  return { ...parts, instant: local.getTime() - offsetMinutes * 60_000 };
 }
 
 /** Returns YYYYMMDD for a real Gregorian DD-MM-YYYY date, which sorts numerically. */
@@ -344,19 +389,14 @@ function fechaOrdinal(value: string): number | undefined {
   const day = Number(dayText);
   const month = Number(monthText);
   const year = Number(yearText);
-  if (year < 1 || month < 1 || month > 12) return undefined;
-  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
-  const daysInMonth = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-  if (day < 1 || day > daysInMonth[month - 1]!) return undefined;
+  if (!isGregorianDate(year, month, day)) return undefined;
   return year * 10_000 + month * 100 + day;
 }
 
 function currentDateOrdinal(now: Date, fechaHoraHusoGenRegistro: string): number | undefined {
-  const match = FECHA_HORA_PATTERN.exec(fechaHoraHusoGenRegistro);
-  if (!match || !isValidFechaHoraHusoGenRegistro(fechaHoraHusoGenRegistro)) return undefined;
-  const [, sign, hours, minutes] = match;
-  const magnitude = Number(hours) * 60 + Number(minutes);
-  const offsetMinutes = sign === "-" ? -magnitude : magnitude;
+  const parts = parseFechaHoraParts(fechaHoraHusoGenRegistro);
+  if (!parts) return undefined;
+  const { offsetMinutes } = parts;
   const shifted = new Date(now.getTime() + offsetMinutes * 60_000);
   return (
     shifted.getUTCFullYear() * 10_000 + (shifted.getUTCMonth() + 1) * 100 + shifted.getUTCDate()
@@ -440,11 +480,19 @@ export function validate(
   if (!HUELLA_PATTERN.test(record.Huella)) {
     add("HUELLA_FORMAT", "Huella", "Huella must be 64 uppercase hexadecimal characters");
   }
-  if (!isValidFechaHoraHusoGenRegistro(record.FechaHoraHusoGenRegistro)) {
+  const generationTime = parseFechaHoraHusoGenRegistro(record.FechaHoraHusoGenRegistro);
+  if (!generationTime) {
     add(
       "FECHA_HORA_FORMAT",
       "FechaHoraHusoGenRegistro",
       "FechaHoraHusoGenRegistro must be YYYY-MM-DDThh:mm:ss with a numeric offset in -14:00..+14:00",
+    );
+  } else if (generationTime.instant > now.getTime() + GENERATION_TIME_FUTURE_MARGIN_MS) {
+    add(
+      "FECHA_HORA_FUTURE",
+      "FechaHoraHusoGenRegistro",
+      "FechaHoraHusoGenRegistro is more than one minute ahead of the current time",
+      "warning",
     );
   }
   const sistema = record.SistemaInformatico;

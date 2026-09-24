@@ -534,6 +534,99 @@ describe("validate", () => {
     expect(codes(record)).not.toContain("FECHA_HORA_FORMAT");
   });
 
+  it.each([
+    "0000-01-01T10:00:00+01:00",
+    "2024-02-30T10:00:00+01:00",
+    "2024-01-01T24:00:01+01:00",
+    "2024-01-01T10:60:00+01:00",
+    "2024-01-01T10:00:60+01:00",
+  ])("rejects a FechaHoraHusoGenRegistro that is not a real calendar instant: %s", (value) => {
+    const record = valid();
+    record.FechaHoraHusoGenRegistro = value;
+    expect(codes(record)).toContain("FECHA_HORA_FORMAT");
+  });
+
+  it.each([
+    ["1900-02-29T10:00:00+01:00", true],
+    ["2000-02-29T10:00:00+01:00", false],
+    ["2024-02-29T10:00:00+01:00", false],
+    ["2100-02-29T10:00:00+01:00", true],
+  ])("applies Gregorian leap-year rules to %s", (value, invalid) => {
+    const record = valid();
+    record.FechaHoraHusoGenRegistro = value;
+    expect(codes(record).includes("FECHA_HORA_FORMAT")).toBe(invalid);
+  });
+
+  it("accepts XML Schema's end-of-day representation", () => {
+    const record = valid();
+    record.FechaHoraHusoGenRegistro = "2024-01-01T24:00:00+01:00";
+    expect(codes(record)).not.toContain("FECHA_HORA_FORMAT");
+    expect(codes(record, { now: new Date("2024-01-01T22:58:59Z") })).toContain("FECHA_HORA_FUTURE");
+    expect(codes(record, { now: new Date("2024-01-01T22:59:00Z") })).not.toContain(
+      "FECHA_HORA_FUTURE",
+    );
+  });
+
+  it("accepts a generation timestamp exactly one minute ahead of the current instant", () => {
+    const record = valid();
+    record.FechaHoraHusoGenRegistro = "2025-03-29T13:01:00+01:00";
+    expect(codes(record, { now: new Date("2025-03-29T12:00:00Z") })).not.toContain(
+      "FECHA_HORA_FUTURE",
+    );
+  });
+
+  it("warns when the generation timestamp is more than one minute ahead", () => {
+    const record = valid();
+    record.FechaHoraHusoGenRegistro = "2025-03-29T13:01:01+01:00";
+    expect(validate(record, { now: new Date("2025-03-29T12:00:00Z") })).toContainEqual({
+      code: "FECHA_HORA_FUTURE",
+      severity: "warning",
+      field: "FechaHoraHusoGenRegistro",
+      message: "FechaHoraHusoGenRegistro is more than one minute ahead of the current time",
+    });
+    expect(() => assertValid(record, { now: new Date("2025-03-29T12:00:00Z") })).not.toThrow();
+  });
+
+  it("compares generation timestamps as instants rather than local clock values", () => {
+    const record = valid();
+    record.FechaHoraHusoGenRegistro = "2025-03-29T05:01:01-07:00";
+    expect(codes(record, { now: new Date("2025-03-29T12:00:00Z") })).toContain("FECHA_HORA_FUTURE");
+  });
+
+  it("treats equivalent generation timestamps with different offsets identically", () => {
+    const plusOne = valid();
+    plusOne.FechaHoraHusoGenRegistro = "2025-03-29T13:00:00+01:00";
+    const minusSeven = valid();
+    minusSeven.FechaHoraHusoGenRegistro = "2025-03-29T05:00:00-07:00";
+    const now = new Date("2025-03-29T12:00:00Z");
+    expect(codes(plusOne, { now })).not.toContain("FECHA_HORA_FUTURE");
+    expect(codes(minusSeven, { now })).not.toContain("FECHA_HORA_FUTURE");
+  });
+
+  it("does not add a future-time warning to a malformed generation timestamp", () => {
+    const record = valid();
+    record.FechaHoraHusoGenRegistro = "9999-99-99T99:99:99+01:00";
+    const issueCodes = codes(record, { now: new Date("2025-03-29T12:00:00Z") });
+    expect(issueCodes).toContain("FECHA_HORA_FORMAT");
+    expect(issueCodes).not.toContain("FECHA_HORA_FUTURE");
+  });
+
+  it("keeps current-date checks active when only the timestamp calendar fields are malformed", () => {
+    const record = valid();
+    record.IDFactura.FechaExpedicionFactura = "01-01-2099";
+    record.FechaOperacion = "01-01-2099";
+    record.FechaHoraHusoGenRegistro = "2024-02-30T10:00:00+01:00";
+    const issueCodes = codes(record, { now: new Date("2025-03-29T12:00:00Z") });
+    expect(issueCodes).toEqual(
+      expect.arrayContaining([
+        "FECHA_HORA_FORMAT",
+        "FECHA_EXPEDICION_FUTURE",
+        "FECHA_OPERACION_AFTER_NEXT_YEAR",
+        "FECHA_OPERACION_FUTURE",
+      ]),
+    );
+  });
+
   it("rejects a DescripcionOperacion longer than 500 characters", () => {
     const record = valid();
     record.DescripcionOperacion = "x".repeat(501);
@@ -3614,6 +3707,14 @@ describe("validate — RegistroAnulacion", () => {
     expect(anulacionCodes(record)).toContain("FECHA_HORA_FORMAT");
   });
 
+  it("warns about a cancellation timestamp more than one minute ahead", () => {
+    const record = validAnulacion();
+    record.FechaHoraHusoGenRegistro = "2025-03-29T13:01:01+01:00";
+    expect(validate(record, { now: new Date("2025-03-29T12:00:00Z") })).toContainEqual(
+      expect.objectContaining({ code: "FECHA_HORA_FUTURE", severity: "warning" }),
+    );
+  });
+
   it("still checks SistemaInformatico.NIF's length — not an alta-only rule", () => {
     const record = validAnulacion();
     record.SistemaInformatico = { ...SISTEMA, NIF: "SHORT" };
@@ -3771,6 +3872,16 @@ describe("validate — pins the exact field, message and severity for every Vali
         "FechaHoraHusoGenRegistro must be YYYY-MM-DDThh:mm:ss with a numeric offset in -14:00..+14:00",
       mutate: (r) => {
         r.FechaHoraHusoGenRegistro = "2024-01-01T19:20:30";
+      },
+    },
+    {
+      description: "FECHA_HORA_FUTURE",
+      code: "FECHA_HORA_FUTURE",
+      field: "FechaHoraHusoGenRegistro",
+      message: "FechaHoraHusoGenRegistro is more than one minute ahead of the current time",
+      severity: "warning",
+      mutate: (r) => {
+        r.FechaHoraHusoGenRegistro = "9999-12-31T23:59:59+00:00";
       },
     },
     {
