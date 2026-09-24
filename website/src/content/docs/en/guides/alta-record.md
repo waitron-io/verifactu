@@ -31,6 +31,11 @@ Here `saleInput` is the input from the earlier example, including your chain lin
 is broken. For IVA, IPSI, and IGIC tax lines, also set `ClaveRegimen` to the applicable regime code.
 Omit it for other taxes.
 
+An `F2` normally cannot exceed €3,010 when you add every detail line's base and charged tax. If the
+invoice belongs to an AEAT-registered billing agreement, set its registration number in
+`NumRegistroAcuerdoFacturacion`; the builder and XML round trip preserve this non-hashed field.
+Only AEAT can confirm that the number is registered.
+
 For a correction, use `FacturasRectificadas` only with `R1`–`R5`. Use `FacturasSustituidas` only
 with `F3`. `ImporteRectificacion` is required for, and allowed only with, a substitution correction
 (`TipoRectificativa: "S"`). When correcting a record after an AEAT rejection, `RechazoPrevio: "S"`

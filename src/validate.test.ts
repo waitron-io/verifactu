@@ -1761,7 +1761,7 @@ describe("validate — AEAT §3.1.3.7–12", () => {
   });
 });
 
-describe("validate — AEAT §3.1.3.14–15.7", () => {
+describe("validate — AEAT §3.1.3.14–15.8", () => {
   const withDetail = (overrides: Partial<DetalleDesglose>) => {
     const record = valid();
     const detail = { ...record.Desglose[0]!, ...overrides } as DetalleDesglose;
@@ -1784,6 +1784,14 @@ describe("validate — AEAT §3.1.3.14–15.7", () => {
   const withEffectiveDate = (date: string, overrides: Partial<DetalleDesglose>) => {
     const record = withDetail(overrides);
     record.FechaOperacion = date;
+    return record;
+  };
+
+  const simplifiedWithDetails = (Desglose: DetalleDesglose[]) => {
+    const record = valid();
+    record.TipoFactura = "F2";
+    delete record.Destinatarios;
+    record.Desglose = Desglose;
     return record;
   };
 
@@ -2991,6 +2999,154 @@ describe("validate — AEAT §3.1.3.14–15.7", () => {
       expect(result).not.toContain("S1_CUOTA_REPERCUTIDA_FORMULA");
     },
   );
+
+  it.each([
+    ["3010.00", false],
+    ["3010.01", true],
+    ["-999999999999.99", false],
+  ] as const)(
+    "§3.1.3.15.8 applies the F2 upper boundary to a base of %s",
+    (BaseImponibleOimporteNoSujeto, rejected) => {
+      const record = simplifiedWithDetails([
+        {
+          Impuesto: "05",
+          CalificacionOperacion: "N1",
+          BaseImponibleOimporteNoSujeto,
+        },
+      ]);
+      expect(codes(record).includes("F2_AMOUNT_LIMIT")).toBe(rejected);
+    },
+  );
+
+  it("§3.1.3.15.8 sums base and charged tax across every desglose line", () => {
+    const record = simplifiedWithDetails([
+      {
+        Impuesto: "05",
+        CalificacionOperacion: "N1",
+        BaseImponibleOimporteNoSujeto: "2000.00",
+      },
+      {
+        Impuesto: "05",
+        CalificacionOperacion: "N1",
+        BaseImponibleOimporteNoSujeto: "1010.01",
+      },
+    ]);
+    expect(codes(record)).toContain("F2_AMOUNT_LIMIT");
+  });
+
+  it("§3.1.3.15.8 keeps the aggregate +10.00 boundary exact to the cent", () => {
+    const record = simplifiedWithDetails([
+      {
+        Impuesto: "05",
+        CalificacionOperacion: "N1",
+        BaseImponibleOimporteNoSujeto: "2000.01",
+      },
+      {
+        Impuesto: "05",
+        CalificacionOperacion: "N1",
+        BaseImponibleOimporteNoSujeto: "1009.99",
+      },
+    ]);
+    expect(codes(record)).not.toContain("F2_AMOUNT_LIMIT");
+  });
+
+  it("§3.1.3.15.8 includes CuotaRepercutida but excludes recargo in the F2 sum", () => {
+    const chargedTax = simplifiedWithDetails([
+      {
+        Impuesto: "05",
+        CalificacionOperacion: "S1",
+        TipoImpositivo: "21.00",
+        BaseImponibleOimporteNoSujeto: "2487.61",
+        CuotaRepercutida: "522.40",
+      },
+    ]);
+    expect(codes(chargedTax)).toContain("F2_AMOUNT_LIMIT");
+
+    const recargo = simplifiedWithDetails([
+      {
+        Impuesto: "05",
+        CalificacionOperacion: "N1",
+        BaseImponibleOimporteNoSujeto: "3010.00",
+        CuotaRecargoEquivalencia: "999.00",
+      },
+    ]);
+    expect(codes(recargo)).not.toContain("F2_AMOUNT_LIMIT");
+  });
+
+  it("§3.1.3.15.8 does not apply the simplified-invoice limit to another invoice type", () => {
+    const record = valid();
+    record.Desglose = [
+      {
+        Impuesto: "05",
+        CalificacionOperacion: "N1",
+        BaseImponibleOimporteNoSujeto: "3010.01",
+      },
+    ];
+    expect(codes(record)).not.toContain("F2_AMOUNT_LIMIT");
+  });
+
+  it("§3.1.3.15.8 skips the F2 limit when a billing-agreement number is present", () => {
+    const record = simplifiedWithDetails([
+      {
+        Impuesto: "05",
+        CalificacionOperacion: "N1",
+        BaseImponibleOimporteNoSujeto: "3010.01",
+      },
+    ]);
+    record.NumRegistroAcuerdoFacturacion = "ACUERDO-1";
+    expect(codes(record)).not.toContain("F2_AMOUNT_LIMIT");
+  });
+
+  it("§3.1.3.15.8 skips the F2 limit only for article 6.1.d value S", () => {
+    const exempt = simplifiedWithDetails([
+      {
+        Impuesto: "05",
+        CalificacionOperacion: "N1",
+        BaseImponibleOimporteNoSujeto: "3010.01",
+      },
+    ]);
+    exempt.FacturaSinIdentifDestinatarioArt61d = "S";
+    expect(codes(exempt)).not.toContain("F2_AMOUNT_LIMIT");
+
+    exempt.FacturaSinIdentifDestinatarioArt61d = "N";
+    expect(codes(exempt)).toContain("F2_AMOUNT_LIMIT");
+  });
+
+  it("§3.1.3.15.8 does not derive an F2 limit issue from a malformed amount", () => {
+    const record = simplifiedWithDetails([
+      {
+        Impuesto: "05",
+        CalificacionOperacion: "N1",
+        BaseImponibleOimporteNoSujeto: "bad",
+      },
+    ]);
+    const result = codes(record);
+    expect(result).toContain("AMOUNT_FORMAT");
+    expect(result).not.toContain("F2_AMOUNT_LIMIT");
+  });
+
+  it.each([
+    ["123456789012345", false],
+    ["1234567890123456", true],
+  ] as const)(
+    "validates the NumRegistroAcuerdoFacturacion 15-character boundary: %s",
+    (NumRegistroAcuerdoFacturacion, rejected) => {
+      const record = valid();
+      record.NumRegistroAcuerdoFacturacion = NumRegistroAcuerdoFacturacion;
+      expect(codes(record).includes("NUM_REGISTRO_ACUERDO_LENGTH")).toBe(rejected);
+    },
+  );
+
+  it("rejects XML control characters in NumRegistroAcuerdoFacturacion", () => {
+    const record = valid();
+    record.NumRegistroAcuerdoFacturacion = "ACUERDO\u0001";
+    expect(validate(record)).toContainEqual(
+      expect.objectContaining({
+        code: "CONTROL_CHAR",
+        field: "NumRegistroAcuerdoFacturacion",
+      }),
+    );
+  });
 });
 
 describe("validate — Destinatarios rules (F1/F3/R1-R4 require, F2/R5 forbid)", () => {
@@ -4235,6 +4391,32 @@ describe("validate — pins the exact field, message and severity for every Vali
         r.Desglose[0]!.TipoImpositivo = "21.00";
         r.Desglose[0]!.BaseImponibleOimporteNoSujeto = "100.00";
         r.Desglose[0]!.CuotaRepercutida = "31.01";
+      },
+    },
+    {
+      description: "F2_AMOUNT_LIMIT",
+      code: "F2_AMOUNT_LIMIT",
+      field: "Desglose",
+      message: "F2 base plus charged-tax total exceeds 3,000.00 beyond the 10.00 tolerance",
+      mutate: (r) => {
+        r.TipoFactura = "F2";
+        delete r.Destinatarios;
+        r.Desglose = [
+          {
+            Impuesto: "05",
+            CalificacionOperacion: "N1",
+            BaseImponibleOimporteNoSujeto: "3010.01",
+          },
+        ];
+      },
+    },
+    {
+      description: "NUM_REGISTRO_ACUERDO_LENGTH",
+      code: "NUM_REGISTRO_ACUERDO_LENGTH",
+      field: "NumRegistroAcuerdoFacturacion",
+      message: "NumRegistroAcuerdoFacturacion is at most 15 characters",
+      mutate: (r) => {
+        r.NumRegistroAcuerdoFacturacion = "1234567890123456";
       },
     },
     {

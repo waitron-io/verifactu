@@ -50,6 +50,15 @@ const alta: RegistroAlta = {
 };
 
 describe("parseEnvio", () => {
+  it("round-trips NumRegistroAcuerdoFacturacion", () => {
+    const withAgreement = {
+      ...alta,
+      NumRegistroAcuerdoFacturacion: "ACUERDO-1",
+    } satisfies RegistroAlta;
+    const registros: EnvioRegistro[] = [{ RegistroAlta: withAgreement }];
+    expect(parseEnvio(serializeEnvio(cabecera, registros))).toEqual({ cabecera, registros });
+  });
+
   it("round-trips a single alta losslessly", () => {
     const registros: EnvioRegistro[] = [{ RegistroAlta: alta }];
     expect(parseEnvio(serializeEnvio(cabecera, registros))).toEqual({ cabecera, registros });

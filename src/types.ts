@@ -176,6 +176,8 @@ export interface RegistroAlta {
   Encadenamiento: Encadenamiento;
   SistemaInformatico: SistemaInformatico;
   FechaHoraHusoGenRegistro: string;
+  /** Optional AEAT billing-agreement registration number. Not part of the huella input. */
+  NumRegistroAcuerdoFacturacion?: string;
   TipoHuella: TipoHuella;
   Huella: string;
 }
@@ -302,6 +304,8 @@ export interface AltaInput extends RecordInputBase {
   Desglose: DetalleDesgloseInput[];
   CuotaTotal: string;
   ImporteTotal: string;
+  /** Optional AEAT billing-agreement registration number. Not part of the huella input. */
+  NumRegistroAcuerdoFacturacion?: string;
 }
 
 export interface AnulacionInput extends RecordInputBase {

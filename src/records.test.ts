@@ -67,6 +67,7 @@ describe("buildAltaRecord", () => {
     expect(Object.hasOwn(record, "EmitidaPorTerceroODestinatario")).toBe(false);
     expect(Object.hasOwn(record, "Tercero")).toBe(false);
     expect(Object.hasOwn(record, "Cupon")).toBe(false);
+    expect(Object.hasOwn(record, "NumRegistroAcuerdoFacturacion")).toBe(false);
     const detalle = record.Desglose[0]!;
     expect(Object.hasOwn(detalle, "Impuesto")).toBe(false);
     expect(Object.hasOwn(detalle, "ClaveRegimen")).toBe(false);
@@ -202,10 +203,9 @@ describe("buildAltaRecord — optional field pass-through", () => {
   });
 });
 
-describe("buildAltaRecord — rectificativa fields", () => {
-  // Seven fields RegistroAlta supports and serializeEnvio already serialises,
-  // but that AltaInput previously had no way to populate. TipoRectificativa is
-  // deliberately NOT in this group: AEAT §3.1.3.3 forbids it whenever
+describe("buildAltaRecord — optional non-hashed fields", () => {
+  // These eight optional fields do not feed the huella. TipoRectificativa is
+  // deliberately not in this shared group: AEAT §3.1.3.3 forbids it whenever
   // TipoFactura is not R1-R5, so an F1 record (ALTA_INPUT's TipoFactura) can
   // never legally carry it. The invoice-family-specific fields added alongside
   // it get valid R1 or F3 fixtures below instead of being spread onto
@@ -218,9 +218,10 @@ describe("buildAltaRecord — rectificativa fields", () => {
     FacturaSinIdentifDestinatarioArt61d: "S",
     Macrodato: "S",
     Cupon: "S",
+    NumRegistroAcuerdoFacturacion: "ACUERDO-1",
   } as const;
 
-  it("passes through all seven fields when supplied", () => {
+  it("passes through all eight fields when supplied", () => {
     const record = buildAltaRecord({ ...ALTA_INPUT, ...EXTRAS });
     expect(record.Subsanacion).toBe("S");
     expect(record.RechazoPrevio).toBe("S");
@@ -229,6 +230,7 @@ describe("buildAltaRecord — rectificativa fields", () => {
     expect(record.FacturaSinIdentifDestinatarioArt61d).toBe("S");
     expect(record.Macrodato).toBe("S");
     expect(record.Cupon).toBe("S");
+    expect(record.NumRegistroAcuerdoFacturacion).toBe("ACUERDO-1");
   });
 
   it("formats FechaOperacion as DD-MM-YYYY using the record's own offset, like FechaExpedicionFactura", () => {
@@ -241,8 +243,8 @@ describe("buildAltaRecord — rectificativa fields", () => {
     expect(record.FechaOperacion).toBe("16-03-2024");
   });
 
-  it("does not change the huella when the seven non-hashed optional fields are populated", () => {
-    // Critical invariant: none of these seven fields feed the huella — the
+  it("does not change the huella when the eight non-hashed optional fields are populated", () => {
+    // Critical invariant: none of these eight fields feed the huella — the
     // canonical hash string (CadenaAltaInput) uses only IDEmisorFactura,
     // NumSerieFactura, FechaExpedicionFactura, TipoFactura, CuotaTotal,
     // ImporteTotal, the predecessor huella and FechaHoraHusoGenRegistro.

@@ -216,6 +216,7 @@ function altaOf(raw: RawRecord): RegistroAlta {
     "Cupon",
     "CuotaTotal",
     "ImporteTotal",
+    "NumRegistroAcuerdoFacturacion",
   ]);
   const fr = raw.FacturasRectificadas as
     { IDFacturaRectificada: RawRecord | RawRecord[] } | undefined;

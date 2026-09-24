@@ -101,6 +101,12 @@ base or rate is zero. A nonzero `CuotaRepercutida` is not permitted outside `S1`
 specific issues report the same violation for `S2`, IVA `N1`/`N2`, and exempt lines, so you receive
 one useful issue instead of duplicate messages.
 
+For a simplified `F2` invoice, the sum of `BaseImponibleOimporteNoSujeto` and
+`CuotaRepercutida` across every detail line may reach €3,010, including AEAT's +€10 acceptance
+margin. The limit does not apply when you supply `NumRegistroAcuerdoFacturacion` or set
+`FacturaSinIdentifDestinatarioArt61d: "S"`. Agreement numbers are limited to the XSD's 15-character
+maximum; only AEAT can confirm that a well-formed number is registered.
+
 Keep `IDEmisorFactura` equal to `Cabecera.ObligadoEmision.NIF`. `serializeEnvio` rejects the batch
 when those values differ, before it creates XML. AEAT permits a wider printable-ASCII alphabet in
 `NumSerieFactura`, but this library accepts only letters, digits, `/`, `_`, `.`, and `-`. That
