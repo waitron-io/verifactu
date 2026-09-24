@@ -29,12 +29,10 @@ const record = buildAltaRecord({
 } satisfies AltaInput);
 
 describe("buildQrPayload", () => {
-  it("builds the production URL for AEAT's published example, with the record's own two-decimal importe", () => {
-    // AEAT's published example itself writes importe=241.4 (one decimal) and
-    // gives only the preproduction URL verbatim — there is no published
-    // production-URL example to match text-for-text. This asserts the
-    // library's actual (correct) behaviour: it passes the record's own
-    // literal through unreformatted, which here is "241.40" because that's
+  it("uses the published production endpoint with the record's two-decimal importe", () => {
+    // AEAT §8.3 publishes a production URL with importe=241.4. This asserts
+    // the library's pass-through behaviour: it uses the record's own
+    // literal unreformatted, which here is "241.40" because that's
     // what this fixture's ImporteTotal was built as.
     expect(buildQrPayload(record, "production")).toBe(
       "https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR" +
@@ -42,11 +40,10 @@ describe("buildQrPayload", () => {
     );
   });
 
-  it("matches AEAT's published preproduction example verbatim, apart from the decimal-places policy", () => {
+  it("uses the published preproduction endpoint with the record's two-decimal importe", () => {
     // AEAT's own text uses importe=241.4; this fixture's ImporteTotal is
     // "241.40" (formatAmountExact always emits two decimal places), so the two
-    // literals differ by a trailing zero AEAT's own formatting policy would
-    // also have produced from the same value — everything else here matches
+    // literals differ by a trailing zero — everything else here matches
     // AEAT's published preproduction example character for character.
     expect(buildQrPayload(record, "preproduction")).toBe(
       "https://prewww2.aeat.es/wlpl/TIKE-CONT/ValidarQR" +
@@ -87,9 +84,8 @@ describe("buildQrPayload", () => {
     // canonical form" -- both produce an identical result. Force the two to
     // diverge by spreading in non-canonical literals: values a recomputation
     // would normalise but a pass-through would not touch. This is what
-    // actually matters for the receipt: AEAT recomputes the hash from
-    // whatever literal appears in the printed QR, so any reformatting here
-    // would silently break verification of an unrecallable receipt.
+    // matters for a printed invoice: reformatting here could make its QR
+    // differ from the values in the submitted record.
     const nonCanonical = {
       ...record,
       IDFactura: {

@@ -14,8 +14,11 @@ console.log(payload);
 ```
 
 Use `"preproduction"` for tests. The payload takes its NIF, invoice number, date, and total from
-the built record, so it matches the values you send. To render an SVG, install the small
-`qrcode-generator` package in your application:
+the built record, so it matches the values you send. Keep the printed QR URL to those four
+parameters. AEAT's optional `idioma` and `formato=json` options belong to separate lookup
+requests, not to the URL encoded in the invoice's QR.
+
+To render an SVG, install the small `qrcode-generator` package in your application:
 
 ```sh
 npm install qrcode-generator
@@ -61,5 +64,13 @@ if (jsQR(pixels, width, width)?.data !== payload) throw new Error("QR changed th
 
 The [site's published snippet check](https://github.com/waitron-io/verifactu/blob/main/website/scripts/verify-docs.mjs)
 executes this round trip. The decoded value must match **exactly**, including punctuation and
-percent escapes. Level `M` is the error correction setting in this recipe. Your invoice renderer
-remains responsible for AEAT's physical print size and a clear quiet zone around the QR.
+percent escapes. Level `M` is the error correction setting in this recipe. The four white modules
+in the test help the decoder; they do not establish the printed margin in millimetres.
+
+When you place the QR on an invoice, use an ISO/IEC 18004:2015 QR with level `M` error correction
+and size it between 30 × 30 and 40 × 40 mm. Leave at least 2 mm
+of blank space on every side; AEAT recommends 6 mm. Keep strong contrast, put it prominently
+before the invoice content, and show it only once on the first page. Print `QR tributario:` above
+it and either `Factura verificable en la sede electrónica de la AEAT` or `VERI*FACTU` below it.
+Make both labels at least as legible as the other invoice data. Your invoice renderer, not this URL
+helper, must satisfy these [AEAT presentation rules](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf).

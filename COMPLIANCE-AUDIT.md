@@ -11,7 +11,7 @@ is accepted. The [source watch](sources/README.md) checks for publication change
 | [Validation rules and errors](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Validaciones_Errores_Veri-Factu.pdf)          | 1.2.2, 8 April 2026                        | In progress; selected rules below                                                                                          |
 | [Web service description](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_Descripcion_SWeb.pdf)             | 1.0.3, 28 July 2025                        | Pending systematic review                                                                                                  |
 | [Hash specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_especificaciones_huella_hash_registros.pdf) | 0.1.2, 27 August 2024                      | §§2–7 checked for alta and cancellation; event records out of scope; decimal-variant comparison pending AEAT preproduction |
-| [QR specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf)               | 0.5.0, 10 December 2025                    | Three supported published examples checked; remaining prose pending review                                                 |
+| [QR specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf)               | 0.5.0, 10 December 2025                    | §§2–10 and 12 classified; verifiable QR URL rules checked; printed layout and lookup responses outside library scope       |
 | [Developer FAQ](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/FAQs-Desarrolladores.pdf)                              | 1.3, 4 December 2025                       | Pending entry-by-entry review                                                                                              |
 | [Public FAQ](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes.html)                                 | Pages listed by AEAT on 22 September 2026  | Pending entry-by-entry review                                                                                              |
 | [XSD and WSDL files](schemas/README.md)                                                                                                                            | Versions and checksums in the linked index | Pending element-by-element review                                                                                          |
@@ -217,6 +217,31 @@ and identifiers such as `ClaveRegimen: "01"` and `NumeroInstalacion: "001"` are 
 The local check does not replace AEAT's schema or service validation.
 Checks that need a parsed amount, including the large-invoice `Macrodato` check, defer until the
 amount's syntax is corrected; callers should validate again after fixing an `AMOUNT_FORMAT` issue.
+
+### QR URL and printed presentation — QR specification §§2–10, 12
+
+The public `buildQrPayload` returns a URL, not a QR image. For a verifiable invoice, it selects the
+published preproduction or production `/ValidarQR` endpoint (§5.1), percent-encodes the record's
+NIF, serial, date, and amount (§4), and includes exactly those four mandatory parameters in the
+published order (§6). It passes the record's text through unchanged: AEAT's §8 examples use a
+one-decimal amount, while the builders emit two decimals. `src/qr.test.ts`, `src/endpoints.test.ts`,
+and `src/upstream-conformance.test.ts` cover the supported URLs and examples. The local
+QR-safe serial alphabet is deliberately narrower than the printable ASCII accepted in §4/§6.
+Callers should use a built and validated record; `buildQrPayload` itself does not validate one.
+
+Section 7 allows optional `idioma` and `formato=json` on separate service requests, but §6
+restricts the URL _inside the printed QR_ to four parameters and §7 expressly excludes `formato`
+from it. The helper therefore adds neither option. The non-verifiable `/ValidarQRNoVerifactu`
+URLs in §5.2 and §8, and the HTML/JSON lookup responses and errors in §§9–10, are outside this
+library's public QR helper. It does not claim to parse or classify those responses.
+
+The image requirements in §§2–3 and the printed examples in §12 belong to the invoice renderer:
+ISO/IEC 18004:2015, 30–40 mm square, error-correction level M, at least 2 mm clear space on each side (6 mm
+recommended), prominent placement before content on the first page, `QR tributario:` above, and
+the prescribed verifiable-invoice wording below. The English and Spanish QR guides now state
+these requirements. Their render/decode example proves payload round-tripping, not physical
+dimensions, placement, or print contrast. Section 11 cites the governing law but adds no
+separate URL-format rule.
 
 ## Remaining work
 
