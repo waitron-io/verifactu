@@ -80,6 +80,11 @@ function buildAnulacion(alta: RegistroAlta): RegistroAnulacion {
 const VALID_ALTA_INPUT: AltaInput = {
   ...ALTA_INPUT,
   FechaExpedicionFactura: new Date("2024-10-28T00:00:00+01:00"),
+  // ALTA_INPUT reproduces an AEAT hash vector whose arbitrary amounts are
+  // not a §15.7 formula example. Keep this validation fixture internally consistent.
+  Desglose: [{ ...ALTA_INPUT.Desglose[0]!, CuotaRepercutida: "23.33" }],
+  CuotaTotal: "23.33",
+  ImporteTotal: "134.43",
 };
 
 function buildValidAlta(input: AltaInput = VALID_ALTA_INPUT): RegistroAlta {
@@ -126,7 +131,7 @@ describe("differential XML conformance with @inoguerols/verifactu", () => {
     const first = buildValidAlta();
     const anulacion = buildAnulacion(first);
     const last = buildValidAlta({
-      ...ALTA_INPUT,
+      ...VALID_ALTA_INPUT,
       NumSerieFactura: "POS/000002",
       Encadenamiento: {
         RegistroAnterior: {
@@ -158,7 +163,7 @@ describe("differential XML conformance with @inoguerols/verifactu", () => {
 
   it("compares optional rectification fields, a foreign recipient and escaped text", () => {
     const record = buildValidAlta({
-      ...ALTA_INPUT,
+      ...VALID_ALTA_INPUT,
       FechaExpedicionFactura: new Date("2024-10-28T00:00:00+01:00"),
       NumSerieFactura: "R/000001",
       TipoFactura: "R1",

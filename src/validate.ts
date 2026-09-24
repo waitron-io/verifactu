@@ -45,6 +45,11 @@ export type ValidationCode =
   | "REGIMEN_14_DESTINATARIO_ID"
   | "REGIMEN_14_TIPO_FACTURA"
   | "REGIMEN_20_IGIC_CALIFICACION"
+  | "CUOTA_REPERCUTIDA_NONZERO_FORBIDDEN"
+  | "S1_TIPO_IMPOSITIVO_REQUIRED"
+  | "S1_CUOTA_REPERCUTIDA_REQUIRED"
+  | "S1_CUOTA_REPERCUTIDA_SIGN"
+  | "S1_CUOTA_REPERCUTIDA_FORMULA"
   | "TIPO_RANGE"
   | "CUOTA_TOTAL_MISMATCH"
   | "IMPORTE_TOTAL_MISMATCH"
@@ -150,6 +155,8 @@ const TIPO_FACTURA_RECTIFICATIVA_PATTERN = /^R[1-5]$/;
 const NUMSERIE_PATTERN = /^[A-Za-z0-9/_.-]+$/;
 /** AEAT applies a +/- 10.00 euro tolerance on the total cross-checks. */
 const TOTAL_TOLERANCE = 10;
+/** AEAT applies a separate +/- 10.00 euro tolerance to the charged-tax formula. */
+const CUOTA_REPERCUTIDA_TOLERANCE = 10;
 /** AEAT validation §3.1.3.16–17 omits both total cross-checks for these regimes. */
 const TOTAL_CHECK_EXEMPT_REGIMES = new Set(["03", "05", "06", "08", "09"]);
 /**
@@ -969,12 +976,85 @@ export function validate(
 
     const field = `Desglose[${index}]`;
     const isIvaOrIgic = isIva || isIgic;
-    const isS1 = detalle.CalificacionOperacion === "S1";
+    // A line that carries both choice branches is already invalid. Do not
+    // prescribe S1-only fields that the exemption branch simultaneously forbids.
+    const isS1 = detalle.CalificacionOperacion === "S1" && !hasExenta;
     const validTipoImpositivo =
       detalle.TipoImpositivo === undefined || TIPO_PATTERN.test(detalle.TipoImpositivo);
     const validTipoRecargo =
       detalle.TipoRecargoEquivalencia === undefined ||
       TIPO_PATTERN.test(detalle.TipoRecargoEquivalencia);
+
+    // AEAT validation §3.1.3.15.7 allows a nonzero charged tax only on S1.
+    // The narrower S2, IVA N1/N2, and exemption checks already report those
+    // branches, so this fills the remaining tax/qualification combinations
+    // without duplicating an issue for the same field.
+    const validCuotaRepercutida =
+      detalle.CuotaRepercutida === undefined || isValidAmount(detalle.CuotaRepercutida);
+    const cuotaRepercutidaNonzero =
+      detalle.CuotaRepercutida !== undefined &&
+      validCuotaRepercutida &&
+      Number(detalle.CuotaRepercutida) !== 0;
+    const nonS1CuotaAlreadyReported =
+      detalle.CalificacionOperacion === "S2" ||
+      (isIva && ["N1", "N2"].includes(detalle.CalificacionOperacion ?? "")) ||
+      detalle.OperacionExenta !== undefined;
+    if (cuotaRepercutidaNonzero && !isS1 && !nonS1CuotaAlreadyReported) {
+      add(
+        "CUOTA_REPERCUTIDA_NONZERO_FORBIDDEN",
+        `${field}.CuotaRepercutida`,
+        "CuotaRepercutida may be nonzero only when CalificacionOperacion is S1",
+      );
+    }
+
+    if (isS1) {
+      if (detalle.TipoImpositivo === undefined) {
+        add(
+          "S1_TIPO_IMPOSITIVO_REQUIRED",
+          `${field}.TipoImpositivo`,
+          "TipoImpositivo is mandatory when CalificacionOperacion is S1",
+        );
+      }
+      if (detalle.CuotaRepercutida === undefined) {
+        add(
+          "S1_CUOTA_REPERCUTIDA_REQUIRED",
+          `${field}.CuotaRepercutida`,
+          "CuotaRepercutida is mandatory when CalificacionOperacion is S1",
+        );
+      }
+
+      const formulaBase = detalle.BaseImponibleACoste ?? detalle.BaseImponibleOimporteNoSujeto;
+      const formulaInputsValid =
+        detalle.TipoImpositivo !== undefined &&
+        validTipoImpositivo &&
+        detalle.CuotaRepercutida !== undefined &&
+        validCuotaRepercutida &&
+        isValidAmount(formulaBase);
+      const formulaExempt =
+        record.TipoRectificativa === "I" || ["R2", "R3"].includes(record.TipoFactura);
+      if (formulaInputsValid && !formulaExempt) {
+        const base = Number(formulaBase);
+        const cuota = Number(detalle.CuotaRepercutida);
+        const rate = Number(detalle.TipoImpositivo);
+        const zeroContradictsFormula =
+          (cuota === 0 && base !== 0 && rate !== 0) || (base === 0 && cuota !== 0);
+        const oppositeSigns = base !== 0 && cuota !== 0 && base < 0 !== cuota < 0;
+        if (zeroContradictsFormula || oppositeSigns) {
+          add(
+            "S1_CUOTA_REPERCUTIDA_SIGN",
+            `${field}.CuotaRepercutida`,
+            "CuotaRepercutida and its applicable base must have the same sign",
+          );
+        }
+        if (Math.abs(cuota - (base * rate) / 100) > CUOTA_REPERCUTIDA_TOLERANCE) {
+          add(
+            "S1_CUOTA_REPERCUTIDA_FORMULA",
+            `${field}.CuotaRepercutida`,
+            "CuotaRepercutida must equal its applicable base times TipoImpositivo within 10.00",
+          );
+        }
+      }
+    }
 
     if (isIvaOrIgic) {
       if (detalle.ClaveRegimen === "02" && detalle.OperacionExenta === undefined) {
