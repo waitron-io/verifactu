@@ -1,4 +1,4 @@
-import { MAX_OFFSET_MINUTES } from "./format.js";
+import { MAX_OFFSET_MINUTES, trimValue } from "./format.js";
 import { hasValidNifControl } from "./nif.js";
 import { isAlta } from "./types.js";
 import type { RegistroAlta, RegistroAnulacion } from "./types.js";
@@ -1363,14 +1363,17 @@ export function validate(
     );
   }
 
+  // Only the two fields named by §15.8 gate this check. A malformed surcharge
+  // is independently invalid but cannot corrupt a sum that excludes it.
   const f2AmountsValid = record.Desglose.every(
     ({ BaseImponibleOimporteNoSujeto, CuotaRepercutida }) =>
       isValidAmount(BaseImponibleOimporteNoSujeto) &&
       (CuotaRepercutida === undefined || isValidAmount(CuotaRepercutida)),
   );
+  const hasBillingAgreementNumber = trimValue(record.NumRegistroAcuerdoFacturacion).length > 0;
   if (
     record.TipoFactura === "F2" &&
-    record.NumRegistroAcuerdoFacturacion === undefined &&
+    !hasBillingAgreementNumber &&
     record.FacturaSinIdentifDestinatarioArt61d !== "S" &&
     f2AmountsValid &&
     record.Desglose.reduce(

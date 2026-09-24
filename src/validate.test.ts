@@ -3097,6 +3097,25 @@ describe("validate — AEAT §3.1.3.14–15.8", () => {
     expect(codes(record)).not.toContain("F2_AMOUNT_LIMIT");
   });
 
+  it.each([
+    ["", true],
+    ["   ", true],
+    [" ACUERDO-1 ", false],
+  ] as const)(
+    "§3.1.3.15.8 treats billing-agreement value %j as populated only when nonblank",
+    (NumRegistroAcuerdoFacturacion, rejected) => {
+      const record = simplifiedWithDetails([
+        {
+          Impuesto: "05",
+          CalificacionOperacion: "N1",
+          BaseImponibleOimporteNoSujeto: "3010.01",
+        },
+      ]);
+      record.NumRegistroAcuerdoFacturacion = NumRegistroAcuerdoFacturacion;
+      expect(codes(record).includes("F2_AMOUNT_LIMIT")).toBe(rejected);
+    },
+  );
+
   it("§3.1.3.15.8 skips the F2 limit only for article 6.1.d value S", () => {
     const exempt = simplifiedWithDetails([
       {
@@ -3112,12 +3131,39 @@ describe("validate — AEAT §3.1.3.14–15.8", () => {
     expect(codes(exempt)).toContain("F2_AMOUNT_LIMIT");
   });
 
-  it("§3.1.3.15.8 does not derive an F2 limit issue from a malformed amount", () => {
+  it.each([
+    {
+      Impuesto: "05",
+      CalificacionOperacion: "N1",
+      BaseImponibleOimporteNoSujeto: "5000.123",
+    },
+    {
+      Impuesto: "05",
+      CalificacionOperacion: "S1",
+      TipoImpositivo: "0.00",
+      BaseImponibleOimporteNoSujeto: "0.00",
+      CuotaRepercutida: "+3010.01",
+    },
+  ] satisfies Array<DetalleDesglose>)(
+    "§3.1.3.15.8 does not derive an F2 limit issue from malformed amount %o",
+    (detail) => {
+      const result = codes(simplifiedWithDetails([detail]));
+      expect(result).toContain("AMOUNT_FORMAT");
+      expect(result).not.toContain("F2_AMOUNT_LIMIT");
+    },
+  );
+
+  it("§3.1.3.15.8 suppresses the derived limit when any included detail amount is malformed", () => {
     const record = simplifiedWithDetails([
       {
         Impuesto: "05",
         CalificacionOperacion: "N1",
-        BaseImponibleOimporteNoSujeto: "bad",
+        BaseImponibleOimporteNoSujeto: "3010.01",
+      },
+      {
+        Impuesto: "05",
+        CalificacionOperacion: "N1",
+        BaseImponibleOimporteNoSujeto: "5000.123",
       },
     ]);
     const result = codes(record);
