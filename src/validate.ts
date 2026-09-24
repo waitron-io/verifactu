@@ -692,6 +692,7 @@ export function validate(
       }
       if (generador.NIF !== undefined) {
         checkNif("Generador.NIF", generador.NIF);
+        // The serializer requires this cancellation issuer to equal the header taxpayer NIF.
         if (generador.NIF === record.IDFactura.IDEmisorFacturaAnulada) {
           add(
             "GENERADOR_NIF_EQUALS_EMISOR",
@@ -703,6 +704,7 @@ export function validate(
       if (record.GeneradoPor === "E" && !hasNif) {
         add("GENERADOR_E_REQUIRES_NIF", "Generador.NIF", "GeneradoPor E requires Generador.NIF");
       }
+      // AEAT applies D's 03/07 choice only to Spanish IDs; T bans 07 regardless of country.
       if (generador.IDOtro?.CodigoPais === "ES" && ["D", "T"].includes(record.GeneradoPor ?? "")) {
         const allowed = record.GeneradoPor === "D" ? ["03", "07"] : ["03"];
         if (!allowed.includes(generador.IDOtro.IDType)) {

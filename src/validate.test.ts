@@ -3907,6 +3907,19 @@ describe("validate — RegistroAnulacion", () => {
     }
   });
 
+  it.each([undefined, "FR"] as const)(
+    "§3.1.4.3 D does not apply its Spanish IDType restriction to country %s",
+    (CodigoPais) => {
+      const record = withGenerator("D");
+      record.Generador = {
+        NombreRazon: "Other",
+        IDOtro: { CodigoPais, IDType: "07", ID: "X-1" },
+      };
+      expect(anulacionCodes(record)).not.toContain("GENERADOR_ES_IDTYPE");
+      expect(anulacionCodes(record)).not.toContain("GENERADOR_IDTYPE_07_FORBIDDEN");
+    },
+  );
+
   it("§3.1.4.3 T requires Spanish IDType 03 and forbids IDType 07", () => {
     const record = withGenerator("T");
     record.Generador = {

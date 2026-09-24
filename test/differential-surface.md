@@ -40,7 +40,7 @@ each difference against an AEAT source and keep the resulting regression case.
 
 The reference's version `1.5.3` does not emit `Subsanacion`, `RechazoPrevio`,
 `Macrodato` or `Cupon` in alta XML, or `RefExterna`, `SinRegistroPrevio`,
-`RechazoPrevio` or `GeneradoPor` in anulación XML. Keep those fields covered
+`RechazoPrevio`, `GeneradoPor` or `Generador` in anulación XML. Keep those fields covered
 by this package's direct serializer and schema tests; do not treat an unequal
 reference output as evidence they should be removed.
 
