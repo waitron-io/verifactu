@@ -62,6 +62,15 @@ cliente, nunca el par voluntario `SOAP_ENDPOINTS` que se muestra abajo. La consu
 disponible para los envíos voluntarios VERI*FACTU. La biblioteca representa ese XML, pero no
 determina la modalidad de tu SIF ni confirma que la AEAT haya emitido el requerimiento.
 
+El resto de esta guía construye registros nuevos para el envío voluntario VERI*FACTU. Ante un
+requerimiento, envía los registros tal como los conservó tu SIF, sin reconstruirlos ni cambiar
+sus datos de negocio para satisfacer `assertValid`. La AEAT admite los errores de validación de
+negocio en esos registros, salvo los de identificación por NIF o `IDOtro`, que todavía pueden
+causar su rechazo. Revisa cada resultado, pero no subsanes los errores de negocio de los
+registros conservados. En el último lote indica `FinRequerimiento: "S"` en
+`RemisionRequerimiento`, incluso si solo hay un lote. No puedes consultar esos registros mediante
+el servicio de consulta de los envíos voluntarios.
+
 El serializador comprueba la forma del NIF del obligado y del representante antes del envío.
 También comprueba el límite de 18 caracteres de la referencia y una `FechaFinVeriFactu` indicada:
 su año debe ser el actual o el anterior y, desde el 1 de enero de 2027, la fecha debe tener la
@@ -134,8 +143,10 @@ for (const record of [first, second]) {
 }
 ```
 
-Revisa los avisos; los errores impiden el envío. La validación local no sustituye a la respuesta
-de la AEAT, que determina el resultado de cada registro enviado.
+Revisa los avisos; los errores impiden este envío voluntario. No uses este control de
+`assertValid` para los registros ya conservados por tu SIF que la AEAT te ha requerido. La
+validación local no sustituye a la respuesta de la AEAT, que determina el resultado de cada
+registro enviado.
 
 ## Proporciona un fetch con certificado
 
@@ -203,6 +214,12 @@ función consulta el detalle del duplicado. `duplicate_annulled` exige investiga
 `duplicate_unknown` indica que la AEAT no aclaró lo que guarda: consulta y compara las huellas
 antes de decidir. `TiempoEsperaEnvio` son los **segundos** que exige esperar antes del siguiente
 envío; programa el próximo lote en consecuencia.
+
+En VERI*FACTU voluntario, un registro rechazado o aceptado con un error admisible puede requerir
+un nuevo registro subsanado. Comprueba antes si procede una factura rectificativa o una anulación.
+La AEAT exceptúa algunos errores admisibles, como una hora de generación futura, de la obligación
+de subsanar. Ante un requerimiento, no apliques ese proceso de subsanación voluntaria a los
+errores de negocio de los registros conservados.
 
 ## Consulta cuando el resultado es incierto
 
