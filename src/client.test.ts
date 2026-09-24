@@ -75,6 +75,9 @@ describe("createClient", () => {
     const init = fetch.mock.calls[0]?.[1] as RequestInit;
     expect(init.method).toBe("POST");
     expect((init.headers as Record<string, string>)["Content-Type"]).toContain("text/xml");
+    expect((init.headers as Record<string, string>)["Content-Type"]).toBe(
+      "text/xml; charset=utf-8",
+    );
     expect(String(init.body)).toContain("RegFactuSistemaFacturacion");
     // Pins that the body is the *serialised registros*, not a hardcoded
     // stub: the record's own huella can only be present here if the array
