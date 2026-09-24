@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { escapeXml } from "./escape.js";
 import { serializeConsulta, serializeEnvio } from "./serialize.js";
-import type { Cabecera, EnvioRegistro } from "./serialize.js";
+import type { Cabecera, CabeceraConsulta, EnvioRegistro } from "./serialize.js";
 import { buildAltaRecord, buildAnulacionRecord } from "../records.js";
 import { ALTA_INPUT, CABECERA, SISTEMA, withoutNif } from "../../test/fixtures.js";
 import type { AltaInput, AnulacionInput } from "../types.js";
@@ -1157,6 +1157,39 @@ describe("exact document output — pins the complete serialised string, not fra
 });
 
 describe("serializeConsulta", () => {
+  it.each(["00", "1", "13", "AA"])("rejects consultation period %s outside 01–12", (periodo) => {
+    expect(() => serializeConsulta(CABECERA, { Ejercicio: "2024", Periodo: periodo })).toThrow(
+      "Consulta Periodo must be 01 through 12",
+    );
+  });
+
+  it.each(["01", "12"])("accepts boundary consultation period %s", (periodo) => {
+    expect(serializeConsulta(CABECERA, { Ejercicio: "2024", Periodo: periodo })).toContain(
+      `<sf:Periodo>${periodo}</sf:Periodo>`,
+    );
+  });
+
+  it("rejects an N representative indicator in a consultation", () => {
+    const invalid: CabeceraConsulta = {
+      ObligadoEmision: CABECERA.ObligadoEmision,
+      // @ts-expect-error The consultation XSD permits S, not N.
+      IndicadorRepresentante: "N",
+    };
+    expect(() => serializeConsulta(invalid, { Ejercicio: "2024", Periodo: "07" })).toThrow(
+      "Consulta IndicadorRepresentante must be S",
+    );
+  });
+
+  it("rejects a representative indicator on a recipient consultation", () => {
+    const invalid = {
+      Destinatario: { NombreRazon: "Cliente Uno", NIF: "11111111H" },
+      IndicadorRepresentante: "S",
+    } as unknown as CabeceraConsulta;
+    expect(() => serializeConsulta(invalid, { Ejercicio: "2024", Periodo: "07" })).toThrow(
+      "Consulta IndicadorRepresentante requires ObligadoEmision",
+    );
+  });
+
   it("serializes a recipient consulta header and representative flag", () => {
     const xml = serializeConsulta(
       {

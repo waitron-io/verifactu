@@ -157,6 +157,15 @@ describe("createClient", () => {
     expect(String(init.body)).toContain("<sf:Ejercicio>2024</sf:Ejercicio>");
   });
 
+  it("does not send a consulta with an invalid month", async () => {
+    const fetch = fakeFetch(CONSULTA_OK);
+    const client = createClient({ endpoint: "https://example.test/soap", fetch });
+    await expect(client.consultar(CABECERA, { Ejercicio: "2024", Periodo: "13" })).rejects.toThrow(
+      "Consulta Periodo must be 01 through 12",
+    );
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("reports a SOAP fault returned with HTTP 200", async () => {
     const client = createClient({
       endpoint: "https://example.test/soap",

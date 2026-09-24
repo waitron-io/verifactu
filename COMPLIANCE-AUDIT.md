@@ -155,6 +155,16 @@ The fake AEAT does not emulate AEAT's text trimming. A focused submission probe 
 check behavior that depends on the agency's trimmed response or stored value. The exact Unicode
 scope of AEAT's whitespace normalization remains unverified by a live response.
 
+### Consultation list values — service description §6.5.1 and `SuministroInformacion.xsd`
+
+`PeriodoImputacion.Periodo` permits only the zero-padded months `01`–`12`, and a consultation's
+`IndicadorRepresentante` permits only `S` when `ObligadoEmision` is present. `serializeConsulta`
+rejects an invalid month or representative flag before sending XML. `parseConsulta` applies the
+same checks to a parsed request; the public header type now excludes `N`. Boundary, invalid-value,
+and recipient-header cases are covered in `src/xml/serialize.test.ts` and
+`src/xml/parse-request.test.ts`. `ConsultaFiltro.Periodo` remains a `string` so callers can supply a
+dynamically formatted month; the runtime boundary enforces the published list.
+
 ### Own-record hash validation
 
 Validation §3.1.3.23 and §3.1.4.7 require the submitted alta or cancellation hash to match

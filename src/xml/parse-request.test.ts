@@ -517,6 +517,41 @@ describe("parseConsulta full header and date choice", () => {
     });
   });
 
+  it("rejects a parsed N representative indicator in a consultation", () => {
+    const xml = serializeConsulta(
+      {
+        ObligadoEmision: cabecera.ObligadoEmision,
+        IndicadorRepresentante: "S",
+      },
+      { Ejercicio: "2026", Periodo: "07" },
+    ).replace(
+      "<sf:IndicadorRepresentante>S</sf:IndicadorRepresentante>",
+      "<sf:IndicadorRepresentante>N</sf:IndicadorRepresentante>",
+    );
+    expect(() => parseConsulta(xml)).toThrow("Consulta IndicadorRepresentante must be S");
+  });
+
+  it("rejects a parsed representative indicator on a recipient consultation", () => {
+    const xml = serializeConsulta(
+      { Destinatario: { NombreRazon: "Cliente Uno", NIF: "11111111H" } },
+      { Ejercicio: "2026", Periodo: "07" },
+    ).replace(
+      "</sf:Destinatario>",
+      "</sf:Destinatario><sf:IndicadorRepresentante>S</sf:IndicadorRepresentante>",
+    );
+    expect(() => parseConsulta(xml)).toThrow(
+      "Consulta IndicadorRepresentante requires ObligadoEmision",
+    );
+  });
+
+  it.each(["00", "13"])("rejects a parsed consultation period of %s", (periodo) => {
+    const xml = serializeConsulta(cabecera, { Ejercicio: "2026", Periodo: "07" }).replace(
+      "<sf:Periodo>07</sf:Periodo>",
+      `<sf:Periodo>${periodo}</sf:Periodo>`,
+    );
+    expect(() => parseConsulta(xml)).toThrow("Consulta Periodo must be 01 through 12");
+  });
+
   it("rejects a consulta header without an issuer or recipient", () => {
     const xml = serializeConsulta(cabecera, { Ejercicio: "2026", Periodo: "07" }).replace(
       /<sf:ObligadoEmision>.*<\/sf:ObligadoEmision>/,

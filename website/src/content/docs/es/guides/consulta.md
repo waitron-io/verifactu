@@ -48,6 +48,10 @@ const recibidas = await client.consultar(
 );
 ```
 
+Indica en `Periodo` un mes de dos dígitos, de `"01"` a `"12"`, como `"07"` en la consulta
+anterior. El cliente rechaza un valor incorrecto antes de enviar el XML a la AEAT. Si calculas
+el mes a partir de una fecha, rellénalo con un cero en lugar de enviar `"7"`.
+
 `NumSerieFactura` y `FechaExpedicionFactura` acotan la consulta; omítelos para recorrer el
 periodo. Usa `RangoFechaExpedicion` con `Desde` y `Hasta` para acotar un intervalo de fechas. Es
 una alternativa a `FechaExpedicionFactura`; el serializador rechaza una solicitud que envíe ambos.
@@ -66,7 +70,8 @@ El destinatario usa otra cabecera de consulta e identifica al emisor como contra
 la consulta `recibidas` anterior.
 
 Indica `IndicadorRepresentante: "S"` junto a `ObligadoEmision` cuando el titular del certificado
-consulta como representante del emisor.
+consulta como representante del emisor. `"N"` no es válido en una consulta; omite el indicador
+si no consultas como representante. No lo incluyas en una consulta como destinatario.
 
 Cuando `IndicadorPaginacion` sea `"S"`, envía la `ClavePaginacion` recibida en la
 siguiente consulta. El CSV del envío no se puede recuperar aquí: la consulta no lo devuelve.
