@@ -79,6 +79,12 @@ assertValid(record);
 const qr = buildQrPayload(record, "production");
 ```
 
+Use `NIF` for a Spanish software producer. For a producer identified outside Spain, replace `NIF`
+with `IDOtro`; never provide both. `IdSistemaInformatico` is always exactly two uppercase letters
+from A to Z or digits. The software name and both `TipoUsoPosible...` flags must contain a value.
+Local validation checks these published rules, but only AEAT can confirm that an identity is
+registered.
+
 Use `validate` when you want to show several issues in a form. Call `assertValid` immediately before
 submission when invalid records should stop the operation. It throws `VerifactuValidationError`
 with a readable message such as `SistemaInformatico.NombreSistemaInformatico: ... at most 30

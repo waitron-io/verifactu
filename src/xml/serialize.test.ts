@@ -3,7 +3,7 @@ import { escapeXml } from "./escape.js";
 import { serializeConsulta, serializeEnvio } from "./serialize.js";
 import type { Cabecera } from "./serialize.js";
 import { buildAltaRecord, buildAnulacionRecord } from "../records.js";
-import { ALTA_INPUT, CABECERA, SISTEMA } from "../../test/fixtures.js";
+import { ALTA_INPUT, CABECERA, SISTEMA, withoutNif } from "../../test/fixtures.js";
 import type { AltaInput, AnulacionInput } from "../types.js";
 
 const record = buildAltaRecord(ALTA_INPUT);
@@ -76,6 +76,44 @@ describe("serializeEnvio", () => {
     expect(xml).toContain(
       "<sf:BaseImponibleOimporteNoSujeto>111.10</sf:BaseImponibleOimporteNoSujeto>",
     );
+  });
+
+  it("emits a foreign software producer through the SistemaInformatico IDOtro choice", () => {
+    const commonSystem = withoutNif(SISTEMA);
+    const foreignSystem = {
+      ...commonSystem,
+      IDOtro: { CodigoPais: "FR", IDType: "02", ID: "FR12345678901" },
+    } satisfies AltaInput["SistemaInformatico"];
+    const foreignRecord = buildAltaRecord({
+      ...ALTA_INPUT,
+      SistemaInformatico: foreignSystem,
+    });
+
+    const xml = serializeEnvio(CABECERA, [{ RegistroAlta: foreignRecord }]);
+
+    expect(xml).toContain(
+      "<sf:SistemaInformatico>" +
+        "<sf:NombreRazon>Waitron</sf:NombreRazon>" +
+        "<sf:IDOtro>" +
+        "<sf:CodigoPais>FR</sf:CodigoPais>" +
+        "<sf:IDType>02</sf:IDType>" +
+        "<sf:ID>FR12345678901</sf:ID>" +
+        "</sf:IDOtro>" +
+        "<sf:NombreSistemaInformatico>Waitron POS</sf:NombreSistemaInformatico>",
+    );
+  });
+
+  it("requires exactly one software-producer identity at the type level", () => {
+    const commonSystem = withoutNif(SISTEMA);
+    // @ts-expect-error - SistemaInformatico is the XSD choice NIF xor IDOtro.
+    const both: AltaInput["SistemaInformatico"] = {
+      ...commonSystem,
+      NIF: "89890001K",
+      IDOtro: { IDType: "03", ID: "OTHER" },
+    };
+    // @ts-expect-error - one identity branch is mandatory.
+    const neither: AltaInput["SistemaInformatico"] = commonSystem;
+    expect([both, neither]).toHaveLength(2);
   });
 
   it("emits NumRegistroAcuerdoFacturacion at its XSD ordinal", () => {

@@ -41,9 +41,8 @@ export type Encadenamiento =
   | { PrimerRegistro: "S"; RegistroAnterior?: never }
   | { RegistroAnterior: RegistroAnterior; PrimerRegistro?: never };
 
-export interface SistemaInformatico {
+interface SistemaInformaticoCommon {
   NombreRazon: string;
-  NIF: string;
   NombreSistemaInformatico: string;
   IdSistemaInformatico: string;
   Version: string;
@@ -52,6 +51,10 @@ export interface SistemaInformatico {
   TipoUsoPosibleMultiOT: SiNo;
   IndicadorMultiplesOT: SiNo;
 }
+
+/** Software producer identity, using the NIF/IDOtro choice required by the XSD. */
+export type SistemaInformatico = SistemaInformaticoCommon &
+  ({ NIF: string; IDOtro?: never } | { IDOtro: IDOtro; NIF?: never });
 
 interface DetalleDesgloseCommon {
   Impuesto?: string;

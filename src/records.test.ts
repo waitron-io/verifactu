@@ -3,7 +3,7 @@ import { buildAltaRecord, buildAnulacionRecord } from "./records.js";
 import { computeHuella } from "./huella.js";
 import { validate } from "./validate.js";
 import { VECTOR_1_HUELLA } from "../test/vectors.js";
-import { ALTA_INPUT, SISTEMA } from "../test/fixtures.js";
+import { ALTA_INPUT, SISTEMA, withoutNif } from "../test/fixtures.js";
 import type { AltaInput, AnulacionInput } from "./types.js";
 
 describe("buildAltaRecord", () => {
@@ -151,6 +151,18 @@ describe("buildAnulacionRecord", () => {
 });
 
 describe("buildAltaRecord — optional field pass-through", () => {
+  it("preserves a foreign software-producer identity", () => {
+    const common = withoutNif(SISTEMA);
+    const SistemaInformatico: AltaInput["SistemaInformatico"] = {
+      ...common,
+      IDOtro: { CodigoPais: "FR", IDType: "02", ID: "FR12345678901" },
+    };
+
+    expect(buildAltaRecord({ ...ALTA_INPUT, SistemaInformatico }).SistemaInformatico).toEqual(
+      SistemaInformatico,
+    );
+  });
+
   it("includes RefExterna when supplied", () => {
     const record = buildAltaRecord({ ...ALTA_INPUT, RefExterna: "REF-1" });
     expect(record.RefExterna).toBe("REF-1");

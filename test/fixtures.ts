@@ -10,7 +10,7 @@ import type { AltaInput, SistemaInformatico } from "../src/types.js";
  * example verbatim.
  */
 
-export const SISTEMA: SistemaInformatico = {
+export const SISTEMA = {
   NombreRazon: "Waitron",
   NIF: "89890001K",
   NombreSistemaInformatico: "Waitron POS",
@@ -20,7 +20,13 @@ export const SISTEMA: SistemaInformatico = {
   TipoUsoPosibleSoloVerifactu: "S",
   TipoUsoPosibleMultiOT: "S",
   IndicadorMultiplesOT: "N",
-};
+} satisfies SistemaInformatico;
+
+export function withoutNif<T extends { NIF: string }>(value: T): Omit<T, "NIF"> {
+  const copy = { ...value };
+  Reflect.deleteProperty(copy, "NIF");
+  return copy;
+}
 
 export const CABECERA = { ObligadoEmision: { NombreRazon: "Waitron SL", NIF: "89890001K" } };
 

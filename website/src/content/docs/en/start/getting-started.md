@@ -49,6 +49,11 @@ console.log(record.Huella); // 64 uppercase hexadecimal characters
 console.log(validate(record)); // [] for this example
 ```
 
+Use `NIF` for a Spanish software producer. For a producer identified outside Spain, replace `NIF`
+with `IDOtro`; never provide both. `IdSistemaInformatico` must contain exactly two uppercase A-Z
+letters or digits. The software name and both `TipoUsoPosible...` flags must not be blank. These are
+local checks; only AEAT can confirm that the identity is registered.
+
 `offsetMinutes` is the issuing location's UTC offset **at issue time**. Spain's mainland uses 120
 minutes in summer and 60 in winter; derive it from the issuing location's calendar rather than
 hard-coding it. `buildAltaRecord` formats amounts and dates once and hashes those same strings.

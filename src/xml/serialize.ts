@@ -117,7 +117,7 @@ function sistemaInformatico(sistema: SistemaInformatico): string {
   return (
     "<sf:SistemaInformatico>" +
     el("sf", "NombreRazon", sistema.NombreRazon) +
-    el("sf", "NIF", sistema.NIF) +
+    (sistema.NIF !== undefined ? el("sf", "NIF", sistema.NIF) : idOtroXml(sistema.IDOtro)) +
     el("sf", "NombreSistemaInformatico", sistema.NombreSistemaInformatico) +
     el("sf", "IdSistemaInformatico", sistema.IdSistemaInformatico) +
     el("sf", "Version", sistema.Version) +
