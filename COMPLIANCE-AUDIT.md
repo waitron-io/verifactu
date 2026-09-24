@@ -119,11 +119,13 @@ entire batch response. The fake AEAT emits the block for accepted, rejected, and
 Parser and fake-AEAT tests cover both operation kinds, correction indicators, unfamiliar codes,
 and wire element order. The parser continues to accept an omitted block for partial test
 fixtures; it is not a full XSD validator and cannot establish that AEAT returned a schema-valid
-response. The fake's duplicate-detail block now uses the XSD's child namespace and order, with
+response. The fake's duplicate-detail block now uses the XSD's child-namespace qualification and order, with
 a stable synthetic petition ID for the previously stored record. When a test deliberately hides
 the duplicate state, the fake omits the optional block rather than emitting an empty block with
 missing required children. `src/testing/fake-aeat.test.ts` checks the raw XML and both parsed
-paths. This does not establish whole-response schema validity: the fake still uses placeholder
+paths. A submitted cancellation replaces the stored record and its petition ID; the fake's
+state-only `annul` hook keeps the original alta and petition ID. This does not establish
+whole-response schema validity: the fake still uses placeholder
 namespace URIs and does not emit every required envelope field, including `Cabecera`.
 
 ### Own-record hash validation

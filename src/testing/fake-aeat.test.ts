@@ -247,6 +247,9 @@ describe("fake AEAT — submit", () => {
       .submit(cabecera, [{ RegistroAnulacion: anulacionFixture("A/1") }]);
     expect(repeated.RespuestaLinea[0]?.CodigoErrorRegistro).toBe(3000);
     expect(repeated.RespuestaLinea[0]?.RegistroDuplicado?.EstadoRegistroDuplicado).toBe("Anulada");
+    expect(repeated.RespuestaLinea[0]?.RegistroDuplicado?.IdPeticionRegistroDuplicado).toBe(
+      "PET-00000002",
+    );
   });
 
   it("an anulación's own external reference replaces the alta reference", async () => {
@@ -664,7 +667,6 @@ describe("fake AEAT — resubmit (error 3000) and consulta", () => {
     const again = await client.submit(cabecera, [{ RegistroAlta: altaFixture("A/1") }]);
     expect(again.RespuestaLinea[0].CodigoErrorRegistro).toBe(3000);
     expect(again.RespuestaLinea[0].RegistroDuplicado).toBeUndefined();
-    expect(again.RespuestaLinea[0].RegistroDuplicado?.EstadoRegistroDuplicado).toBeUndefined();
     expect(wireResponse).not.toContain("<sfR:RegistroDuplicado>");
   });
 
@@ -701,6 +703,10 @@ describe("fake AEAT — resubmit (error 3000) and consulta", () => {
     aeat.annul(keyOf(altaFixture("A/1")));
     const again = await aeat.client().submit(cabecera, [{ RegistroAlta: altaFixture("A/1") }]);
     expect(again.RespuestaLinea[0].RegistroDuplicado?.EstadoRegistroDuplicado).toBe("Anulada");
+    expect(again.RespuestaLinea[0].RegistroDuplicado?.IdPeticionRegistroDuplicado).toBe(
+      "PET-00000001",
+    );
+    expect(aeat.stored()[0]).toMatchObject({ tipo: "alta", huella: "H-A/1" });
   });
 });
 
