@@ -113,12 +113,15 @@ their two-taxpayer assertions with valid synthetic NIFs.
 
 `RespuestaSuministro.xsd` requires an `Operacion` block on every response line, with a nested
 `TipoOperacion` (`Alta` or `Anulacion`) and optional correction indicators in the order defined by
-`SuministroInformacion.xsd`. `parseRespuestaSuministro` now exposes that structured block with
-checked code values instead of typing it as a string, and the fake AEAT emits it for accepted,
-rejected, and duplicate records. Parser and fake-AEAT tests cover both operation kinds, correction
-indicators, and invalid codes. The parser continues to accept an omitted block for partial test
+`SuministroInformacion.xsd`. `parseRespuestaSuministro` now exposes that structured block instead
+of typing it as a string. It preserves unfamiliar code values so one line cannot discard the
+entire batch response. The fake AEAT emits the block for accepted, rejected, and duplicate records.
+Parser and fake-AEAT tests cover both operation kinds, correction indicators, unfamiliar codes,
+and wire element order. The parser continues to accept an omitted block for partial test
 fixtures; it is not a full XSD validator and cannot establish that AEAT returned a schema-valid
-response.
+response. The fake's existing duplicate-detail block still differs from the XSD in its child
+namespace and, on the unknown-detail path, its required petition ID; it must not be used as
+whole-response schema-conformance evidence.
 
 ### Own-record hash validation
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createFakeAeat, keyOf } from "./fake-aeat.js";
+import { createClient } from "../client.js";
 import type { RegistroAlta, RegistroAnulacion } from "../types.js";
 import { serializeConsulta } from "../xml/serialize.js";
 import { withoutNif } from "../../test/fixtures.js";
@@ -122,6 +123,31 @@ describe("fake AEAT — submit", () => {
     });
   });
 
+  it("emits operation children in response-XSD order", async () => {
+    const aeat = createFakeAeat();
+    let wireResponse = "";
+    const client = createClient({
+      endpoint: "https://example.test/Verifactu",
+      fetch: async (input, init) => {
+        const response = await aeat.fetch(input, init);
+        wireResponse = await response.clone().text();
+        return response;
+      },
+    });
+    await client.submit(cabecera, [
+      {
+        RegistroAlta: {
+          ...altaFixture("A/ORDER"),
+          Subsanacion: "S",
+          RechazoPrevio: "X",
+        },
+      },
+    ]);
+    expect(wireResponse).toContain(
+      "<sfR:Operacion><sf:TipoOperacion>Alta</sf:TipoOperacion><sf:Subsanacion>S</sf:Subsanacion><sf:RechazoPrevio>X</sf:RechazoPrevio></sfR:Operacion>",
+    );
+  });
+
   it("rejects a record on the configured reject list, marking the envío ParcialmenteCorrecto", async () => {
     const aeat = createFakeAeat();
     aeat.reject(keyOf(altaFixture("A/9")), 1100, "Campo obligatorio ausente");
@@ -133,6 +159,7 @@ describe("fake AEAT — submit", () => {
       ]);
     expect(r.EstadoEnvio).toBe("ParcialmenteCorrecto");
     expect(r.RespuestaLinea[1]?.EstadoRegistro).toBe("Incorrecto");
+    expect(r.RespuestaLinea[1]?.Operacion).toEqual({ TipoOperacion: "Alta" });
     expect(r.RespuestaLinea[1]?.CodigoErrorRegistro).toBe(1100);
     expect(aeat.stored().map((s) => s.key)).toEqual([keyOf(altaFixture("A/1"))]); // rejected one not stored
   });
@@ -143,10 +170,12 @@ describe("fake AEAT — submit", () => {
     const record = altaFixture("A/1", "25-07-2026");
     const r = await client.submit(cabecera, [{ RegistroAlta: record }]);
     expect(r.RespuestaLinea[0]?.EstadoRegistro).toBe("AceptadoConErrores");
+    expect(r.RespuestaLinea[0]?.Operacion).toEqual({ TipoOperacion: "Alta" });
     expect(r.RespuestaLinea[0]?.CodigoErrorRegistro).toBe(2004);
     expect(aeat.stored()[0]?.estado).toBe("AceptadoConErrores");
 
     const duplicate = await client.submit(cabecera, [{ RegistroAlta: record }]);
+    expect(duplicate.RespuestaLinea[0]?.Operacion).toEqual({ TipoOperacion: "Alta" });
     expect(duplicate.RespuestaLinea[0]?.RegistroDuplicado?.EstadoRegistroDuplicado).toBe(
       "AceptadaConErrores",
     );

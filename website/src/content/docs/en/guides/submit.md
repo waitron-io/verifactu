@@ -213,6 +213,11 @@ accepted. The resolved state reads the duplicate detail. `duplicate_annulled` ne
 decide what to do. `TiempoEsperaEnvio` is AEAT's wait in **seconds** before the next submission;
 schedule it rather than sending the next batch immediately.
 
+If you need to distinguish an alta from a cancellation, read `line.Operacion?.TipoOperacion`.
+`Operacion` is a structured object, not the string `"Alta"` or `"Anulacion"`. The parser
+preserves an unfamiliar operation code instead of discarding the accepted lines and CSV in the
+same batch.
+
 For voluntary Veri*Factu, a rejected record or one accepted with an admissible error may require
 a new corrected record. First check whether a rectificativa or cancellation is required instead.
 AEAT exempts some admissible errors, including a future generation timestamp, from correction.

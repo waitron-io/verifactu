@@ -215,6 +215,11 @@ función consulta el detalle del duplicado. `duplicate_annulled` exige investiga
 antes de decidir. `TiempoEsperaEnvio` son los **segundos** que exige esperar antes del siguiente
 envío; programa el próximo lote en consecuencia.
 
+Si necesitas distinguir un alta de una anulación, consulta `line.Operacion?.TipoOperacion`.
+`Operacion` es un objeto con varios campos, no la cadena `"Alta"` ni `"Anulacion"`. El analizador
+mantiene los códigos de operación desconocidos en vez de descartar las líneas aceptadas y el CSV
+del mismo lote.
+
 En VERI*FACTU voluntario, un registro rechazado o aceptado con un error admisible puede requerir
 un nuevo registro subsanado. Comprueba antes si procede una factura rectificativa o una anulación.
 La AEAT exceptúa algunos errores admisibles, como una hora de generación futura, de la obligación

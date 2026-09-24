@@ -142,12 +142,49 @@ describe("parseRespuestaSuministro", () => {
     ["Subsanacion", "X"],
     ["RechazoPrevio", "Z"],
     ["SinRegistroPrevio", "X"],
-  ] as const)("rejects an invalid response Operacion.%s", (field, value) => {
+  ] as const)("preserves an unfamiliar response Operacion.%s", (field, value) => {
     const xml = ACCEPTED.replace(
       "<EstadoRegistro>Correcto</EstadoRegistro>",
       `<Operacion><TipoOperacion>${field === "TipoOperacion" ? value : "Anulacion"}</TipoOperacion>${field === "TipoOperacion" ? "" : `<${field}>${value}</${field}>`}</Operacion><EstadoRegistro>Correcto</EstadoRegistro>`,
     );
-    expect(() => parseRespuestaSuministro(xml)).toThrow(`Operacion.${field}`);
+    expect(parseRespuestaSuministro(xml).RespuestaLinea[0]?.Operacion?.[field]).toBe(value);
+  });
+
+  it("retains the accepted line and CSV when another line has an unfamiliar operation", () => {
+    const xml = ACCEPTED.replace(
+      "</RespuestaRegFactuSistemaFacturacion>",
+      `<RespuestaLinea><IDFactura><IDEmisorFactura>89890001K</IDEmisorFactura><NumSerieFactura>OTHER</NumSerieFactura><FechaExpedicionFactura>01-01-2024</FechaExpedicionFactura></IDFactura><Operacion><TipoOperacion>Other</TipoOperacion></Operacion><EstadoRegistro>Incorrecto</EstadoRegistro></RespuestaLinea></RespuestaRegFactuSistemaFacturacion>`,
+    );
+    const response = parseRespuestaSuministro(xml);
+    expect(response.CSV).toBe("ABC123CSV");
+    expect(response.RespuestaLinea.map((line) => line.EstadoRegistro)).toEqual([
+      "Correcto",
+      "Incorrecto",
+    ]);
+    expect(response.RespuestaLinea[1]?.Operacion?.TipoOperacion).toBe("Other");
+  });
+
+  it("trims whitespace in response operation codes without changing other leaf values", () => {
+    const xml = ACCEPTED.replace(
+      "<EstadoRegistro>Correcto</EstadoRegistro>",
+      "<Operacion><TipoOperacion> Alta </TipoOperacion><Subsanacion> S </Subsanacion></Operacion><EstadoRegistro>Correcto</EstadoRegistro>",
+    );
+    const response = parseRespuestaSuministro(xml);
+    expect(response.RespuestaLinea[0]?.Operacion).toEqual({
+      TipoOperacion: "Alta",
+      Subsanacion: "S",
+    });
+    expect(response.RespuestaLinea[0]?.IDFactura.NumSerieFactura).toBe("12345678/G33");
+  });
+
+  it("keeps an empty operation block inspectable without losing the response", () => {
+    const xml = ACCEPTED.replace(
+      "<EstadoRegistro>Correcto</EstadoRegistro>",
+      "<Operacion/><EstadoRegistro>Correcto</EstadoRegistro>",
+    );
+    const response = parseRespuestaSuministro(xml);
+    expect(response.CSV).toBe("ABC123CSV");
+    expect(response.RespuestaLinea[0]?.Operacion).toEqual({});
   });
 
   it("normalises a single line into an array", () => {

@@ -15,10 +15,10 @@ export interface RegistroDuplicado {
 }
 
 export interface OperacionRespuesta {
-  TipoOperacion: "Alta" | "Anulacion";
-  Subsanacion?: "S" | "N";
-  RechazoPrevio?: "S" | "N" | "X";
-  SinRegistroPrevio?: "S" | "N";
+  TipoOperacion?: string;
+  Subsanacion?: string;
+  RechazoPrevio?: string;
+  SinRegistroPrevio?: string;
 }
 
 export interface RespuestaLinea {
@@ -101,35 +101,15 @@ function parseRegistroDuplicado(
   };
 }
 
-function siNoOperacion(value: string | undefined, field: string): "S" | "N" | undefined {
-  if (value !== undefined && value !== "S" && value !== "N") {
-    throw new Error(`Operacion.${field} must be S or N, received ${value}`);
-  }
-  return value;
-}
-
 function parseOperacion(raw: RawRespuestaLinea["Operacion"]): OperacionRespuesta | undefined {
   if (raw === undefined) return undefined;
-  if (raw.TipoOperacion !== "Alta" && raw.TipoOperacion !== "Anulacion") {
-    throw new Error(
-      `Operacion.TipoOperacion must be Alta or Anulacion, received ${String(raw.TipoOperacion)}`,
-    );
-  }
-  const subsanacion = siNoOperacion(raw.Subsanacion, "Subsanacion");
-  const sinRegistroPrevio = siNoOperacion(raw.SinRegistroPrevio, "SinRegistroPrevio");
-  if (
-    raw.RechazoPrevio !== undefined &&
-    raw.RechazoPrevio !== "S" &&
-    raw.RechazoPrevio !== "N" &&
-    raw.RechazoPrevio !== "X"
-  ) {
-    throw new Error(`Operacion.RechazoPrevio must be S, N, or X, received ${raw.RechazoPrevio}`);
-  }
+  if (typeof raw !== "object" || raw === null) return {};
+  // An unfamiliar code must not discard the whole batch's states and CSV.
   return {
-    TipoOperacion: raw.TipoOperacion,
-    ...(subsanacion !== undefined && { Subsanacion: subsanacion }),
-    ...(raw.RechazoPrevio !== undefined && { RechazoPrevio: raw.RechazoPrevio }),
-    ...(sinRegistroPrevio !== undefined && { SinRegistroPrevio: sinRegistroPrevio }),
+    ...(raw.TipoOperacion !== undefined && { TipoOperacion: raw.TipoOperacion.trim() }),
+    ...(raw.Subsanacion !== undefined && { Subsanacion: raw.Subsanacion.trim() }),
+    ...(raw.RechazoPrevio !== undefined && { RechazoPrevio: raw.RechazoPrevio.trim() }),
+    ...(raw.SinRegistroPrevio !== undefined && { SinRegistroPrevio: raw.SinRegistroPrevio.trim() }),
   };
 }
 
