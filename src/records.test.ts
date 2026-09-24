@@ -149,6 +149,17 @@ describe("buildAnulacionRecord", () => {
     expect(record.RechazoPrevio).toBe("S");
     expect(record.GeneradoPor).toBe("D");
   });
+
+  it("preserves the cancellation generator without adding it to the hash", () => {
+    const generator = { NombreRazon: "Cliente Factura SL", NIF: "B99999997" };
+    const record = buildAnulacionRecord({
+      ...ANULACION,
+      GeneradoPor: "D",
+      Generador: generator,
+    });
+    expect(record.Generador).toEqual(generator);
+    expect(record.Huella).toBe(buildAnulacionRecord(ANULACION).Huella);
+  });
 });
 
 describe("buildAltaRecord — optional field pass-through", () => {

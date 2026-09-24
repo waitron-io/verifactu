@@ -45,6 +45,27 @@ describe("serializeEnvio", () => {
     ).toThrow("RegistroAlta[1].IDFactura.IDEmisorFactura");
   });
 
+  it.each([undefined, "E", "D", "T"] as const)(
+    "rejects a cancellation issuer that differs from the header when GeneradoPor is %s",
+    (generadoPor) => {
+      const cancellation = buildAnulacionRecord({
+        IDEmisorFacturaAnulada: "89890001K",
+        NumSerieFacturaAnulada: "CANCEL-1",
+        FechaExpedicionFacturaAnulada: new Date("2024-10-28T00:00:00+01:00"),
+        Encadenamiento: { PrimerRegistro: "S" },
+        SistemaInformatico: SISTEMA,
+        generadoEn: new Date("2024-10-28T19:20:30+01:00"),
+        offsetMinutes: 60,
+        ...(generadoPor !== undefined && { GeneradoPor: generadoPor }),
+      });
+      cancellation.IDFactura.IDEmisorFacturaAnulada = "B12345674";
+
+      expect(() => serializeEnvio(CABECERA, [{ RegistroAnulacion: cancellation }])).toThrow(
+        "RegistroAnulacion[0].IDFactura.IDEmisorFacturaAnulada must match Cabecera.ObligadoEmision.NIF",
+      );
+    },
+  );
+
   it("emits a SOAP envelope with one Cabecera and the ObligadoEmision", () => {
     const xml = serializeEnvio(CABECERA, [{ RegistroAlta: record }]);
     expect(xml).toContain("<sfLR:Cabecera>");
@@ -219,6 +240,24 @@ describe("serializeEnvio", () => {
     expect(xml).not.toContain("<sf:RegistroAlta>");
   });
 
+  it("serializes Generador after GeneradoPor in a cancellation", () => {
+    const cancellation = buildAnulacionRecord({
+      IDEmisorFacturaAnulada: "89890001K",
+      NumSerieFacturaAnulada: "CANCEL-GEN-1",
+      FechaExpedicionFacturaAnulada: new Date("2024-10-28T00:00:00+01:00"),
+      GeneradoPor: "D",
+      Generador: { NombreRazon: "Cliente Factura SL", NIF: "B99999997" },
+      Encadenamiento: { PrimerRegistro: "S" },
+      SistemaInformatico: SISTEMA,
+      generadoEn: new Date("2024-10-28T19:20:30+01:00"),
+      offsetMinutes: 60,
+    });
+    const xml = serializeEnvio(CABECERA, [{ RegistroAnulacion: cancellation }]);
+    expect(xml).toContain(
+      "<sf:GeneradoPor>D</sf:GeneradoPor><sf:Generador><sf:NombreRazon>Cliente Factura SL</sf:NombreRazon><sf:NIF>B99999997</sf:NIF></sf:Generador><sf:Encadenamiento>",
+    );
+  });
+
   it("qualifies RegistroAlta and RegistroAnulacion with sf:, never sfLR:", () => {
     // SuministroLR.xsd's RegistroFacturaType is a <choice> of <element ref="sf:RegistroAlta"/>
     // and <element ref="sf:RegistroAnulacion"/>. An XSD `ref` always resolves to the namespace
@@ -316,7 +355,7 @@ describe("serializeEnvio", () => {
 
 /**
  * Extracts every plain `<sf:Name>` opening tag in document order. Every type
- * in the schema is an xsd:sequence, so order is load-bearing — a misordered
+ * in the schema is an xsd:sequence, so order matters — a misordered
  * document is rejected wholesale — but every assertion elsewhere in this file
  * is a `toContain()` on an individual element, which cannot see order at all.
  * These tests instead compare the FULL emitted sequence against the expected
@@ -332,7 +371,7 @@ function tagOrder(xml: string): string[] {
   return [...xml.matchAll(/<sf:([A-Za-z][A-Za-z0-9]*)>/g)].map((match) => match[1]!);
 }
 
-describe("element order — sequence is load-bearing, not just presence", () => {
+describe("element order — the schema requires sequence, not just presence", () => {
   // One record exercising every optional field at once (including a full
   // rectificativa and a chained Encadenamiento), so the expected array below
   // pins the position of every element the schema defines a position for.
@@ -508,6 +547,7 @@ describe("element order — sequence is load-bearing, not just presence", () => 
       SinRegistroPrevio: "S",
       RechazoPrevio: "S",
       GeneradoPor: "D",
+      Generador: { NombreRazon: "Cliente Factura SL", NIF: "B99999997" },
       Encadenamiento: {
         RegistroAnterior: {
           IDEmisorFactura: "89890001K",
@@ -535,6 +575,9 @@ describe("element order — sequence is load-bearing, not just presence", () => 
       "SinRegistroPrevio",
       "RechazoPrevio",
       "GeneradoPor",
+      "Generador",
+      "NombreRazon",
+      "NIF",
       "Encadenamiento",
       "RegistroAnterior",
       "IDEmisorFactura",
@@ -658,6 +701,7 @@ describe("exact document output — pins the complete serialised string, not fra
       SinRegistroPrevio: "S",
       RechazoPrevio: "S",
       GeneradoPor: "D",
+      Generador: { NombreRazon: "Cliente Factura SL", NIF: "B99999997" },
       Encadenamiento: { PrimerRegistro: "S" },
       SistemaInformatico: SISTEMA,
       generadoEn: new Date("2024-01-01T19:20:35+01:00"),
@@ -787,6 +831,7 @@ describe("exact document output — pins the complete serialised string, not fra
       `<sf:SinRegistroPrevio>S</sf:SinRegistroPrevio>` +
       `<sf:RechazoPrevio>S</sf:RechazoPrevio>` +
       `<sf:GeneradoPor>D</sf:GeneradoPor>` +
+      `<sf:Generador><sf:NombreRazon>Cliente Factura SL</sf:NombreRazon><sf:NIF>B99999997</sf:NIF></sf:Generador>` +
       `<sf:Encadenamiento><sf:PrimerRegistro>S</sf:PrimerRegistro></sf:Encadenamiento>` +
       sistemaInformaticoXml +
       `<sf:FechaHoraHusoGenRegistro>2024-01-01T19:20:35+01:00</sf:FechaHoraHusoGenRegistro>` +

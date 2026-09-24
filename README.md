@@ -118,6 +118,14 @@ NIF or EU VAT-number structure. Recipient identities receive the corresponding i
 Spanish-country, type-07, and EU VAT-shape checks. AEAT remains responsible for confirming
 registration.
 
+For a cancellation, keep `IDEmisorFacturaAnulada` equal to `Cabecera.ObligadoEmision.NIF`; XML
+serialization rejects a mismatch. If someone other than the taxpayer generated the cancellation,
+provide `GeneradoPor` and `Generador` together. The generator needs exactly one NIF or `IDOtro`,
+and its NIF must differ from the taxpayer's. `GeneradoPor: "E"` requires a NIF. For a Spanish
+generator using `IDOtro`, `D` permits `IDType: "03"` or `"07"`, while `T` requires `"03"` and
+forbids `"07"` in any country. Local validation also checks NIF shape and EU VAT-number structure;
+only AEAT can confirm registration.
+
 `FechaHoraHusoGenRegistro` must identify a real calendar instant with a numeric offset. When it is
 more than one minute ahead of the current time, `validate` returns the non-blocking
 `FECHA_HORA_FUTURE` warning for both alta and cancellation records. Pass `{ now }` as the second

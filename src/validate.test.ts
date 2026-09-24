@@ -3839,6 +3839,131 @@ describe("validate — the recipient's own name and NIF", () => {
 });
 
 describe("validate — RegistroAnulacion", () => {
+  const withGenerator = (GeneradoPor: "E" | "D" | "T" = "D") => {
+    const record = validAnulacion();
+    record.GeneradoPor = GeneradoPor;
+    record.Generador = { NombreRazon: "Cliente Factura SL", NIF: "B99999997" };
+    return record;
+  };
+
+  it("§3.1.4.2 requires Generador whenever GeneradoPor is present", () => {
+    const record = validAnulacion();
+    record.GeneradoPor = "D";
+    expect(anulacionCodes(record)).toContain("GENERADOR_REQUIRED");
+  });
+
+  it("§3.1.4.3 forbids Generador without GeneradoPor", () => {
+    const record = withGenerator();
+    delete record.GeneradoPor;
+    expect(anulacionCodes(record)).toContain("GENERADO_POR_REQUIRED");
+  });
+
+  it.each([
+    { NombreRazon: "No ID" },
+    { NombreRazon: "Both IDs", NIF: "B99999997", IDOtro: { IDType: "04", ID: "X-1" } },
+  ])("§3.1.4.3 requires exactly one Generador identity branch", (Generador) => {
+    const record = withGenerator();
+    record.Generador = Generador as unknown as NonNullable<RegistroAnulacion["Generador"]>;
+    expect(anulacionCodes(record)).toContain("GENERADOR_ID_CHOICE");
+  });
+
+  it("§3.1.4.3 rejects a Generador NIF equal to the taxpayer", () => {
+    const record = withGenerator();
+    record.Generador = { NombreRazon: "Self", NIF: record.IDFactura.IDEmisorFacturaAnulada };
+    expect(anulacionCodes(record)).toContain("GENERADOR_NIF_EQUALS_EMISOR");
+  });
+
+  it("§3.1.4.3 checks Generador NIF locally", () => {
+    const record = withGenerator();
+    record.Generador = { NombreRazon: "Wrong", NIF: "B12345678" };
+    expect(validate(record)).toContainEqual(
+      expect.objectContaining({ code: "NIF_CONTROL", field: "Generador.NIF" }),
+    );
+  });
+
+  it("§3.1.4.3 requires a NIF when GeneradoPor is E", () => {
+    const record = withGenerator("E");
+    record.Generador = { NombreRazon: "European", IDOtro: { IDType: "02", ID: "FR12345678901" } };
+    expect(anulacionCodes(record)).toContain("GENERADOR_E_REQUIRES_NIF");
+  });
+
+  it("§3.1.4.3 D rejects Spanish IDType 04", () => {
+    const record = withGenerator("D");
+    record.Generador = {
+      NombreRazon: "Spanish",
+      IDOtro: { CodigoPais: "ES", IDType: "04", ID: "X-1" },
+    };
+    expect(anulacionCodes(record)).toContain("GENERADOR_ES_IDTYPE");
+  });
+
+  it("§3.1.4.3 D permits Spanish IDType 03 and 07", () => {
+    for (const IDType of ["03", "07"] as const) {
+      const record = withGenerator("D");
+      record.Generador = {
+        NombreRazon: "Spanish",
+        IDOtro: { CodigoPais: "ES", IDType, ID: "X-1" },
+      };
+      expect(anulacionCodes(record)).not.toContain("GENERADOR_ES_IDTYPE");
+    }
+  });
+
+  it.each([undefined, "FR"] as const)(
+    "§3.1.4.3 D does not apply its Spanish IDType restriction to country %s",
+    (CodigoPais) => {
+      const record = withGenerator("D");
+      record.Generador = {
+        NombreRazon: "Other",
+        IDOtro: { CodigoPais, IDType: "07", ID: "X-1" },
+      };
+      expect(anulacionCodes(record)).not.toContain("GENERADOR_ES_IDTYPE");
+      expect(anulacionCodes(record)).not.toContain("GENERADOR_IDTYPE_07_FORBIDDEN");
+    },
+  );
+
+  it("§3.1.4.3 T requires Spanish IDType 03 and forbids IDType 07", () => {
+    const record = withGenerator("T");
+    record.Generador = {
+      NombreRazon: "Spanish",
+      IDOtro: { CodigoPais: "ES", IDType: "07", ID: "X-1" },
+    };
+    expect(anulacionCodes(record)).toContain("GENERADOR_ES_IDTYPE");
+    expect(anulacionCodes(record)).toContain("GENERADOR_IDTYPE_07_FORBIDDEN");
+  });
+
+  it("§3.1.4.3 T permits Spanish IDType 03 and forbids foreign IDType 07", () => {
+    const record = withGenerator("T");
+    record.Generador = {
+      NombreRazon: "Spanish",
+      IDOtro: { CodigoPais: "ES", IDType: "03", ID: "X-1" },
+    };
+    expect(anulacionCodes(record)).not.toContain("GENERADOR_ES_IDTYPE");
+    record.Generador.IDOtro.CodigoPais = "FR";
+    record.Generador.IDOtro.IDType = "07";
+    expect(anulacionCodes(record)).toContain("GENERADOR_IDTYPE_07_FORBIDDEN");
+  });
+
+  it("§3.1.4.3 checks EU VAT structure without requiring CodigoPais", () => {
+    const record = withGenerator("D");
+    record.Generador = { NombreRazon: "French", IDOtro: { IDType: "02", ID: "FR123" } };
+    expect(anulacionCodes(record)).toContain("GENERADOR_VAT_ID_FORMAT");
+    record.Generador.IDOtro.ID = "FR12345678901";
+    expect(anulacionCodes(record)).not.toContain("GENERADOR_VAT_ID_FORMAT");
+  });
+
+  it("§3.1.4.3 forbids XML control characters in Generador text", () => {
+    const record = withGenerator();
+    record.Generador = { NombreRazon: "Bad\x07", IDOtro: { IDType: "04", ID: "X\x07" } };
+    expect(
+      validate(record)
+        .filter((issue) => issue.code === "CONTROL_CHAR")
+        .map((issue) => issue.field),
+    ).toEqual(["Generador.NombreRazon", "Generador.IDOtro.ID"]);
+  });
+
+  it("§3.1.4.3 accepts a distinct, valid NIF", () => {
+    expect(anulacionCodes(withGenerator())).toEqual([]);
+  });
+
   it("returns no issues for a well-formed annulment record", () => {
     expect(validate(validAnulacion())).toEqual([]);
   });
@@ -5132,8 +5257,90 @@ describe("validate — pins the exact field, message and severity for every Vali
     },
   ] as const satisfies readonly Case[];
 
+  const cancellationCases = [
+    {
+      code: "GENERADOR_REQUIRED",
+      field: "Generador",
+      message: "Generador is mandatory when GeneradoPor is present",
+      mutate: (r: RegistroAnulacion) => {
+        r.GeneradoPor = "D";
+      },
+    },
+    {
+      code: "GENERADO_POR_REQUIRED",
+      field: "GeneradoPor",
+      message: "GeneradoPor is mandatory when Generador is present",
+      mutate: (r: RegistroAnulacion) => {
+        r.Generador = { NombreRazon: "Other", NIF: "B99999997" };
+      },
+    },
+    {
+      code: "GENERADOR_ID_CHOICE",
+      field: "Generador",
+      message: "Generador must carry exactly one of NIF or IDOtro",
+      mutate: (r: RegistroAnulacion) => {
+        r.GeneradoPor = "D";
+        r.Generador = { NombreRazon: "Other" } as NonNullable<RegistroAnulacion["Generador"]>;
+      },
+    },
+    {
+      code: "GENERADOR_NIF_EQUALS_EMISOR",
+      field: "Generador.NIF",
+      message: "Generador.NIF must differ from IDEmisorFacturaAnulada",
+      mutate: (r: RegistroAnulacion) => {
+        r.GeneradoPor = "D";
+        r.Generador = { NombreRazon: "Self", NIF: r.IDFactura.IDEmisorFacturaAnulada };
+      },
+    },
+    {
+      code: "GENERADOR_E_REQUIRES_NIF",
+      field: "Generador.NIF",
+      message: "GeneradoPor E requires Generador.NIF",
+      mutate: (r: RegistroAnulacion) => {
+        r.GeneradoPor = "E";
+        r.Generador = { NombreRazon: "Other", IDOtro: { IDType: "04", ID: "X-1" } };
+      },
+    },
+    {
+      code: "GENERADOR_ES_IDTYPE",
+      field: "Generador.IDOtro.IDType",
+      message: "Spanish Generador IDType must be 03, or 07 when GeneradoPor is D",
+      mutate: (r: RegistroAnulacion) => {
+        r.GeneradoPor = "D";
+        r.Generador = {
+          NombreRazon: "Other",
+          IDOtro: { CodigoPais: "ES", IDType: "04", ID: "X-1" },
+        };
+      },
+    },
+    {
+      code: "GENERADOR_IDTYPE_07_FORBIDDEN",
+      field: "Generador.IDOtro.IDType",
+      message: "GeneradoPor T forbids IDType 07",
+      mutate: (r: RegistroAnulacion) => {
+        r.GeneradoPor = "T";
+        r.Generador = {
+          NombreRazon: "Other",
+          IDOtro: { CodigoPais: "ES", IDType: "07", ID: "X-1" },
+        };
+      },
+    },
+    {
+      code: "GENERADOR_VAT_ID_FORMAT",
+      field: "Generador.IDOtro.ID",
+      message: "Generador IDType 02 must match a published uppercase EU VAT-number structure",
+      mutate: (r: RegistroAnulacion) => {
+        r.GeneradoPor = "D";
+        r.Generador = { NombreRazon: "Other", IDOtro: { IDType: "02", ID: "FR123" } };
+      },
+    },
+  ] as const;
+
   it("covers every ValidationCode in the exact-issue table", () => {
-    const everyCodeCovered: Exclude<ValidationCode, (typeof cases)[number]["code"]> extends never
+    const everyCodeCovered: Exclude<
+      ValidationCode,
+      (typeof cases)[number]["code"] | (typeof cancellationCases)[number]["code"]
+    > extends never
       ? true
       : never = true;
     expect(everyCodeCovered).toBe(true);
@@ -5147,5 +5354,14 @@ describe("validate — pins the exact field, message and severity for every Vali
     expect(issue).toBeDefined();
     expect(issue?.message).toBe(message);
     expect(issue?.severity).toBe("severity" in testCase ? testCase.severity : "error");
+  });
+
+  it.each(cancellationCases)("$code on a cancellation", ({ code, field, message, mutate }) => {
+    const record = validAnulacion();
+    mutate(record);
+    const issue = validate(record).find(
+      (candidate) => candidate.code === code && candidate.field === field,
+    );
+    expect(issue).toEqual({ code, field, message, severity: "error" });
   });
 });

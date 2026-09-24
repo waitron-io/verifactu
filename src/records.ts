@@ -169,6 +169,7 @@ export function buildAnulacionRecord(input: AnulacionInput): RegistroAnulacion {
     ...(input.SinRegistroPrevio !== undefined && { SinRegistroPrevio: input.SinRegistroPrevio }),
     ...(input.RechazoPrevio !== undefined && { RechazoPrevio: input.RechazoPrevio }),
     ...(input.GeneradoPor !== undefined && { GeneradoPor: input.GeneradoPor }),
+    ...(input.Generador !== undefined && { Generador: input.Generador }),
     Encadenamiento: input.Encadenamiento,
     SistemaInformatico: input.SistemaInformatico,
     FechaHoraHusoGenRegistro: formatDateTime(input.generadoEn, input.offsetMinutes),

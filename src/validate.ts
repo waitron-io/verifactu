@@ -93,6 +93,14 @@ export type ValidationCode =
   | "TERCERO_ES_IDTYPE"
   | "TERCERO_IDTYPE_07_FORBIDDEN"
   | "TERCERO_VAT_ID_FORMAT"
+  | "GENERADOR_REQUIRED"
+  | "GENERADO_POR_REQUIRED"
+  | "GENERADOR_ID_CHOICE"
+  | "GENERADOR_NIF_EQUALS_EMISOR"
+  | "GENERADOR_E_REQUIRES_NIF"
+  | "GENERADOR_ES_IDTYPE"
+  | "GENERADOR_IDTYPE_07_FORBIDDEN"
+  | "GENERADOR_VAT_ID_FORMAT"
   | "DESTINATARIO_ID_CHOICE"
   | "DESTINATARIO_IDTYPE_07_COUNTRY"
   | "DESTINATARIO_ES_IDTYPE"
@@ -658,7 +666,75 @@ export function validate(
     }
   }
 
-  if (!isAlta(record)) return issues;
+  if (!isAlta(record)) {
+    if (record.GeneradoPor !== undefined && record.Generador === undefined) {
+      add("GENERADOR_REQUIRED", "Generador", "Generador is mandatory when GeneradoPor is present");
+    }
+    if (record.Generador !== undefined && record.GeneradoPor === undefined) {
+      add(
+        "GENERADO_POR_REQUIRED",
+        "GeneradoPor",
+        "GeneradoPor is mandatory when Generador is present",
+      );
+    }
+    if (record.Generador !== undefined) {
+      const generador = record.Generador;
+      const hasNif = generador.NIF !== undefined;
+      const hasIdOtro = generador.IDOtro !== undefined;
+      checkNoControlChars("Generador.NombreRazon", generador.NombreRazon);
+      checkNoControlChars("Generador.IDOtro.ID", generador.IDOtro?.ID);
+      if (hasNif === hasIdOtro) {
+        add(
+          "GENERADOR_ID_CHOICE",
+          "Generador",
+          "Generador must carry exactly one of NIF or IDOtro",
+        );
+      }
+      if (generador.NIF !== undefined) {
+        checkNif("Generador.NIF", generador.NIF);
+        // The serializer requires this cancellation issuer to equal the header taxpayer NIF.
+        if (generador.NIF === record.IDFactura.IDEmisorFacturaAnulada) {
+          add(
+            "GENERADOR_NIF_EQUALS_EMISOR",
+            "Generador.NIF",
+            "Generador.NIF must differ from IDEmisorFacturaAnulada",
+          );
+        }
+      }
+      if (record.GeneradoPor === "E" && !hasNif) {
+        add("GENERADOR_E_REQUIRES_NIF", "Generador.NIF", "GeneradoPor E requires Generador.NIF");
+      }
+      // AEAT applies D's 03/07 choice only to Spanish IDs; T bans 07 regardless of country.
+      if (generador.IDOtro?.CodigoPais === "ES" && ["D", "T"].includes(record.GeneradoPor ?? "")) {
+        const allowed = record.GeneradoPor === "D" ? ["03", "07"] : ["03"];
+        if (!allowed.includes(generador.IDOtro.IDType)) {
+          add(
+            "GENERADOR_ES_IDTYPE",
+            "Generador.IDOtro.IDType",
+            "Spanish Generador IDType must be 03, or 07 when GeneradoPor is D",
+          );
+        }
+      }
+      if (record.GeneradoPor === "T" && generador.IDOtro?.IDType === "07") {
+        add(
+          "GENERADOR_IDTYPE_07_FORBIDDEN",
+          "Generador.IDOtro.IDType",
+          "GeneradoPor T forbids IDType 07",
+        );
+      }
+      if (
+        generador.IDOtro?.IDType === "02" &&
+        !isValidEuVatId(generador.IDOtro.ID, effectiveOperationDate)
+      ) {
+        add(
+          "GENERADOR_VAT_ID_FORMAT",
+          "Generador.IDOtro.ID",
+          "Generador IDType 02 must match a published uppercase EU VAT-number structure",
+        );
+      }
+    }
+    return issues;
+  }
 
   if (record.FechaOperacion !== undefined && operacionOrdinal === undefined) {
     add("FECHA_FORMAT", "FechaOperacion", "Date must be DD-MM-YYYY");
