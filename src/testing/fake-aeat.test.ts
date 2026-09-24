@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakeAeat, keyOf } from "./fake-aeat.js";
 import { createClient } from "../client.js";
+import { resolveEstadoEfectivo } from "../xml/parse-suministro.js";
 import type { RegistroAlta, RegistroAnulacion } from "../types.js";
 import { serializeConsulta } from "../xml/serialize.js";
 import { withoutNif } from "../../test/fixtures.js";
@@ -158,6 +159,7 @@ describe("fake AEAT — submit", () => {
         { RegistroAlta: altaFixture("A/9") },
       ]);
     expect(r.EstadoEnvio).toBe("ParcialmenteCorrecto");
+    expect(r.CSV).toMatch(/./);
     expect(r.RespuestaLinea[1]?.EstadoRegistro).toBe("Incorrecto");
     expect(r.RespuestaLinea[1]?.Operacion).toEqual({ TipoOperacion: "Alta" });
     expect(r.RespuestaLinea[1]?.CodigoErrorRegistro).toBe(1100);
@@ -169,6 +171,8 @@ describe("fake AEAT — submit", () => {
     const client = aeat.client();
     const record = altaFixture("A/1", "25-07-2026");
     const r = await client.submit(cabecera, [{ RegistroAlta: record }]);
+    expect(r.EstadoEnvio).toBe("ParcialmenteCorrecto");
+    expect(r.CSV).toMatch(/./);
     expect(r.RespuestaLinea[0]?.EstadoRegistro).toBe("AceptadoConErrores");
     expect(r.RespuestaLinea[0]?.Operacion).toEqual({ TipoOperacion: "Alta" });
     expect(r.RespuestaLinea[0]?.CodigoErrorRegistro).toBe(2004);
@@ -179,6 +183,51 @@ describe("fake AEAT — submit", () => {
     expect(duplicate.RespuestaLinea[0]?.RegistroDuplicado?.EstadoRegistroDuplicado).toBe(
       "AceptadaConErrores",
     );
+  });
+
+  it("marks an all-rejected batch Incorrecto without issuing a CSV", async () => {
+    const aeat = createFakeAeat();
+    const first = altaFixture("A/91");
+    const second = altaFixture("A/92");
+    aeat.reject(keyOf(first), 1100, "Campo obligatorio ausente");
+    aeat.reject(keyOf(second), 1100, "Campo obligatorio ausente");
+
+    const response = await aeat
+      .client()
+      .submit(cabecera, [{ RegistroAlta: first }, { RegistroAlta: second }]);
+
+    expect(response.RespuestaLinea.map((line) => line.EstadoRegistro)).toEqual([
+      "Incorrecto",
+      "Incorrecto",
+    ]);
+    expect(response.EstadoEnvio).toBe("Incorrecto");
+    expect(response.CSV).toBeUndefined();
+    expect(aeat.stored()).toEqual([]);
+  });
+
+  it("marks a duplicate-only retry Incorrecto without a CSV while preserving its stored success", async () => {
+    const aeat = createFakeAeat();
+    const record = altaFixture("A/93");
+    const client = aeat.client();
+    await client.submit(cabecera, [{ RegistroAlta: record }]);
+
+    let wireResponse = "";
+    const retryClient = createClient({
+      endpoint: "https://example.test/Verifactu",
+      fetch: async (input, init) => {
+        const response = await aeat.fetch(input, init);
+        wireResponse = await response.clone().text();
+        return response;
+      },
+    });
+    const retry = await retryClient.submit(cabecera, [{ RegistroAlta: record }]);
+
+    expect(retry.EstadoEnvio).toBe("Incorrecto");
+    expect(retry.CSV).toBeUndefined();
+    expect(wireResponse).not.toContain("<sfR:CSV>");
+    expect(retry.RespuestaLinea[0]?.CodigoErrorRegistro).toBe(3000);
+    expect(resolveEstadoEfectivo(retry.RespuestaLinea[0]!)).toBe("accepted");
+    expect(aeat.stored()).toHaveLength(1);
   });
 
   it("decreases TiempoEsperaEnvio on each response", async () => {

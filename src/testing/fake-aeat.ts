@@ -175,9 +175,9 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
   function handleEnvio(xml: string): string {
     const { cabecera, registros } = parseEnvio(xml);
     const lineas: string[] = [];
-    let anyRejected = false;
-    // Every non-rejected envío issues exactly one CSV (Task 3 will suppress it when the whole
-    // envío is Incorrecto).
+    let rejectedCount = 0;
+    let anyAcceptedWithErrors = false;
+    // The synthetic petition ID and the CSV for a non-rejected batch share this sequence.
     const csv = `CSV-${String(++csvSequence).padStart(8, "0")}`;
     for (const entry of registros) {
       const { idf, tipo, huella, ref, fecha } = identityOf(entry);
@@ -193,7 +193,7 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
         // Anulación of a live alta changes its state; all other resubmissions leave the stored
         // record untouched. The outer Incorrecto line carries the stored state in
         // RegistroDuplicado; resolveEstadoEfectivo reads that inner state.
-        anyRejected = true;
+        rejectedCount += 1;
         const detail = noDuplicadoDetail.has(key) ? undefined : duplicateStateOf(existing.estado);
         const storedPetitionId = petitionIds.get(key);
         if (detail !== undefined && storedPetitionId === undefined) {
@@ -203,7 +203,7 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
         continue;
       }
       if (forced) {
-        anyRejected = true;
+        rejectedCount += 1;
         lineas.push(lineaXml(idf, "Incorrecto", forced.code, forced.message, ref, operacion));
       } else {
         const estado =
@@ -236,6 +236,7 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
         }
         if (future) {
           // 2004 is non-rejecting: the record is stored and the line reads AceptadoConErrores.
+          anyAcceptedWithErrors = true;
           lineas.push(
             lineaXml(
               idf,
@@ -256,9 +257,15 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
     // wait time one step ahead of what this very response is describing.
     const tiempoParaEsteEnvio = tiempoEspera;
     tiempoEspera = Math.max(1, tiempoEspera - 1);
+    const estadoEnvio: EstadoEnvio =
+      rejectedCount === registros.length
+        ? "Incorrecto"
+        : rejectedCount > 0 || anyAcceptedWithErrors
+          ? "ParcialmenteCorrecto"
+          : "Correcto";
     return suministroEnvelope(
-      csv,
-      anyRejected ? "ParcialmenteCorrecto" : "Correcto",
+      estadoEnvio === "Incorrecto" ? undefined : csv,
+      estadoEnvio,
       tiempoParaEsteEnvio,
       lineas,
     );
@@ -435,7 +442,7 @@ function lineaXml(
 }
 
 function suministroEnvelope(
-  csv: string,
+  csv: string | undefined,
   estadoEnvio: EstadoEnvio,
   tiempo: number,
   lineas: string[],
@@ -444,7 +451,7 @@ function suministroEnvelope(
     `<?xml version="1.0" encoding="UTF-8"?>` +
     `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sf="sf" xmlns:sfR="sfR"><soapenv:Body>` +
     "<sfR:RespuestaRegFactuSistemaFacturacion>" +
-    `<sfR:CSV>${escapeXml(csv)}</sfR:CSV>` +
+    (csv === undefined ? "" : `<sfR:CSV>${escapeXml(csv)}</sfR:CSV>`) +
     `<sfR:EstadoEnvio>${estadoEnvio}</sfR:EstadoEnvio>` +
     `<sfR:TiempoEsperaEnvio>${tiempo}</sfR:TiempoEsperaEnvio>` +
     lineas.join("") +
