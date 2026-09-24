@@ -1,17 +1,31 @@
 export type Environment = "production" | "preproduction";
 
-/** Submission and consulta are two operations on the same URL. */
+/** Voluntary Veri*Factu submission and consulta share this URL. */
 export const SOAP_ENDPOINTS: Record<Environment, string> = {
   production:
     "https://www1.agenciatributaria.gob.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP",
   preproduction: "https://prewww1.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP",
 };
 
-/** Sello de entidad certificates use a different host. */
+/** Voluntary Veri*Factu with a sello de entidad certificate. */
 export const SOAP_ENDPOINTS_SELLO: Record<Environment, string> = {
   production:
     "https://www10.agenciatributaria.gob.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP",
   preproduction: "https://prewww10.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP",
+};
+
+/** Non-verifiable records submitted under an AEAT requirement use a separate service. */
+export const SOAP_ENDPOINTS_REQUERIMIENTO: Record<Environment, string> = {
+  production:
+    "https://www1.agenciatributaria.gob.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/RequerimientoSOAP",
+  preproduction: "https://prewww1.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/RequerimientoSOAP",
+};
+
+/** Under-requirement service with a sello de entidad certificate. */
+export const SOAP_ENDPOINTS_REQUERIMIENTO_SELLO: Record<Environment, string> = {
+  production:
+    "https://www10.agenciatributaria.gob.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/RequerimientoSOAP",
+  preproduction: "https://prewww10.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/RequerimientoSOAP",
 };
 
 /**

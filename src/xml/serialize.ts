@@ -1,4 +1,5 @@
 import { escapeXml } from "./escape.js";
+import { hasValidNifControl } from "../nif.js";
 import type {
   DesgloseRectificacion,
   Destinatario,
@@ -29,9 +30,26 @@ export const NS_LRC =
   "https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/ConsultaLR.xsd";
 const NS_SOAP = "http://schemas.xmlsoap.org/soap/envelope/";
 
-export interface Cabecera {
+type CabeceraBase = {
   ObligadoEmision: { NombreRazon: string; NIF: string };
   Representante?: { NombreRazon: string; NIF: string };
+};
+
+export type Cabecera = CabeceraBase &
+  (
+    | {
+        RemisionVoluntaria?: { FechaFinVeriFactu?: string; Incidencia?: SiNo };
+        RemisionRequerimiento?: never;
+      }
+    | {
+        RemisionRequerimiento: { RefRequerimiento: string; FinRequerimiento?: SiNo };
+        RemisionVoluntaria?: never;
+      }
+  );
+
+export interface SerializeEnvioOptions {
+  /** Local clock for AEAT's date-window precheck; AEAT's own clock remains authoritative. */
+  now?: Date;
 }
 
 /** AEAT permits consulta either as the invoice issuer or as its Spanish recipient. */
@@ -362,6 +380,18 @@ function cabeceraXml(cabecera: Cabecera): string {
         el("sf", "NIF", cabecera.Representante.NIF) +
         "</sf:Representante>"
       : "") +
+    (cabecera.RemisionVoluntaria
+      ? "<sf:RemisionVoluntaria>" +
+        el("sf", "FechaFinVeriFactu", cabecera.RemisionVoluntaria.FechaFinVeriFactu) +
+        el("sf", "Incidencia", cabecera.RemisionVoluntaria.Incidencia) +
+        "</sf:RemisionVoluntaria>"
+      : "") +
+    (cabecera.RemisionRequerimiento
+      ? "<sf:RemisionRequerimiento>" +
+        el("sf", "RefRequerimiento", cabecera.RemisionRequerimiento.RefRequerimiento) +
+        el("sf", "FinRequerimiento", cabecera.RemisionRequerimiento.FinRequerimiento) +
+        "</sf:RemisionRequerimiento>"
+      : "") +
     "</sfLR:Cabecera>"
   );
 }
@@ -381,7 +411,11 @@ function envelope(body: string, extraNs: string): string {
  * several SIFs of the same obligado — which is what lets one batch span
  * several tills.
  */
-export function serializeEnvio(cabecera: Cabecera, registros: EnvioRegistro[]): string {
+export function serializeEnvio(
+  cabecera: Cabecera,
+  registros: EnvioRegistro[],
+  options: SerializeEnvioOptions = {},
+): string {
   if (registros.length === 0) {
     throw new Error("An envio must contain at least one registro");
   }
@@ -390,7 +424,78 @@ export function serializeEnvio(cabecera: Cabecera, registros: EnvioRegistro[]): 
       `An envio may carry at most ${MAX_REGISTROS_POR_ENVIO} registros, received ${registros.length}`,
     );
   }
+  if (cabecera.RemisionVoluntaria !== undefined && cabecera.RemisionRequerimiento !== undefined) {
+    throw new Error("Cabecera must not contain both RemisionVoluntaria and RemisionRequerimiento");
+  }
+  for (const [field, value] of [
+    ["RemisionVoluntaria.Incidencia", cabecera.RemisionVoluntaria?.Incidencia],
+    ["RemisionRequerimiento.FinRequerimiento", cabecera.RemisionRequerimiento?.FinRequerimiento],
+  ] as const) {
+    if (value !== undefined && value !== "S" && value !== "N") {
+      throw new Error(`Cabecera.${field} must be S or N`);
+    }
+  }
+  for (const [field, nif] of [
+    ["ObligadoEmision", cabecera.ObligadoEmision.NIF],
+    ["Representante", cabecera.Representante?.NIF],
+  ] as const) {
+    if (
+      (field === "ObligadoEmision" || cabecera.Representante !== undefined) &&
+      (typeof nif !== "string" || !hasValidNifControl(nif))
+    ) {
+      throw new Error(`Cabecera.${field}.NIF has an invalid format or control character`);
+    }
+  }
+  if (cabecera.RemisionRequerimiento !== undefined) {
+    const reference = cabecera.RemisionRequerimiento.RefRequerimiento;
+    // The XSD's maxLength counts XML characters, not JavaScript UTF-16 code units.
+    // eslint-disable-next-line no-control-regex -- XML 1.0 excludes these controls
+    const forbidden = /[\x00-\x08\x0B\x0C\x0E-\x1F]/;
+    if (
+      typeof reference !== "string" ||
+      reference.trim().length === 0 ||
+      Array.from(reference).length > 18 ||
+      forbidden.test(reference)
+    ) {
+      throw new Error(
+        "Cabecera.RemisionRequerimiento.RefRequerimiento must be 1 to 18 XML characters without control characters",
+      );
+    }
+  }
+  const fechaFin = cabecera.RemisionVoluntaria?.FechaFinVeriFactu;
+  if (fechaFin !== undefined) {
+    const now = options.now ?? new Date();
+    if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
+      throw new TypeError("SerializeEnvioOptions.now must be a valid Date");
+    }
+    const match = /^(\d{2})-(\d{2})-(\d{4})$/.exec(fechaFin);
+    const day = Number(match?.[1]);
+    const month = Number(match?.[2]);
+    const year = Number(match?.[3]);
+    const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+    const daysInMonth = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    const field = "Cabecera.RemisionVoluntaria.FechaFinVeriFactu";
+    if (!match || year < 1 || month < 1 || month > 12 || day < 1 || day > daysInMonth[month - 1]!) {
+      throw new Error(`${field} must be real DD-MM-YYYY date`);
+    }
+    const currentYear = Number(
+      new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Madrid", year: "numeric" }).format(now),
+    );
+    if (year !== currentYear && year !== currentYear - 1) {
+      throw new Error(`${field} must be current or previous year`);
+    }
+    if (currentYear >= 2027 && !/^31-12-20\d{2}$/.test(fechaFin)) {
+      throw new Error(`${field} must be 31-12-20XX from 2027`);
+    }
+  }
   registros.forEach((entry, index) => {
+    const hasAlta = entry != null && typeof entry === "object" && "RegistroAlta" in entry;
+    const hasAnulacion = entry != null && typeof entry === "object" && "RegistroAnulacion" in entry;
+    if (hasAlta === hasAnulacion) {
+      throw new Error(
+        `RegistroFactura[${index}] must contain exactly one of RegistroAlta or RegistroAnulacion`,
+      );
+    }
     if (
       "RegistroAlta" in entry &&
       entry.RegistroAlta.IDFactura.IDEmisorFactura !== cabecera.ObligadoEmision.NIF

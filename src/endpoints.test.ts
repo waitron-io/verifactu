@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { QR_ENDPOINTS, SOAP_ENDPOINTS, SOAP_ENDPOINTS_SELLO } from "./endpoints.js";
+import {
+  QR_ENDPOINTS,
+  SOAP_ENDPOINTS,
+  SOAP_ENDPOINTS_REQUERIMIENTO,
+  SOAP_ENDPOINTS_REQUERIMIENTO_SELLO,
+  SOAP_ENDPOINTS_SELLO,
+} from "./endpoints.js";
 
 // A wrong endpoint here is catastrophic and silent: requests go nowhere, or
 // worse, somewhere unintended, with no local signal that anything is wrong.
@@ -32,10 +38,33 @@ describe("SOAP_ENDPOINTS_SELLO", () => {
   });
 });
 
+describe("under-requirement SOAP endpoints", () => {
+  it("pins AEAT's separate production and preproduction service URLs", () => {
+    expect(SOAP_ENDPOINTS_REQUERIMIENTO).toEqual({
+      production:
+        "https://www1.agenciatributaria.gob.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/RequerimientoSOAP",
+      preproduction:
+        "https://prewww1.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/RequerimientoSOAP",
+    });
+    expect(SOAP_ENDPOINTS_REQUERIMIENTO_SELLO).toEqual({
+      production:
+        "https://www10.agenciatributaria.gob.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/RequerimientoSOAP",
+      preproduction:
+        "https://prewww10.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/RequerimientoSOAP",
+    });
+    for (const environment of ["production", "preproduction"] as const) {
+      expect(SOAP_ENDPOINTS_REQUERIMIENTO[environment]).not.toBe(SOAP_ENDPOINTS[environment]);
+      expect(SOAP_ENDPOINTS_REQUERIMIENTO_SELLO[environment]).not.toBe(
+        SOAP_ENDPOINTS_SELLO[environment],
+      );
+    }
+  });
+});
+
 describe("QR_ENDPOINTS", () => {
   it("pins the exact production and preproduction QR validation URLs", () => {
-    // Both host AND path change between environments here, unlike the SOAP
-    // endpoints above (host only) — exact equality is what catches a
+    // Both host AND path change between environments here, unlike the voluntary
+    // SOAP endpoints (host only) — exact equality is what catches a
     // mutation to either half.
     expect(QR_ENDPOINTS).toEqual({
       production: "https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR",

@@ -1,4 +1,5 @@
 import { asArray, parser } from "./parse-common.js";
+import { MAX_REGISTROS_POR_ENVIO } from "./serialize.js";
 import type {
   Cabecera,
   CabeceraConsulta,
@@ -42,6 +43,8 @@ interface RawCabecera {
   Destinatario?: { NombreRazon: string; NIF: string };
   Representante?: { NombreRazon: string; NIF: string };
   IndicadorRepresentante?: "S" | "N";
+  RemisionVoluntaria?: { FechaFinVeriFactu?: string; Incidencia?: "S" | "N" };
+  RemisionRequerimiento?: { RefRequerimiento: string; FinRequerimiento?: "S" | "N" };
 }
 type RawRegistroFactura = { RegistroAlta: RawRecord } | { RegistroAnulacion: RawRecord };
 type RawRecord = Record<string, unknown>;
@@ -89,14 +92,56 @@ function consultaPersonaOf(raw: RawConsultaPersona): RawConsultaPersona {
 
 function cabeceraOf(raw: RawCabecera): Cabecera {
   if (!raw.ObligadoEmision) throw new Error("Envio Cabecera does not contain ObligadoEmision");
-  const cabecera: Cabecera = {
+  if (raw.RemisionVoluntaria !== undefined && raw.RemisionRequerimiento !== undefined) {
+    throw new Error("Cabecera must not contain both RemisionVoluntaria and RemisionRequerimiento");
+  }
+  for (const [field, value] of [
+    ["RemisionVoluntaria.Incidencia", raw.RemisionVoluntaria?.Incidencia],
+    ["RemisionRequerimiento.FinRequerimiento", raw.RemisionRequerimiento?.FinRequerimiento],
+  ] as const) {
+    if (value !== undefined && value !== "S" && value !== "N") {
+      throw new Error(`Cabecera.${field} must be S or N`);
+    }
+  }
+  const cabecera = {
     ObligadoEmision: { NombreRazon: raw.ObligadoEmision.NombreRazon, NIF: raw.ObligadoEmision.NIF },
+    ...(raw.Representante !== undefined && {
+      Representante: {
+        NombreRazon: raw.Representante.NombreRazon,
+        NIF: raw.Representante.NIF,
+      },
+    }),
   };
-  if (raw.Representante)
-    cabecera.Representante = {
-      NombreRazon: raw.Representante.NombreRazon,
-      NIF: raw.Representante.NIF,
+  if (raw.RemisionVoluntaria !== undefined) {
+    return {
+      ...cabecera,
+      RemisionVoluntaria: {
+        ...(raw.RemisionVoluntaria.FechaFinVeriFactu !== undefined && {
+          FechaFinVeriFactu: raw.RemisionVoluntaria.FechaFinVeriFactu,
+        }),
+        ...(raw.RemisionVoluntaria.Incidencia !== undefined && {
+          Incidencia: raw.RemisionVoluntaria.Incidencia,
+        }),
+      },
     };
+  }
+  if (raw.RemisionRequerimiento !== undefined) {
+    if (
+      typeof raw.RemisionRequerimiento.RefRequerimiento !== "string" ||
+      raw.RemisionRequerimiento.RefRequerimiento.trim().length === 0
+    ) {
+      throw new Error("Cabecera.RemisionRequerimiento.RefRequerimiento is required");
+    }
+    return {
+      ...cabecera,
+      RemisionRequerimiento: {
+        RefRequerimiento: raw.RemisionRequerimiento.RefRequerimiento,
+        ...(raw.RemisionRequerimiento.FinRequerimiento !== undefined && {
+          FinRequerimiento: raw.RemisionRequerimiento.FinRequerimiento,
+        }),
+      },
+    };
+  }
   return cabecera;
 }
 
@@ -273,11 +318,24 @@ export function parseEnvio(xml: string): { cabecera: Cabecera; registros: EnvioR
   const body = (parser.parse(xml) as RawEnvelope).Envelope?.Body?.RegFactuSistemaFacturacion;
   if (!body?.Cabecera)
     throw new Error("Envio does not contain a RegFactuSistemaFacturacion Cabecera");
-  const registros = asArray(body.RegistroFactura).map((entry): EnvioRegistro =>
-    "RegistroAlta" in entry
+  const rawRegistros = asArray(body.RegistroFactura);
+  if (rawRegistros.length > MAX_REGISTROS_POR_ENVIO) {
+    throw new Error(
+      `Envio may contain at most ${MAX_REGISTROS_POR_ENVIO} RegistroFactura wrappers`,
+    );
+  }
+  const registros = rawRegistros.map((entry, index): EnvioRegistro => {
+    const hasAlta = entry != null && typeof entry === "object" && "RegistroAlta" in entry;
+    const hasAnulacion = entry != null && typeof entry === "object" && "RegistroAnulacion" in entry;
+    if (hasAlta === hasAnulacion) {
+      throw new Error(
+        `RegistroFactura[${index}] must contain exactly one of RegistroAlta or RegistroAnulacion`,
+      );
+    }
+    return "RegistroAlta" in entry
       ? { RegistroAlta: altaOf(entry.RegistroAlta) }
-      : { RegistroAnulacion: anulacionOf(entry.RegistroAnulacion) },
-  );
+      : { RegistroAnulacion: anulacionOf(entry.RegistroAnulacion) };
+  });
   if (registros.length === 0)
     throw new Error("Envio does not contain at least one RegistroFactura");
   return { cabecera: cabeceraOf(body.Cabecera), registros };

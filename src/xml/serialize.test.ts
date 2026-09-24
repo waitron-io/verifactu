@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { escapeXml } from "./escape.js";
 import { serializeConsulta, serializeEnvio } from "./serialize.js";
-import type { Cabecera } from "./serialize.js";
+import type { Cabecera, EnvioRegistro } from "./serialize.js";
 import { buildAltaRecord, buildAnulacionRecord } from "../records.js";
 import { ALTA_INPUT, CABECERA, SISTEMA, withoutNif } from "../../test/fixtures.js";
 import type { AltaInput, AnulacionInput } from "../types.js";
@@ -25,6 +25,15 @@ describe("escapeXml", () => {
 });
 
 describe("serializeEnvio", () => {
+  it.each([{ RegistroAlta: record, RegistroAnulacion: record }, {}])(
+    "§3.1.2 rejects a wrapper without exactly one record kind",
+    (entry) => {
+      expect(() => serializeEnvio(CABECERA, [entry as unknown as EnvioRegistro])).toThrow(
+        "RegistroFactura[0] must contain exactly one of RegistroAlta or RegistroAnulacion",
+      );
+    },
+  );
+
   it("rejects an alta whose invoice issuer differs from the header issuer", () => {
     const record = buildAltaRecord(ALTA_INPUT);
 
@@ -80,6 +89,166 @@ describe("serializeEnvio", () => {
     );
     expect(xml).toContain("<sf:Representante>");
     expect(xml).toContain("<sf:NIF>11111111H</sf:NIF>");
+  });
+
+  it("writes voluntary header fields after Representante in XSD order", () => {
+    const cabecera = {
+      ...CABECERA,
+      Representante: { NombreRazon: "Gestoría", NIF: "11111111H" },
+      RemisionVoluntaria: { FechaFinVeriFactu: "31-12-2026", Incidencia: "S" },
+    } as unknown as Cabecera;
+    expect(serializeEnvio(cabecera, [{ RegistroAlta: record }])).toContain(
+      "</sf:Representante><sf:RemisionVoluntaria><sf:FechaFinVeriFactu>31-12-2026</sf:FechaFinVeriFactu><sf:Incidencia>S</sf:Incidencia></sf:RemisionVoluntaria></sfLR:Cabecera>",
+    );
+  });
+
+  it("writes the under-requirement header block in XSD order", () => {
+    const cabecera = {
+      ...CABECERA,
+      RemisionRequerimiento: { RefRequerimiento: "REQ-123", FinRequerimiento: "N" },
+    } as unknown as Cabecera;
+    expect(serializeEnvio(cabecera, [{ RegistroAlta: record }])).toContain(
+      "<sf:RemisionRequerimiento><sf:RefRequerimiento>REQ-123</sf:RefRequerimiento><sf:FinRequerimiento>N</sf:FinRequerimiento></sf:RemisionRequerimiento></sfLR:Cabecera>",
+    );
+  });
+
+  it("rejects both remittance modes on an untyped header", () => {
+    const cabecera = {
+      ...CABECERA,
+      RemisionVoluntaria: { Incidencia: "N" },
+      RemisionRequerimiento: { RefRequerimiento: "REQ-123" },
+    } as unknown as Cabecera;
+    expect(() => serializeEnvio(cabecera, [{ RegistroAlta: record }])).toThrow(
+      "Cabecera must not contain both RemisionVoluntaria and RemisionRequerimiento",
+    );
+  });
+
+  it.each([
+    ["Incidencia", { RemisionVoluntaria: { Incidencia: "X" } }],
+    [
+      "FinRequerimiento",
+      { RemisionRequerimiento: { RefRequerimiento: "REQ-123", FinRequerimiento: "X" } },
+    ],
+  ] as const)("rejects an invalid untyped %s flag", (field, remittance) => {
+    const cabecera = { ...CABECERA, ...remittance } as unknown as Cabecera;
+    expect(() => serializeEnvio(cabecera, [{ RegistroAlta: record }])).toThrow(
+      `Cabecera.${field === "Incidencia" ? "RemisionVoluntaria" : "RemisionRequerimiento"}.${field} must be S or N`,
+    );
+  });
+
+  it("types the two header remittance modes as exclusive", () => {
+    // @ts-expect-error Both remittance blocks cannot appear on a Cabecera.
+    const both: Cabecera = {
+      ObligadoEmision: CABECERA.ObligadoEmision,
+      RemisionVoluntaria: { Incidencia: "N" },
+      RemisionRequerimiento: { RefRequerimiento: "REQ-123" },
+    };
+    expect(both.RemisionVoluntaria).toBeDefined();
+  });
+
+  it.each([
+    ["ObligadoEmision", { ObligadoEmision: { NombreRazon: "Bad issuer", NIF: "B12345678" } }],
+    [
+      "Representante",
+      { ...CABECERA, Representante: { NombreRazon: "Bad representative", NIF: "B12345678" } },
+    ],
+  ] as const)("rejects an invalid %s NIF in the header", (field, cabecera) => {
+    expect(() => serializeEnvio(cabecera, [{ RegistroAlta: record }])).toThrow(
+      `Cabecera.${field}.NIF has an invalid format or control character`,
+    );
+  });
+
+  it.each(["ObligadoEmision", "Representante"] as const)(
+    "rejects a missing %s NIF in the header",
+    (field) => {
+      const cabecera = {
+        ...CABECERA,
+        [field]: { NombreRazon: "Missing NIF" },
+      } as unknown as Cabecera;
+      expect(() => serializeEnvio(cabecera, [{ RegistroAlta: record }])).toThrow(
+        `Cabecera.${field}.NIF has an invalid format or control character`,
+      );
+    },
+  );
+
+  it.each([
+    {},
+    { RefRequerimiento: "" },
+    { RefRequerimiento: "X".repeat(19) },
+    { RefRequerimiento: "REQ\x07" },
+  ])(
+    "rejects a missing, blank, overlong or XML-invalid requirement reference",
+    (RemisionRequerimiento) => {
+      const cabecera = { ...CABECERA, RemisionRequerimiento } as unknown as Cabecera;
+      expect(() => serializeEnvio(cabecera, [{ RegistroAlta: record }])).toThrow(
+        "Cabecera.RemisionRequerimiento.RefRequerimiento must be 1 to 18 XML characters without control characters",
+      );
+    },
+  );
+
+  it("counts requirement-reference Unicode characters as the XSD does", () => {
+    const cabecera: Cabecera = {
+      ObligadoEmision: CABECERA.ObligadoEmision,
+      RemisionRequerimiento: { RefRequerimiento: "😀".repeat(18) },
+    };
+    expect(serializeEnvio(cabecera, [{ RegistroAlta: record }])).toContain("😀".repeat(18));
+    cabecera.RemisionRequerimiento.RefRequerimiento = "😀".repeat(19);
+    expect(() => serializeEnvio(cabecera, [{ RegistroAlta: record }])).toThrow(
+      "Cabecera.RemisionRequerimiento.RefRequerimiento must be 1 to 18 XML characters",
+    );
+  });
+
+  it("rejects an invalid injected clock when checking FechaFinVeriFactu", () => {
+    const cabecera: Cabecera = {
+      ObligadoEmision: CABECERA.ObligadoEmision,
+      RemisionVoluntaria: { FechaFinVeriFactu: "31-12-2026" },
+    };
+    expect(() =>
+      serializeEnvio(cabecera, [{ RegistroAlta: record }], { now: new Date("bad") }),
+    ).toThrow("SerializeEnvioOptions.now must be a valid Date");
+  });
+
+  it.each([
+    ["29-02-2026", "2026-09-24T12:00:00Z", "real DD-MM-YYYY date"],
+    ["30-09-2024", "2026-09-24T12:00:00Z", "current or previous year"],
+    ["01-01-2028", "2026-09-24T12:00:00Z", "current or previous year"],
+    ["30-12-2027", "2027-06-01T12:00:00Z", "31-12-20XX from 2027"],
+    ["31-12-2025", "2026-12-31T23:30:00Z", "current or previous year"],
+  ] as const)("rejects FechaFinVeriFactu %s at %s", (FechaFinVeriFactu, now, error) => {
+    const cabecera: Cabecera = {
+      ObligadoEmision: CABECERA.ObligadoEmision,
+      RemisionVoluntaria: { FechaFinVeriFactu },
+    };
+    expect(() =>
+      serializeEnvio(cabecera, [{ RegistroAlta: record }], { now: new Date(now) }),
+    ).toThrow(`Cabecera.RemisionVoluntaria.FechaFinVeriFactu must be ${error}`);
+  });
+
+  it.each([
+    ["30-09-2026", "2026-09-24T12:00:00Z"],
+    ["31-12-2025", "2026-09-24T12:00:00Z"],
+    ["31-12-2027", "2027-06-01T12:00:00Z"],
+    ["31-12-2026", "2027-06-01T12:00:00Z"],
+  ] as const)("accepts FechaFinVeriFactu %s at %s", (FechaFinVeriFactu, now) => {
+    const cabecera: Cabecera = {
+      ObligadoEmision: CABECERA.ObligadoEmision,
+      RemisionVoluntaria: { FechaFinVeriFactu },
+    };
+    expect(serializeEnvio(cabecera, [{ RegistroAlta: record }], { now: new Date(now) })).toContain(
+      `<sf:FechaFinVeriFactu>${FechaFinVeriFactu}</sf:FechaFinVeriFactu>`,
+    );
+  });
+
+  it("applies the 2027 shape rule to a previous-year date too", () => {
+    const cabecera: Cabecera = {
+      ObligadoEmision: CABECERA.ObligadoEmision,
+      RemisionVoluntaria: { FechaFinVeriFactu: "30-09-2026" },
+    };
+    expect(() =>
+      serializeEnvio(cabecera, [{ RegistroAlta: record }], {
+        now: new Date("2027-01-02T12:00:00Z"),
+      }),
+    ).toThrow("Cabecera.RemisionVoluntaria.FechaFinVeriFactu must be 31-12-20XX from 2027");
   });
 
   it("emits the record's literals verbatim so the huella still verifies", () => {
@@ -342,6 +511,9 @@ describe("serializeEnvio", () => {
 
   it("rejects an empty batch", () => {
     expect(() => serializeEnvio(CABECERA, [])).toThrow(/at least one/i);
+    expect(() =>
+      serializeEnvio({ ObligadoEmision: { NombreRazon: "Bad", NIF: "B12345678" } }, []),
+    ).toThrow("An envio must contain at least one registro");
   });
 
   it("escapes text content", () => {

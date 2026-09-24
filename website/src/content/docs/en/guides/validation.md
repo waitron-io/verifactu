@@ -18,6 +18,16 @@ review but does not make `assertValid` throw because AEAT may still accept the r
 catches local format and selected AEAT rules; AEAT's response remains authoritative. Inspect every
 returned line after submission.
 
+`assertValid` checks a record, not the submission header. `serializeEnvio` checks the header's
+issuer and representative NIF forms, its mutually exclusive remittance blocks, the required
+under-requirement reference and its 18-character limit, both optional `S`/`N` flags, and any `FechaFinVeriFactu`. That date
+must be real, use the current or preceding Madrid calendar year, and from 1 January 2027 be
+`31-12-20XX`. Pass `{ now }` as the third `serializeEnvio` argument when testing that boundary.
+Only AEAT can confirm the identities and reference exist or determine its exact current date.
+Serialization and parsing also enforce 1–1000 record wrappers with exactly one record kind each.
+Parsing rejects a missing requirement reference or invalid remittance flag; it does not repeat all
+of the serializer's local checks or replace AEAT's schema validation.
+
 A predecessor hash must contain exactly 64 uppercase hexadecimal characters. `validate` reports
 `HUELLA_ANTERIOR_FORMAT` as a warning for both alta and cancellation records. AEAT treats this
 format problem as non-rejecting, so `assertValid` does not block the submission, but you should

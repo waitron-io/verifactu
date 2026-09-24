@@ -50,6 +50,38 @@ const alta: RegistroAlta = {
 };
 
 describe("parseEnvio", () => {
+  it.each([
+    [
+      "both",
+      (xml: string) =>
+        xml.replace("<sfLR:RegistroFactura>", "<sfLR:RegistroFactura><sf:RegistroAnulacion/>"),
+    ],
+    ["neither", (xml: string) => xml.replace(/<sf:RegistroAlta>[\s\S]*?<\/sf:RegistroAlta>/, "")],
+  ] as const)("§3.1.2 rejects a RegistroFactura containing %s record kinds", (_, mutate) => {
+    const xml = mutate(serializeEnvio(cabecera, [{ RegistroAlta: alta }]));
+    expect(() => parseEnvio(xml)).toThrow(
+      "RegistroFactura[0] must contain exactly one of RegistroAlta or RegistroAnulacion",
+    );
+  });
+
+  it("§3.1.2 refuses more than 1000 record wrappers on parse", () => {
+    const one = serializeEnvio(cabecera, [{ RegistroAlta: alta }]);
+    const wrapper = one.match(/<sfLR:RegistroFactura>[\s\S]*?<\/sfLR:RegistroFactura>/)?.[0];
+    if (!wrapper) throw new Error("missing fixture wrapper");
+    const tooMany = one.replace(
+      "</sfLR:RegFactuSistemaFacturacion>",
+      wrapper.repeat(1000) + "</sfLR:RegFactuSistemaFacturacion>",
+    );
+    expect(() => parseEnvio(tooMany)).toThrow(
+      "Envio may contain at most 1000 RegistroFactura wrappers",
+    );
+    const maximum = one.replace(
+      "</sfLR:RegFactuSistemaFacturacion>",
+      wrapper.repeat(999) + "</sfLR:RegFactuSistemaFacturacion>",
+    );
+    expect(parseEnvio(maximum).registros).toHaveLength(1000);
+  });
+
   it("round-trips a foreign software producer on alta and cancellation records", () => {
     const foreignSystem = {
       NombreRazon: "Software France SAS",
@@ -136,10 +168,58 @@ describe("parseEnvio", () => {
   it("round-trips a cabecera with a Representante", () => {
     const c: Cabecera = {
       ...cabecera,
-      Representante: { NombreRazon: "Gestoría X", NIF: "B12345678" },
+      Representante: { NombreRazon: "Gestoría X", NIF: "B12345674" },
     };
     const registros: EnvioRegistro[] = [{ RegistroAlta: alta }];
     expect(parseEnvio(serializeEnvio(c, registros))).toEqual({ cabecera: c, registros });
+  });
+
+  const remittanceHeaders: Cabecera[] = [
+    {
+      ObligadoEmision: cabecera.ObligadoEmision,
+      RemisionVoluntaria: { FechaFinVeriFactu: "31-12-2026", Incidencia: "S" },
+    },
+    {
+      ObligadoEmision: cabecera.ObligadoEmision,
+      RemisionRequerimiento: { RefRequerimiento: "REQ-123", FinRequerimiento: "N" },
+    },
+  ];
+  it.each(remittanceHeaders)("round-trips a submission header remittance block", (c) => {
+    const registros: EnvioRegistro[] = [{ RegistroAlta: alta }];
+    expect(parseEnvio(serializeEnvio(c, registros))).toStrictEqual({ cabecera: c, registros });
+  });
+
+  it("rejects both remittance modes when parsing a submission", () => {
+    const xml = serializeEnvio(remittanceHeaders[0]!, [{ RegistroAlta: alta }]).replace(
+      "</sf:RemisionVoluntaria>",
+      "</sf:RemisionVoluntaria><sf:RemisionRequerimiento><sf:RefRequerimiento>REQ-123</sf:RefRequerimiento></sf:RemisionRequerimiento>",
+    );
+    expect(() => parseEnvio(xml)).toThrow(
+      "Cabecera must not contain both RemisionVoluntaria and RemisionRequerimiento",
+    );
+  });
+
+  it("rejects a requirement header without its mandatory reference", () => {
+    const xml = serializeEnvio(remittanceHeaders[1]!, [{ RegistroAlta: alta }]).replace(
+      "<sf:RefRequerimiento>REQ-123</sf:RefRequerimiento>",
+      "",
+    );
+    expect(() => parseEnvio(xml)).toThrow(
+      "Cabecera.RemisionRequerimiento.RefRequerimiento is required",
+    );
+  });
+
+  it.each([
+    ["Incidencia", remittanceHeaders[0]!, "<sf:Incidencia>S</sf:Incidencia>"],
+    ["FinRequerimiento", remittanceHeaders[1]!, "<sf:FinRequerimiento>N</sf:FinRequerimiento>"],
+  ] as const)("rejects an invalid parsed %s flag", (field, header, validTag) => {
+    const xml = serializeEnvio(header, [{ RegistroAlta: alta }]).replace(
+      validTag,
+      validTag.replace(/>[SN]</, ">X<"),
+    );
+    expect(() => parseEnvio(xml)).toThrow(
+      `Cabecera.${field === "Incidencia" ? "RemisionVoluntaria" : "RemisionRequerimiento"}.${field} must be S or N`,
+    );
   });
 
   it("round-trips a value carrying XML-special characters", () => {

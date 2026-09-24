@@ -548,7 +548,7 @@ describe("fake AEAT — resubmit (error 3000) and consulta", () => {
   // expedition dates) happen to reuse the same série.
   it("a targeted consulta matches on the full identity, not NumSerieFactura alone", async () => {
     const aeat = createFakeAeat();
-    const otherCabecera = { ObligadoEmision: { NombreRazon: "Otro SL", NIF: "B99999999" } };
+    const otherCabecera = { ObligadoEmision: { NombreRazon: "Otro SL", NIF: "B99999997" } };
     // Three near-misses, each sharing exactly two of the three identity fields with the target
     // (NIF "89890001K" | "A/1" | "20-07-2026") — proving all three fields are actually compared,
     // not just a subset: a different obligado NIF, a different expedition date, and (this one)
@@ -559,7 +559,7 @@ describe("fake AEAT — resubmit (error 3000) and consulta", () => {
         RegistroAlta: {
           ...altaFixture("A/1"),
           IDFactura: {
-            IDEmisorFactura: "B99999999",
+            IDEmisorFactura: "B99999997",
             NumSerieFactura: "A/1",
             FechaExpedicionFactura: "20-07-2026",
           },
@@ -743,14 +743,14 @@ describe("fake AEAT — consulta pagination + RefExterna echo + state hooks", ()
 
   it("a full-period sweep only returns records under the queried obligado's NIF", async () => {
     const aeat = createFakeAeat();
-    const otherCabecera = { ObligadoEmision: { NombreRazon: "Otro SL", NIF: "B99999999" } };
+    const otherCabecera = { ObligadoEmision: { NombreRazon: "Otro SL", NIF: "B99999997" } };
     await aeat.client().submit(cabecera, [{ RegistroAlta: altaFixture("A/1") }]);
     await aeat.client().submit(otherCabecera, [
       {
         RegistroAlta: {
           ...altaFixture("A/2"),
           IDFactura: {
-            IDEmisorFactura: "B99999999",
+            IDEmisorFactura: "B99999997",
             NumSerieFactura: "A/2",
             FechaExpedicionFactura: "20-07-2026",
           },

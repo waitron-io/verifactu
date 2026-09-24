@@ -21,6 +21,8 @@ import {
   createClient,
   resolveEstadoEfectivo,
   SOAP_ENDPOINTS,
+  SOAP_ENDPOINTS_REQUERIMIENTO,
+  SOAP_ENDPOINTS_REQUERIMIENTO_SELLO,
   SOAP_ENDPOINTS_SELLO,
   validate,
   type Cabecera,
@@ -49,6 +51,23 @@ taxpayer. One `Cabecera` may cover records from several SIF installations of the
 one submission, since each record includes its own `SistemaInformatico`. Every alta must repeat
 `cabecera.ObligadoEmision.NIF` in `IDEmisorFactura`; the serializer stops before sending if they
 differ.
+
+For an ordinary voluntary Veri*Factu submission, leave the header's remittance blocks absent.
+You can add `RemisionVoluntaria: { FechaFinVeriFactu, Incidencia }` when those fields apply. If
+you are submitting non-verifiable records because AEAT required them, use
+`RemisionRequerimiento: { RefRequerimiento, FinRequerimiento }` instead; the reference is required.
+The blocks cannot be combined. AEAT keeps under-requirement submissions in a separate service:
+select `SOAP_ENDPOINTS_REQUERIMIENTO` or `SOAP_ENDPOINTS_REQUERIMIENTO_SELLO` for its client, never
+the voluntary `SOAP_ENDPOINTS` pair shown below. Consulta is only available for voluntary
+Veri*Factu submissions. This library represents the request XML but does not determine your SIF's
+operating mode or confirm that AEAT issued the reference.
+
+The serializer checks the issuer's and representative's NIF form before sending. It also checks
+the requirement reference's 18-character limit and a supplied `FechaFinVeriFactu`: its year must
+be the current or preceding year, and from 1 January 2027 its date must be `31-12-20XX`. AEAT
+uses its own clock and registration records, so its response remains authoritative. A batch may
+contain 1–1000 separate wrappers, each holding one alta or one cancellation. The parser rejects
+malformed wrappers too.
 
 ## Build and chain two records
 
@@ -144,7 +163,8 @@ const client = createClient({ endpoint: endpoints[environment], fetch: certifica
 ```
 
 `SOAP_ENDPOINTS_SELLO` uses AEAT's separate host for a _sello de entidad_ certificate. Both endpoint
-sets provide production and preproduction URLs; submission and consulta use the same selected URL.
+sets provide production and preproduction URLs; voluntary submission and consulta use the same
+selected URL. For under-requirement submission, choose the matching `*_REQUERIMIENTO` set instead.
 Keep the certificate and passphrase in your deployment's secret storage. Close the dispatcher when
 your process shuts down. The dispatcher wrapper above is exercised against the package's fake
 transport in this site's example check; a real certificate must also be checked in AEAT
