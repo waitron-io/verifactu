@@ -23,6 +23,12 @@ A predecessor hash must contain exactly 64 uppercase hexadecimal characters. `va
 format problem as non-rejecting, so `assertValid` does not block the submission, but you should
 still investigate it before relying on the chain.
 
+`FechaHoraHusoGenRegistro` must be a real calendar instant with a numeric offset. A value more than
+one minute ahead of the current time produces the `FECHA_HORA_FUTURE` warning on both alta and
+cancellation records. The comparison uses the represented instant, so two timestamps with different
+offsets are compared correctly. Pass `{ now }` as the second argument when you need a controlled
+clock. Because AEAT classifies this condition as non-rejecting, `assertValid` does not throw for it.
+
 The total cross-check allows a €10 difference. AEAT exempts regimes `03`, `05`, `06`, `08`, and
 `09`. `validate` skips both total checks when any tax line uses one of those regimes. The exemption
 applies to the complete record, so a mixed-regime invoice does not produce a total mismatch warning.

@@ -110,6 +110,11 @@ NIF or EU VAT-number structure. Recipient identities receive the corresponding i
 Spanish-country, type-07, and EU VAT-shape checks. AEAT remains responsible for confirming
 registration.
 
+`FechaHoraHusoGenRegistro` must identify a real calendar instant with a numeric offset. When it is
+more than one minute ahead of the current time, `validate` returns the non-blocking
+`FECHA_HORA_FUTURE` warning for both alta and cancellation records. Pass `{ now }` as the second
+argument when you need a controlled clock; `assertValid` does not throw for this AEAT advisory.
+
 Detail-line validation also applies AEAT's dated IVA rates and equivalence-surcharge pairings,
 `BaseImponibleACoste` eligibility, reverse-charge and non-subject field rules, and IVA/IGIC
 exemption codes. An IVA `E5` line requires any supplied recipient to use `IDOtro`. `Cupon: "S"`

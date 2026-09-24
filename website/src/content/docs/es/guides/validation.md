@@ -23,6 +23,13 @@ devuelve el aviso `HUELLA_ANTERIOR_FORMAT` tanto para altas como para anulacione
 rechaza el registro por este problema de formato, por lo que `assertValid` no impide el envío, pero
 debes investigarlo antes de confiar en la cadena.
 
+`FechaHoraHusoGenRegistro` debe representar un instante real del calendario con un desfase
+numérico. Un valor que supere en más de un minuto la hora actual genera el aviso
+`FECHA_HORA_FUTURE` tanto en altas como en anulaciones. La comparación usa el instante representado,
+por lo que trata correctamente las marcas con distintos desfases. Pasa `{ now }` como segundo
+argumento cuando necesites un reloj controlado. Como la AEAT clasifica esta condición como no
+excluyente, `assertValid` no lanza una excepción por ella.
+
 La comprobación de los totales admite una diferencia de 10 €. La AEAT excluye los regímenes `03`,
 `05`, `06`, `08` y `09`. `validate` omite ambas comprobaciones si alguna línea usa uno de esos
 regímenes. La exclusión se aplica al registro completo, por lo que una factura con regímenes mixtos
