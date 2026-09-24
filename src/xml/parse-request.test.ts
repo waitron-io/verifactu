@@ -169,6 +169,31 @@ describe("parseEnvio", () => {
     expect(parseEnvio(serializeEnvio(c, registros))).toEqual({ cabecera: c, registros });
   });
 
+  const remittanceHeaders: Cabecera[] = [
+    {
+      ObligadoEmision: cabecera.ObligadoEmision,
+      RemisionVoluntaria: { FechaFinVeriFactu: "31-12-2026", Incidencia: "S" },
+    },
+    {
+      ObligadoEmision: cabecera.ObligadoEmision,
+      RemisionRequerimiento: { RefRequerimiento: "REQ-123", FinRequerimiento: "N" },
+    },
+  ];
+  it.each(remittanceHeaders)("round-trips a submission header remittance block", (c) => {
+    const registros: EnvioRegistro[] = [{ RegistroAlta: alta }];
+    expect(parseEnvio(serializeEnvio(c, registros))).toStrictEqual({ cabecera: c, registros });
+  });
+
+  it("rejects both remittance modes when parsing a submission", () => {
+    const xml = serializeEnvio(remittanceHeaders[0]!, [{ RegistroAlta: alta }]).replace(
+      "</sf:RemisionVoluntaria>",
+      "</sf:RemisionVoluntaria><sf:RemisionRequerimiento><sf:RefRequerimiento>REQ-123</sf:RefRequerimiento></sf:RemisionRequerimiento>",
+    );
+    expect(() => parseEnvio(xml)).toThrow(
+      "Cabecera must not contain both RemisionVoluntaria and RemisionRequerimiento",
+    );
+  });
+
   it("round-trips a value carrying XML-special characters", () => {
     const c: Cabecera = {
       ObligadoEmision: { NombreRazon: "Bar & Grill <Málaga>", NIF: "89890001K" },

@@ -29,10 +29,22 @@ export const NS_LRC =
   "https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/ConsultaLR.xsd";
 const NS_SOAP = "http://schemas.xmlsoap.org/soap/envelope/";
 
-export interface Cabecera {
+type CabeceraBase = {
   ObligadoEmision: { NombreRazon: string; NIF: string };
   Representante?: { NombreRazon: string; NIF: string };
-}
+};
+
+export type Cabecera = CabeceraBase &
+  (
+    | {
+        RemisionVoluntaria?: { FechaFinVeriFactu?: string; Incidencia?: SiNo };
+        RemisionRequerimiento?: never;
+      }
+    | {
+        RemisionRequerimiento: { RefRequerimiento: string; FinRequerimiento?: SiNo };
+        RemisionVoluntaria?: never;
+      }
+  );
 
 /** AEAT permits consulta either as the invoice issuer or as its Spanish recipient. */
 export type CabeceraConsulta =
@@ -362,6 +374,18 @@ function cabeceraXml(cabecera: Cabecera): string {
         el("sf", "NIF", cabecera.Representante.NIF) +
         "</sf:Representante>"
       : "") +
+    (cabecera.RemisionVoluntaria
+      ? "<sf:RemisionVoluntaria>" +
+        el("sf", "FechaFinVeriFactu", cabecera.RemisionVoluntaria.FechaFinVeriFactu) +
+        el("sf", "Incidencia", cabecera.RemisionVoluntaria.Incidencia) +
+        "</sf:RemisionVoluntaria>"
+      : "") +
+    (cabecera.RemisionRequerimiento
+      ? "<sf:RemisionRequerimiento>" +
+        el("sf", "RefRequerimiento", cabecera.RemisionRequerimiento.RefRequerimiento) +
+        el("sf", "FinRequerimiento", cabecera.RemisionRequerimiento.FinRequerimiento) +
+        "</sf:RemisionRequerimiento>"
+      : "") +
     "</sfLR:Cabecera>"
   );
 }
@@ -382,6 +406,9 @@ function envelope(body: string, extraNs: string): string {
  * several tills.
  */
 export function serializeEnvio(cabecera: Cabecera, registros: EnvioRegistro[]): string {
+  if (cabecera.RemisionVoluntaria !== undefined && cabecera.RemisionRequerimiento !== undefined) {
+    throw new Error("Cabecera must not contain both RemisionVoluntaria and RemisionRequerimiento");
+  }
   if (registros.length === 0) {
     throw new Error("An envio must contain at least one registro");
   }

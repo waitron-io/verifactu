@@ -43,6 +43,8 @@ interface RawCabecera {
   Destinatario?: { NombreRazon: string; NIF: string };
   Representante?: { NombreRazon: string; NIF: string };
   IndicadorRepresentante?: "S" | "N";
+  RemisionVoluntaria?: { FechaFinVeriFactu?: string; Incidencia?: "S" | "N" };
+  RemisionRequerimiento?: { RefRequerimiento: string; FinRequerimiento?: "S" | "N" };
 }
 type RawRegistroFactura = { RegistroAlta: RawRecord } | { RegistroAnulacion: RawRecord };
 type RawRecord = Record<string, unknown>;
@@ -90,14 +92,42 @@ function consultaPersonaOf(raw: RawConsultaPersona): RawConsultaPersona {
 
 function cabeceraOf(raw: RawCabecera): Cabecera {
   if (!raw.ObligadoEmision) throw new Error("Envio Cabecera does not contain ObligadoEmision");
-  const cabecera: Cabecera = {
+  if (raw.RemisionVoluntaria !== undefined && raw.RemisionRequerimiento !== undefined) {
+    throw new Error("Cabecera must not contain both RemisionVoluntaria and RemisionRequerimiento");
+  }
+  const cabecera = {
     ObligadoEmision: { NombreRazon: raw.ObligadoEmision.NombreRazon, NIF: raw.ObligadoEmision.NIF },
+    ...(raw.Representante !== undefined && {
+      Representante: {
+        NombreRazon: raw.Representante.NombreRazon,
+        NIF: raw.Representante.NIF,
+      },
+    }),
   };
-  if (raw.Representante)
-    cabecera.Representante = {
-      NombreRazon: raw.Representante.NombreRazon,
-      NIF: raw.Representante.NIF,
+  if (raw.RemisionVoluntaria !== undefined) {
+    return {
+      ...cabecera,
+      RemisionVoluntaria: {
+        ...(raw.RemisionVoluntaria.FechaFinVeriFactu !== undefined && {
+          FechaFinVeriFactu: raw.RemisionVoluntaria.FechaFinVeriFactu,
+        }),
+        ...(raw.RemisionVoluntaria.Incidencia !== undefined && {
+          Incidencia: raw.RemisionVoluntaria.Incidencia,
+        }),
+      },
     };
+  }
+  if (raw.RemisionRequerimiento !== undefined) {
+    return {
+      ...cabecera,
+      RemisionRequerimiento: {
+        RefRequerimiento: raw.RemisionRequerimiento.RefRequerimiento,
+        ...(raw.RemisionRequerimiento.FinRequerimiento !== undefined && {
+          FinRequerimiento: raw.RemisionRequerimiento.FinRequerimiento,
+        }),
+      },
+    };
+  }
   return cabecera;
 }
 

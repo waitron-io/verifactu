@@ -91,6 +91,48 @@ describe("serializeEnvio", () => {
     expect(xml).toContain("<sf:NIF>11111111H</sf:NIF>");
   });
 
+  it("writes voluntary header fields after Representante in XSD order", () => {
+    const cabecera = {
+      ...CABECERA,
+      Representante: { NombreRazon: "Gestoría", NIF: "11111111H" },
+      RemisionVoluntaria: { FechaFinVeriFactu: "31-12-2026", Incidencia: "S" },
+    } as unknown as Cabecera;
+    expect(serializeEnvio(cabecera, [{ RegistroAlta: record }])).toContain(
+      "</sf:Representante><sf:RemisionVoluntaria><sf:FechaFinVeriFactu>31-12-2026</sf:FechaFinVeriFactu><sf:Incidencia>S</sf:Incidencia></sf:RemisionVoluntaria></sfLR:Cabecera>",
+    );
+  });
+
+  it("writes the under-requirement header block in XSD order", () => {
+    const cabecera = {
+      ...CABECERA,
+      RemisionRequerimiento: { RefRequerimiento: "REQ-123", FinRequerimiento: "N" },
+    } as unknown as Cabecera;
+    expect(serializeEnvio(cabecera, [{ RegistroAlta: record }])).toContain(
+      "<sf:RemisionRequerimiento><sf:RefRequerimiento>REQ-123</sf:RefRequerimiento><sf:FinRequerimiento>N</sf:FinRequerimiento></sf:RemisionRequerimiento></sfLR:Cabecera>",
+    );
+  });
+
+  it("rejects both remittance modes on an untyped header", () => {
+    const cabecera = {
+      ...CABECERA,
+      RemisionVoluntaria: { Incidencia: "N" },
+      RemisionRequerimiento: { RefRequerimiento: "REQ-123" },
+    } as unknown as Cabecera;
+    expect(() => serializeEnvio(cabecera, [{ RegistroAlta: record }])).toThrow(
+      "Cabecera must not contain both RemisionVoluntaria and RemisionRequerimiento",
+    );
+  });
+
+  it("types the two header remittance modes as exclusive", () => {
+    // @ts-expect-error Both remittance blocks cannot appear on a Cabecera.
+    const both: Cabecera = {
+      ObligadoEmision: CABECERA.ObligadoEmision,
+      RemisionVoluntaria: { Incidencia: "N" },
+      RemisionRequerimiento: { RefRequerimiento: "REQ-123" },
+    };
+    expect(both.RemisionVoluntaria).toBeDefined();
+  });
+
   it("emits the record's literals verbatim so the huella still verifies", () => {
     const xml = serializeEnvio(CABECERA, [{ RegistroAlta: record }]);
     expect(xml).toContain(`<sf:ImporteTotal>123.45</sf:ImporteTotal>`);
