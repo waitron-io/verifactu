@@ -583,22 +583,25 @@ describe("parseConsulta full header and date choice", () => {
 });
 
 describe("parseConsulta", () => {
-  it("rejects a recipient consulta requesting software details in raw XML", () => {
-    const recipient = {
-      Destinatario: { NombreRazon: "Cliente Uno", NIF: "11111111H" },
-    } as const;
-    const xml = serializeConsulta(recipient, {
-      Ejercicio: "2026",
-      Periodo: "07",
-      DatosAdicionalesRespuesta: { MostrarSistemaInformatico: "N" },
-    }).replace(
-      "<sfLRC:MostrarSistemaInformatico>N</sfLRC:MostrarSistemaInformatico>",
-      "<sfLRC:MostrarSistemaInformatico>S</sfLRC:MostrarSistemaInformatico>",
-    );
-    expect(() => parseConsulta(xml)).toThrow(
-      "Consulta MostrarSistemaInformatico must be N or omitted for Destinatario",
-    );
-  });
+  it.each(["S", "X"])(
+    "rejects recipient consulta software-details value %s in raw XML",
+    (value) => {
+      const recipient = {
+        Destinatario: { NombreRazon: "Cliente Uno", NIF: "11111111H" },
+      } as const;
+      const xml = serializeConsulta(recipient, {
+        Ejercicio: "2026",
+        Periodo: "07",
+        DatosAdicionalesRespuesta: { MostrarSistemaInformatico: "N" },
+      }).replace(
+        "<sfLRC:MostrarSistemaInformatico>N</sfLRC:MostrarSistemaInformatico>",
+        `<sfLRC:MostrarSistemaInformatico>${value}</sfLRC:MostrarSistemaInformatico>`,
+      );
+      expect(() => parseConsulta(xml)).toThrow(
+        "Consulta MostrarSistemaInformatico must be N or omitted for Destinatario",
+      );
+    },
+  );
 
   it("round-trips foreign identities and an empty response-options block", () => {
     const identity = {
