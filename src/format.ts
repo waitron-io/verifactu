@@ -1,10 +1,9 @@
 /**
  * Value formatting for Veri*Factu records.
  *
- * The huella is SHA-256 over a string built from these literals, and AEAT
- * recomputes from the literal it received — so `123.1` and `123.10` are both
- * valid and hash differently. Every value is therefore formatted exactly once,
- * here, and the same literal goes into both the XML and the hash.
+ * The huella is SHA-256 over a string built from these literals. The builder
+ * formats each amount once, then uses the same two-decimal text in the XML and
+ * local hash so later formatting cannot change the submitted record.
  */
 
 const MAX_INTEGER_DIGITS = 12;

@@ -237,10 +237,11 @@ const respuesta = await client.submit(
 
 ## The rule that matters most
 
-**Serialise once, hash that exact literal.** AEAT recomputes the huella from the literal it
-received, so `123.1` and `123.10` are both valid and hash differently. Records carry
-pre-formatted strings for exactly this reason — never reformat a value between building a record
-and serialising it.
+**Build once and send the record unchanged.** The builder formats amounts to two decimal places
+and hashes those same strings. If you change a formatted field before serialising, its stored
+huella no longer describes the record you send. AEAT allows one or two decimal places, but its
+published examples do not establish whether `123.1` and `123.10` require different hashes. Use
+the builder's two-decimal form while that boundary remains unverified in preproduction.
 
 ## Releasing
 
