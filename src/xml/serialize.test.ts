@@ -132,6 +132,23 @@ describe("serializeEnvio", () => {
     expect(agreement).toBeLessThan(hashType);
   });
 
+  it("emits IdAcuerdoSistemaInformatico after the billing agreement and before TipoHuella", () => {
+    const withAgreement = {
+      ...record,
+      NumRegistroAcuerdoFacturacion: "ACUERDO-1",
+      IdAcuerdoSistemaInformatico: "SIF-AGREEMENT-1",
+    };
+    const xml = serializeEnvio(CABECERA, [{ RegistroAlta: withAgreement }]);
+    const billing = xml.indexOf("<sf:NumRegistroAcuerdoFacturacion>");
+    const software = xml.indexOf("<sf:IdAcuerdoSistemaInformatico>");
+    const hashType = xml.indexOf("<sf:TipoHuella>");
+    expect(xml).toContain(
+      "<sf:IdAcuerdoSistemaInformatico>SIF-AGREEMENT-1</sf:IdAcuerdoSistemaInformatico>",
+    );
+    expect(billing).toBeLessThan(software);
+    expect(software).toBeLessThan(hashType);
+  });
+
   it("emits PrimerRegistro for a first record and no RegistroAnterior", () => {
     const xml = serializeEnvio(CABECERA, [{ RegistroAlta: record }]);
     expect(xml).toContain("<sf:PrimerRegistro>S</sf:PrimerRegistro>");
@@ -381,6 +398,7 @@ describe("element order — sequence is load-bearing, not just presence", () => 
     generadoEn: new Date("2024-01-01T19:20:30+01:00"),
     offsetMinutes: 60,
     NumRegistroAcuerdoFacturacion: "ACUERDO-ORDER",
+    IdAcuerdoSistemaInformatico: "SIF-AGREEMENT-1",
   };
 
   it("pins registroAlta's full element order, from Cabecera through the Huella tail", () => {
@@ -438,7 +456,7 @@ describe("element order — sequence is load-bearing, not just presence", () => 
       "CuotaTotal",
       "ImporteTotal",
       // Proves the Encadenamiento/SistemaInformatico/FechaHoraHusoGenRegistro/
-      // NumRegistroAcuerdoFacturacion/TipoHuella/Huella tail is not reordered.
+      // NumRegistroAcuerdoFacturacion/IdAcuerdoSistemaInformatico/TipoHuella/Huella tail is not reordered.
       "Encadenamiento",
       "RegistroAnterior",
       "IDEmisorFactura",
@@ -457,6 +475,7 @@ describe("element order — sequence is load-bearing, not just presence", () => 
       "IndicadorMultiplesOT",
       "FechaHoraHusoGenRegistro",
       "NumRegistroAcuerdoFacturacion",
+      "IdAcuerdoSistemaInformatico",
       "TipoHuella",
       "Huella",
     ]);

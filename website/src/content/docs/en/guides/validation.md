@@ -117,6 +117,8 @@ For a simplified `F2` invoice, the sum of `BaseImponibleOimporteNoSujeto` and
 margin. The limit does not apply when you supply `NumRegistroAcuerdoFacturacion` or set
 `FacturaSinIdentifDestinatarioArt61d: "S"`. Agreement numbers are limited to the XSD's 15-character
 maximum; only AEAT can confirm that a well-formed number is registered.
+`IdAcuerdoSistemaInformatico` has its own 16-character maximum and likewise requires AEAT to
+confirm that the supplied ID exists.
 
 Keep `IDEmisorFactura` equal to `Cabecera.ObligadoEmision.NIF`. `serializeEnvio` rejects the batch
 when those values differ, before it creates XML. AEAT permits a wider printable-ASCII alphabet in

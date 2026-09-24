@@ -145,6 +145,9 @@ export function buildAltaRecord(input: AltaInput): RegistroAlta {
     ...(input.NumRegistroAcuerdoFacturacion !== undefined && {
       NumRegistroAcuerdoFacturacion: input.NumRegistroAcuerdoFacturacion,
     }),
+    ...(input.IdAcuerdoSistemaInformatico !== undefined && {
+      IdAcuerdoSistemaInformatico: input.IdAcuerdoSistemaInformatico,
+    }),
     TipoHuella: "01",
     Huella: "",
   };

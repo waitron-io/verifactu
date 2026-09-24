@@ -37,6 +37,11 @@ líneas. Si la factura pertenece a un acuerdo de facturación registrado en la A
 en `NumRegistroAcuerdoFacturacion`; el constructor y el ciclo XML conservan este campo, que no forma
 parte de la huella. Solo la AEAT puede confirmar que el número está registrado.
 
+Si la AEAT asignó un identificador de acuerdo al sistema informático utilizado para la factura,
+indícalo en `IdAcuerdoSistemaInformatico`. El constructor y el ciclo XML conservan este campo
+independiente, que tampoco forma parte de la huella. Admite un máximo de 16 caracteres; solo la AEAT
+puede confirmar que existe.
+
 En una rectificación, usa `FacturasRectificadas` solo con `R1`–`R5`. Usa
 `FacturasSustituidas` solo con `F3`. `ImporteRectificacion` es obligatorio, y solo está permitido,
 en una rectificación por sustitución (`TipoRectificativa: "S"`). Al corregir un registro después de

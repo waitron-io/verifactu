@@ -84,10 +84,11 @@ describe("parseEnvio", () => {
     expect(parseEnvio(serializeEnvio(cabecera, registros))).toEqual({ cabecera, registros });
   });
 
-  it("round-trips NumRegistroAcuerdoFacturacion", () => {
+  it("round-trips both agreement identifiers", () => {
     const withAgreement = {
       ...alta,
       NumRegistroAcuerdoFacturacion: "ACUERDO-1",
+      IdAcuerdoSistemaInformatico: "SIF-AGREEMENT-1",
     } satisfies RegistroAlta;
     const registros: EnvioRegistro[] = [{ RegistroAlta: withAgreement }];
     expect(parseEnvio(serializeEnvio(cabecera, registros))).toEqual({ cabecera, registros });

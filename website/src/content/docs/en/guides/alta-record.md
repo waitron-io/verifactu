@@ -36,6 +36,10 @@ invoice belongs to an AEAT-registered billing agreement, set its registration nu
 `NumRegistroAcuerdoFacturacion`; the builder and XML round trip preserve this non-hashed field.
 Only AEAT can confirm that the number is registered.
 
+If AEAT assigned an agreement ID to the software system used for the invoice, pass it as
+`IdAcuerdoSistemaInformatico`. The builder and XML round trip preserve this separate, non-hashed
+field. Its maximum length is 16 characters; only AEAT can confirm that the ID exists.
+
 For a correction, use `FacturasRectificadas` only with `R1`–`R5`. Use `FacturasSustituidas` only
 with `F3`. `ImporteRectificacion` is required for, and allowed only with, a substitution correction
 (`TipoRectificativa: "S"`). When correcting a record after an AEAT rejection, `RechazoPrevio: "S"`

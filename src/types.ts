@@ -181,6 +181,8 @@ export interface RegistroAlta {
   FechaHoraHusoGenRegistro: string;
   /** Optional AEAT billing-agreement registration number. Not part of the huella input. */
   NumRegistroAcuerdoFacturacion?: string;
+  /** Optional AEAT software-system agreement ID. Not part of the huella input. */
+  IdAcuerdoSistemaInformatico?: string;
   TipoHuella: TipoHuella;
   Huella: string;
 }
@@ -309,6 +311,8 @@ export interface AltaInput extends RecordInputBase {
   ImporteTotal: string;
   /** Optional AEAT billing-agreement registration number. Not part of the huella input. */
   NumRegistroAcuerdoFacturacion?: string;
+  /** Optional AEAT software-system agreement ID. Not part of the huella input. */
+  IdAcuerdoSistemaInformatico?: string;
 }
 
 export interface AnulacionInput extends RecordInputBase {

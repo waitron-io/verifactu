@@ -3430,6 +3430,23 @@ describe("validate — AEAT §3.1.3.14–15.8", () => {
       }),
     );
   });
+
+  it.each([
+    ["1234567890123456", false],
+    ["12345678901234567", true],
+  ] as const)("checks the software agreement ID's 16-character limit: %s", (value, rejected) => {
+    const record = valid();
+    record.IdAcuerdoSistemaInformatico = value;
+    expect(codes(record).includes("ID_ACUERDO_SISTEMA_LENGTH")).toBe(rejected);
+  });
+
+  it("rejects XML control characters in IdAcuerdoSistemaInformatico", () => {
+    const record = valid();
+    record.IdAcuerdoSistemaInformatico = "SIF\u0001";
+    expect(validate(record)).toContainEqual(
+      expect.objectContaining({ code: "CONTROL_CHAR", field: "IdAcuerdoSistemaInformatico" }),
+    );
+  });
 });
 
 describe("validate — Destinatarios rules (F1/F3/R1-R4 require, F2/R5 forbid)", () => {
@@ -4805,6 +4822,15 @@ describe("validate — pins the exact field, message and severity for every Vali
       message: "NumRegistroAcuerdoFacturacion is at most 15 characters",
       mutate: (r) => {
         r.NumRegistroAcuerdoFacturacion = "1234567890123456";
+      },
+    },
+    {
+      description: "ID_ACUERDO_SISTEMA_LENGTH",
+      code: "ID_ACUERDO_SISTEMA_LENGTH",
+      field: "IdAcuerdoSistemaInformatico",
+      message: "IdAcuerdoSistemaInformatico is at most 16 characters",
+      mutate: (r) => {
+        r.IdAcuerdoSistemaInformatico = "12345678901234567";
       },
     },
     {

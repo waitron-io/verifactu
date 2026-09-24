@@ -130,6 +130,8 @@ correction cases. A zero charged tax is valid only when its base or rate is zero
 `CuotaRepercutida` is otherwise rejected outside `S1`. For an `F2`, the sum of every line's base
 and charged tax may reach €3,010 including AEAT's +€10 margin. The cap does not apply when you set
 `NumRegistroAcuerdoFacturacion` or `FacturaSinIdentifDestinatarioArt61d: "S"`.
+The separate `IdAcuerdoSistemaInformatico` field carries an optional software-system agreement ID
+up to 16 characters; AEAT alone can confirm whether either agreement identifier exists.
 
 A rectificativa (`R1`-`R5`) is built the same way, with `TipoRectificativa` set to say whether it
 substitutes (`S`) or adjusts (`I`) the original invoice. `FacturasRectificadas` may identify the

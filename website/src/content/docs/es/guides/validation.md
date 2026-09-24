@@ -122,6 +122,8 @@ En una factura simplificada `F2`, la suma de `BaseImponibleOimporteNoSujeto` y
 +10 € de la AEAT. El límite no se aplica si indicas `NumRegistroAcuerdoFacturacion` o
 `FacturaSinIdentifDestinatarioArt61d: "S"`. El número de acuerdo tiene el máximo de 15 caracteres
 del XSD; solo la AEAT puede confirmar que un número bien formado está registrado.
+`IdAcuerdoSistemaInformatico` tiene su propio máximo de 16 caracteres y también requiere que la
+AEAT confirme la existencia del identificador indicado.
 
 Mantén `IDEmisorFactura` igual a `Cabecera.ObligadoEmision.NIF`. `serializeEnvio` rechaza el lote
 si ambos valores difieren, antes de crear el XML. La AEAT permite un conjunto más amplio de

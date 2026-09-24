@@ -68,6 +68,7 @@ describe("buildAltaRecord", () => {
     expect(Object.hasOwn(record, "Tercero")).toBe(false);
     expect(Object.hasOwn(record, "Cupon")).toBe(false);
     expect(Object.hasOwn(record, "NumRegistroAcuerdoFacturacion")).toBe(false);
+    expect(Object.hasOwn(record, "IdAcuerdoSistemaInformatico")).toBe(false);
     const detalle = record.Desglose[0]!;
     expect(Object.hasOwn(detalle, "Impuesto")).toBe(false);
     expect(Object.hasOwn(detalle, "ClaveRegimen")).toBe(false);
@@ -243,6 +244,16 @@ describe("buildAltaRecord — optional non-hashed fields", () => {
     expect(record.Macrodato).toBe("S");
     expect(record.Cupon).toBe("S");
     expect(record.NumRegistroAcuerdoFacturacion).toBe("ACUERDO-1");
+  });
+
+  it("preserves the software agreement ID without changing the record hash", () => {
+    const baseline = buildAltaRecord(ALTA_INPUT);
+    const withAgreement = buildAltaRecord({
+      ...ALTA_INPUT,
+      IdAcuerdoSistemaInformatico: "SIF-AGREEMENT-1",
+    });
+    expect(withAgreement).toHaveProperty("IdAcuerdoSistemaInformatico", "SIF-AGREEMENT-1");
+    expect(withAgreement.Huella).toBe(baseline.Huella);
   });
 
   it("formats FechaOperacion as DD-MM-YYYY using the record's own offset, like FechaExpedicionFactura", () => {
