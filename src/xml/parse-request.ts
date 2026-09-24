@@ -1,4 +1,5 @@
 import { asArray, parser } from "./parse-common.js";
+import { MAX_REGISTROS_POR_ENVIO } from "./serialize.js";
 import type {
   Cabecera,
   CabeceraConsulta,
@@ -273,11 +274,24 @@ export function parseEnvio(xml: string): { cabecera: Cabecera; registros: EnvioR
   const body = (parser.parse(xml) as RawEnvelope).Envelope?.Body?.RegFactuSistemaFacturacion;
   if (!body?.Cabecera)
     throw new Error("Envio does not contain a RegFactuSistemaFacturacion Cabecera");
-  const registros = asArray(body.RegistroFactura).map((entry): EnvioRegistro =>
-    "RegistroAlta" in entry
+  const rawRegistros = asArray(body.RegistroFactura);
+  if (rawRegistros.length > MAX_REGISTROS_POR_ENVIO) {
+    throw new Error(
+      `Envio may contain at most ${MAX_REGISTROS_POR_ENVIO} RegistroFactura wrappers`,
+    );
+  }
+  const registros = rawRegistros.map((entry, index): EnvioRegistro => {
+    const hasAlta = entry != null && typeof entry === "object" && "RegistroAlta" in entry;
+    const hasAnulacion = entry != null && typeof entry === "object" && "RegistroAnulacion" in entry;
+    if (hasAlta === hasAnulacion) {
+      throw new Error(
+        `RegistroFactura[${index}] must contain exactly one of RegistroAlta or RegistroAnulacion`,
+      );
+    }
+    return "RegistroAlta" in entry
       ? { RegistroAlta: altaOf(entry.RegistroAlta) }
-      : { RegistroAnulacion: anulacionOf(entry.RegistroAnulacion) },
-  );
+      : { RegistroAnulacion: anulacionOf(entry.RegistroAnulacion) };
+  });
   if (registros.length === 0)
     throw new Error("Envio does not contain at least one RegistroFactura");
   return { cabecera: cabeceraOf(body.Cabecera), registros };

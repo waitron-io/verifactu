@@ -50,6 +50,33 @@ const alta: RegistroAlta = {
 };
 
 describe("parseEnvio", () => {
+  it.each([
+    [
+      "both",
+      (xml: string) =>
+        xml.replace("<sfLR:RegistroFactura>", "<sfLR:RegistroFactura><sf:RegistroAnulacion/>"),
+    ],
+    ["neither", (xml: string) => xml.replace(/<sf:RegistroAlta>[\s\S]*?<\/sf:RegistroAlta>/, "")],
+  ] as const)("§3.1.2 rejects a RegistroFactura containing %s record kinds", (_, mutate) => {
+    const xml = mutate(serializeEnvio(cabecera, [{ RegistroAlta: alta }]));
+    expect(() => parseEnvio(xml)).toThrow(
+      "RegistroFactura[0] must contain exactly one of RegistroAlta or RegistroAnulacion",
+    );
+  });
+
+  it("§3.1.2 refuses more than 1000 record wrappers on parse", () => {
+    const one = serializeEnvio(cabecera, [{ RegistroAlta: alta }]);
+    const wrapper = one.match(/<sfLR:RegistroFactura>[\s\S]*?<\/sfLR:RegistroFactura>/)?.[0];
+    if (!wrapper) throw new Error("missing fixture wrapper");
+    const tooMany = one.replace(
+      "</sfLR:RegFactuSistemaFacturacion>",
+      wrapper.repeat(1000) + "</sfLR:RegFactuSistemaFacturacion>",
+    );
+    expect(() => parseEnvio(tooMany)).toThrow(
+      "Envio may contain at most 1000 RegistroFactura wrappers",
+    );
+  });
+
   it("round-trips a foreign software producer on alta and cancellation records", () => {
     const foreignSystem = {
       NombreRazon: "Software France SAS",

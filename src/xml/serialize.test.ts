@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { escapeXml } from "./escape.js";
 import { serializeConsulta, serializeEnvio } from "./serialize.js";
-import type { Cabecera } from "./serialize.js";
+import type { Cabecera, EnvioRegistro } from "./serialize.js";
 import { buildAltaRecord, buildAnulacionRecord } from "../records.js";
 import { ALTA_INPUT, CABECERA, SISTEMA, withoutNif } from "../../test/fixtures.js";
 import type { AltaInput, AnulacionInput } from "../types.js";
@@ -25,6 +25,15 @@ describe("escapeXml", () => {
 });
 
 describe("serializeEnvio", () => {
+  it.each([{ RegistroAlta: record, RegistroAnulacion: record }, {}])(
+    "§3.1.2 rejects a wrapper without exactly one record kind",
+    (entry) => {
+      expect(() => serializeEnvio(CABECERA, [entry as unknown as EnvioRegistro])).toThrow(
+        "RegistroFactura[0] must contain exactly one of RegistroAlta or RegistroAnulacion",
+      );
+    },
+  );
+
   it("rejects an alta whose invoice issuer differs from the header issuer", () => {
     const record = buildAltaRecord(ALTA_INPUT);
 

@@ -391,6 +391,13 @@ export function serializeEnvio(cabecera: Cabecera, registros: EnvioRegistro[]): 
     );
   }
   registros.forEach((entry, index) => {
+    const hasAlta = entry != null && typeof entry === "object" && "RegistroAlta" in entry;
+    const hasAnulacion = entry != null && typeof entry === "object" && "RegistroAnulacion" in entry;
+    if (hasAlta === hasAnulacion) {
+      throw new Error(
+        `RegistroFactura[${index}] must contain exactly one of RegistroAlta or RegistroAnulacion`,
+      );
+    }
     if (
       "RegistroAlta" in entry &&
       entry.RegistroAlta.IDFactura.IDEmisorFactura !== cabecera.ObligadoEmision.NIF
