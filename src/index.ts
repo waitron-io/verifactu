@@ -50,6 +50,7 @@ export type {
   EstadoEnvio,
   EstadoRegistroDuplicado,
   EstadoRegistroSuministro,
+  OperacionRespuesta,
   RegistroDuplicado,
   RespuestaLinea,
   RespuestaSuministro,

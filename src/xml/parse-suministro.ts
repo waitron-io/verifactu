@@ -14,9 +14,16 @@ export interface RegistroDuplicado {
   DescripcionErrorRegistro?: string;
 }
 
+export interface OperacionRespuesta {
+  TipoOperacion?: string;
+  Subsanacion?: string;
+  RechazoPrevio?: string;
+  SinRegistroPrevio?: string;
+}
+
 export interface RespuestaLinea {
   IDFactura: IDFactura;
-  Operacion?: string;
+  Operacion?: OperacionRespuesta;
   RefExterna?: string;
   EstadoRegistro: EstadoRegistroSuministro;
   CodigoErrorRegistro?: number;
@@ -54,7 +61,12 @@ interface RawRegistroDuplicado {
 
 interface RawRespuestaLinea {
   IDFactura: IDFactura;
-  Operacion?: string;
+  Operacion?: {
+    TipoOperacion?: string;
+    Subsanacion?: string;
+    RechazoPrevio?: string;
+    SinRegistroPrevio?: string;
+  };
   RefExterna?: string;
   EstadoRegistro: string;
   CodigoErrorRegistro?: string;
@@ -89,6 +101,18 @@ function parseRegistroDuplicado(
   };
 }
 
+function parseOperacion(raw: RawRespuestaLinea["Operacion"]): OperacionRespuesta | undefined {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "object" || raw === null) return {};
+  // An unfamiliar code must not discard the whole batch's states and CSV.
+  return {
+    ...(raw.TipoOperacion !== undefined && { TipoOperacion: raw.TipoOperacion.trim() }),
+    ...(raw.Subsanacion !== undefined && { Subsanacion: raw.Subsanacion.trim() }),
+    ...(raw.RechazoPrevio !== undefined && { RechazoPrevio: raw.RechazoPrevio.trim() }),
+    ...(raw.SinRegistroPrevio !== undefined && { SinRegistroPrevio: raw.SinRegistroPrevio.trim() }),
+  };
+}
+
 function parseRespuestaLinea(raw: RawRespuestaLinea): RespuestaLinea {
   return {
     IDFactura: {
@@ -96,7 +120,7 @@ function parseRespuestaLinea(raw: RawRespuestaLinea): RespuestaLinea {
       NumSerieFactura: raw.IDFactura.NumSerieFactura,
       FechaExpedicionFactura: raw.IDFactura.FechaExpedicionFactura,
     },
-    Operacion: raw.Operacion,
+    Operacion: parseOperacion(raw.Operacion),
     RefExterna: raw.RefExterna,
     EstadoRegistro: raw.EstadoRegistro as EstadoRegistroSuministro,
     CodigoErrorRegistro: asNumber(raw.CodigoErrorRegistro, "RespuestaLinea.CodigoErrorRegistro"),
