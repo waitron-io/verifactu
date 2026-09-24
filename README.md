@@ -141,6 +141,13 @@ requirement-reference registration and uses its own clock. Each submission holds
 record wrappers, each with exactly one alta or cancellation; serialization and parsing enforce that
 shape at runtime.
 
+When you answer an AEAT requirement, send the records as your SIF preserved them. Do not change
+their business data to satisfy `assertValid`: AEAT records business-rule errors as admissible in
+this mode, except that NIF or `IDOtro` identity errors can still reject a record. Check the
+response for each record. Include `FinRequerimiento: "S"` in the header of the final batch, even
+when there is only one batch. Voluntary submissions have different correction rules; an accepted
+record with errors may still need a new corrected record, except for AEAT's published exemptions.
+
 `FechaHoraHusoGenRegistro` must identify a real calendar instant with a numeric offset. When it is
 more than one minute ahead of the current time, `validate` returns the non-blocking
 `FECHA_HORA_FUTURE` warning for both alta and cancellation records. Pass `{ now }` as the second
@@ -170,10 +177,10 @@ A rectificativa (`R1`-`R5`) is built the same way, with `TipoRectificativa` set 
 substitutes (`S`) or adjusts (`I`) the original invoice. `FacturasRectificadas` may identify the
 invoice(s) being rectified only on `R1`-`R5`. `ImporteRectificacion` is required for, and allowed
 only on, an `S` correction. `FacturasSustituidas` is a different field: use it only on an `F3`
-invoice that replaces simplified invoices. When resubmitting after an AEAT rejection, set
-`RechazoPrevio` to `S` or `X` only together with `Subsanacion: "S"`. A present reference group
-must contain at least one invoice; local validation checks each reference's NIF, 1–60-character
-invoice number, and real date:
+invoice that replaces simplified invoices. For a voluntary Veri*Factu resubmission after an AEAT
+rejection, set `RechazoPrevio` to `S` or `X` only together with `Subsanacion: "S"`. A present
+reference group must contain at least one invoice; local validation checks each reference's NIF,
+1–60-character invoice number, and real date:
 
 ```ts
 const rectificativa = buildAltaRecord({

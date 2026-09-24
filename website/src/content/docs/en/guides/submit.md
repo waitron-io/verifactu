@@ -62,6 +62,14 @@ the voluntary `SOAP_ENDPOINTS` pair shown below. Consulta is only available for 
 Veri*Factu submissions. This library represents the request XML but does not determine your SIF's
 operating mode or confirm that AEAT issued the reference.
 
+The rest of this walkthrough builds new records for voluntary Veri*Factu. For a requirement,
+submit the records already preserved by your SIF rather than rebuilding or changing their
+business data to satisfy `assertValid`. AEAT treats business-rule errors in those preserved
+records as admissible, except that NIF or `IDOtro` identity errors can still reject them. Read
+each result, but do not correct business-rule errors in the preserved records. On your final
+batch, set `FinRequerimiento: "S"` in `RemisionRequerimiento`, including when the requirement
+takes only one batch. You cannot query these records through the voluntary consulta service.
+
 The serializer checks the issuer's and representative's NIF form before sending. It also checks
 the requirement reference's 18-character limit and a supplied `FechaFinVeriFactu`: its year must
 be the current or preceding year, and from 1 January 2027 its date must be `31-12-20XX`. AEAT
@@ -134,8 +142,9 @@ for (const record of [first, second]) {
 }
 ```
 
-Warnings deserve review; errors block submission. Local validation does not replace AEAT's
-response, which is authoritative for each submitted record.
+Warnings deserve review; errors block this voluntary submission. Do not use this `assertValid`
+gate for records your SIF already preserved and AEAT requested. Local validation does not replace
+AEAT's response, which is authoritative for each submitted record.
 
 ## Supply a certificate-bearing fetch
 
@@ -203,6 +212,12 @@ accepted. The resolved state reads the duplicate detail. `duplicate_annulled` ne
 `duplicate_unknown` means AEAT did not say what it holds, so query and compare huellas before you
 decide what to do. `TiempoEsperaEnvio` is AEAT's wait in **seconds** before the next submission;
 schedule it rather than sending the next batch immediately.
+
+For voluntary Veri*Factu, a rejected record or one accepted with an admissible error may require
+a new corrected record. First check whether a rectificativa or cancellation is required instead.
+AEAT exempts some admissible errors, including a future generation timestamp, from correction.
+Under an AEAT requirement, do not apply that voluntary repair flow to business-rule errors in
+the preserved records.
 
 ## Query a record after an uncertain result
 

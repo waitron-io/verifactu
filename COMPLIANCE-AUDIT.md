@@ -83,6 +83,21 @@ caller chose the right mode or holds a valid AEAT requirement. The current fake 
 shared-store transport double; it does not model the separate under-requirement service or its
 absence of consulta. Use AEAT preproduction for those integration claims.
 
+### Mode-specific response and correction policy — validation §4.1–3, service description §§3, 10
+
+The response parser preserves each record's `Correcto`, `AceptadoConErrores`, or `Incorrecto`
+status and the global status. `resolveEstadoEfectivo` resolves duplicate error 3000 separately;
+it does not choose a correction workflow. The English and Spanish submission guides now scope
+their `assertValid` gate, correction advice, and consulta example to voluntary Veri*Factu.
+Validation §4.3.1 says voluntary records rejected or accepted with admissible errors may need a
+new corrected record unless a rectificativa/cancellation is required or a published exception
+applies. Validation §4.3.2 and service description §10 instead require preserved records sent
+under an AEAT requirement to remain uncorrected for business-rule errors. Those errors become
+admissible, apart from NIF/`IDOtro` identity errors, which may reject a record. Service
+description §10 also requires `FinRequerimiento: "S"` on the final batch. The library has no
+knowledge of which batch is final and does not automate that flag or either correction policy;
+callers must inspect the AEAT response and choose the appropriate workflow.
+
 The serializer locally checks issuer and representative NIF form/control, both optional `S`/`N`
 remittance flags, required reference content and its 18-XML-character maximum, and a real `FechaFinVeriFactu` in the current or
 preceding Madrid calendar year. From 1 January 2027 the supplied date must also be `31-12-20XX`.
