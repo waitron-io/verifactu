@@ -101,7 +101,10 @@ registration.
 Detail-line validation also applies AEAT's dated IVA rates and equivalence-surcharge pairings,
 `BaseImponibleACoste` eligibility, reverse-charge and non-subject field rules, and IVA/IGIC
 exemption codes. An IVA `E5` line requires any supplied recipient to use `IDOtro`. `Cupon: "S"`
-is limited to `R1` and `R5` invoices.
+is limited to `R1` and `R5` invoices. Regime codes are checked against the IVA, IPSI, or IGIC
+list, including each special rule for regimes `02`, `03`, `04`, `06`, `07`, `08`, `10`, `11`,
+`14`, and IGIC `20`. An invalid or missing IPSI regime remains a warning through 31 December 2026,
+matching AEAT's acceptance window, and becomes an error on 1 January 2027.
 
 A rectificativa (`R1`-`R5`) is built the same way, with `TipoRectificativa` set to say whether it
 substitutes (`S`) or adjusts (`I`) the original invoice. `FacturasRectificadas` may identify the

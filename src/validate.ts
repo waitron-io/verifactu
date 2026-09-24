@@ -28,6 +28,23 @@ export type ValidationCode =
   | "DESGLOSE_CHOICE"
   | "CLAVE_REGIMEN_REQUIRED"
   | "CLAVE_REGIMEN_FORBIDDEN"
+  | "CLAVE_REGIMEN_VALUE"
+  | "REGIMEN_02_OPERATION"
+  | "REGIMEN_03_CALIFICACION"
+  | "REGIMEN_04_CALIFICACION"
+  | "REGIMEN_06_TIPO_FACTURA"
+  | "REGIMEN_06_BASE_COST_REQUIRED"
+  | "REGIMEN_07_OPERATION"
+  | "REGIMEN_08_CALIFICACION"
+  | "REGIMEN_10_CALIFICACION"
+  | "REGIMEN_10_TIPO_FACTURA"
+  | "REGIMEN_10_DESTINATARIO_ID"
+  | "REGIMEN_11_TIPO_IMPOSITIVO"
+  | "REGIMEN_14_FECHA_OPERACION_REQUIRED"
+  | "REGIMEN_14_FECHA_OPERACION_ORDER"
+  | "REGIMEN_14_DESTINATARIO_ID"
+  | "REGIMEN_14_TIPO_FACTURA"
+  | "REGIMEN_20_IGIC_CALIFICACION"
   | "TIPO_RANGE"
   | "CUOTA_TOTAL_MISMATCH"
   | "IMPORTE_TOTAL_MISMATCH"
@@ -164,6 +181,46 @@ const IVA_S1_RATES = new Set(["0.00", "2.00", "4.00", "5.00", "7.50", "10.00", "
 const S2_INVOICE_TYPES = new Set(["F1", "F3", "R1", "R2", "R3", "R4"]);
 const IVA_EXEMPTION_CODES = new Set(["E1", "E2", "E3", "E4", "E5", "E6"]);
 const IGIC_EXEMPTION_CODES = new Set([...IVA_EXEMPTION_CODES, "E7", "E8"]);
+const IVA_REGIME_CODES = new Set([
+  "01",
+  "02",
+  "03",
+  "04",
+  "05",
+  "06",
+  "07",
+  "08",
+  "09",
+  "10",
+  "11",
+  "14",
+  "15",
+  "17",
+  "18",
+  "19",
+  "20",
+]);
+const IGIC_REGIME_CODES = new Set([
+  "01",
+  "02",
+  "03",
+  "04",
+  "05",
+  "06",
+  "07",
+  "08",
+  "09",
+  "10",
+  "11",
+  "14",
+  "15",
+  "17",
+  "18",
+  "19",
+  "20",
+  "21",
+]);
+const IPSI_REGIME_CODES = new Set(["01", "08", "11", "18", "19", "20"]);
 
 function isWithin(date: number | undefined, first: number, last: number): boolean {
   return date === undefined || (date >= first && date <= last);
@@ -813,15 +870,21 @@ export function validate(
   const importeTotalValid = checkTotalAmountFormat("ImporteTotal", record.ImporteTotal);
 
   let desgloseAmountsValid = true;
+  let hasRegime06 = false;
+  let hasRegime10 = false;
+  let hasRegime14 = false;
   record.Desglose.forEach((detalle, index) => {
     // AEAT validation §3.1.3.15.6 requires ClaveRegimen for IVA, IPSI and
     // IGIC (including omitted Impuesto, which means IVA) and forbids it otherwise.
     const claveRegimenAllowed = [undefined, "01", "02", "03"].includes(detalle.Impuesto);
+    const ipsiTransitionSeverity: ValidationSeverity =
+      today !== undefined && today >= 20270101 ? "error" : "warning";
     if (claveRegimenAllowed && !detalle.ClaveRegimen) {
       add(
         "CLAVE_REGIMEN_REQUIRED",
         `Desglose[${index}].ClaveRegimen`,
         "ClaveRegimen is mandatory for IVA, IPSI and IGIC",
+        detalle.Impuesto === "02" ? ipsiTransitionSeverity : "error",
       );
     }
     if (!claveRegimenAllowed && detalle.ClaveRegimen !== undefined) {
@@ -829,6 +892,29 @@ export function validate(
         "CLAVE_REGIMEN_FORBIDDEN",
         `Desglose[${index}].ClaveRegimen`,
         "ClaveRegimen is only allowed for IVA, IPSI and IGIC",
+      );
+    }
+    const isIva = detalle.Impuesto === undefined || detalle.Impuesto === "01";
+    const isIpsi = detalle.Impuesto === "02";
+    const isIgic = detalle.Impuesto === "03";
+    const permittedRegimes = isIva
+      ? IVA_REGIME_CODES
+      : isIpsi
+        ? IPSI_REGIME_CODES
+        : isIgic
+          ? IGIC_REGIME_CODES
+          : undefined;
+    if (
+      detalle.ClaveRegimen !== undefined &&
+      detalle.ClaveRegimen.length > 0 &&
+      permittedRegimes !== undefined &&
+      !permittedRegimes.has(detalle.ClaveRegimen)
+    ) {
+      add(
+        "CLAVE_REGIMEN_VALUE",
+        `Desglose[${index}].ClaveRegimen`,
+        "ClaveRegimen is not permitted for this tax",
+        isIpsi ? ipsiTransitionSeverity : "error",
       );
     }
     // The schema's DetalleType models these two as an xsd:choice: exactly
@@ -881,14 +967,98 @@ export function validate(
     }
 
     const field = `Desglose[${index}]`;
-    const isIva = detalle.Impuesto === undefined || detalle.Impuesto === "01";
-    const isIgic = detalle.Impuesto === "03";
+    const isIvaOrIgic = isIva || isIgic;
     const isS1 = detalle.CalificacionOperacion === "S1";
     const validTipoImpositivo =
       detalle.TipoImpositivo === undefined || TIPO_PATTERN.test(detalle.TipoImpositivo);
     const validTipoRecargo =
       detalle.TipoRecargoEquivalencia === undefined ||
       TIPO_PATTERN.test(detalle.TipoRecargoEquivalencia);
+
+    if (isIvaOrIgic) {
+      if (detalle.ClaveRegimen === "02" && detalle.OperacionExenta === undefined) {
+        add(
+          "REGIMEN_02_OPERATION",
+          `${field}.CalificacionOperacion`,
+          "IVA/IGIC regime 02 permits only OperacionExenta",
+        );
+      }
+      if (
+        detalle.ClaveRegimen === "03" &&
+        detalle.CalificacionOperacion !== undefined &&
+        detalle.CalificacionOperacion !== "S1"
+      ) {
+        add(
+          "REGIMEN_03_CALIFICACION",
+          `${field}.CalificacionOperacion`,
+          "IVA/IGIC regime 03 permits only CalificacionOperacion S1 or OperacionExenta",
+        );
+      }
+      if (
+        detalle.ClaveRegimen === "04" &&
+        detalle.OperacionExenta === undefined &&
+        detalle.CalificacionOperacion !== "S2"
+      ) {
+        add(
+          "REGIMEN_04_CALIFICACION",
+          `${field}.CalificacionOperacion`,
+          "IVA/IGIC regime 04 requires CalificacionOperacion S2 or OperacionExenta",
+        );
+      }
+      if (detalle.ClaveRegimen === "06") {
+        hasRegime06 = true;
+        if (detalle.BaseImponibleACoste === undefined) {
+          add(
+            "REGIMEN_06_BASE_COST_REQUIRED",
+            `${field}.BaseImponibleACoste`,
+            "BaseImponibleACoste is mandatory under IVA/IGIC regime 06",
+          );
+        }
+      }
+      if (
+        detalle.ClaveRegimen === "07" &&
+        (["S2", "N1", "N2"].includes(detalle.CalificacionOperacion ?? "") ||
+          ["E2", "E3", "E4", "E5"].includes(detalle.OperacionExenta ?? ""))
+      ) {
+        add(
+          "REGIMEN_07_OPERATION",
+          field,
+          "Operation qualification or exemption is not permitted under IVA/IGIC regime 07",
+        );
+      }
+      if (detalle.ClaveRegimen === "08" && detalle.CalificacionOperacion !== "N2") {
+        add(
+          "REGIMEN_08_CALIFICACION",
+          `${field}.CalificacionOperacion`,
+          "IVA/IGIC regime 08 requires CalificacionOperacion N2",
+        );
+      }
+      if (detalle.ClaveRegimen === "10") {
+        hasRegime10 = true;
+        if (detalle.CalificacionOperacion !== "N1") {
+          add(
+            "REGIMEN_10_CALIFICACION",
+            `${field}.CalificacionOperacion`,
+            "IVA/IGIC regime 10 requires CalificacionOperacion N1",
+          );
+        }
+      }
+      if (isIva && detalle.ClaveRegimen === "11" && detalle.TipoImpositivo !== "21.00") {
+        add(
+          "REGIMEN_11_TIPO_IMPOSITIVO",
+          `${field}.TipoImpositivo`,
+          "IVA regime 11 requires TipoImpositivo 21.00",
+        );
+      }
+      if (detalle.ClaveRegimen === "14") hasRegime14 = true;
+    }
+    if (isIgic && detalle.ClaveRegimen === "20" && detalle.CalificacionOperacion !== "N2") {
+      add(
+        "REGIMEN_20_IGIC_CALIFICACION",
+        `${field}.CalificacionOperacion`,
+        "IGIC regime 20 requires CalificacionOperacion N2",
+      );
+    }
 
     if (isIva && isS1 && detalle.TipoImpositivo !== undefined && validTipoImpositivo) {
       if (!IVA_S1_RATES.has(detalle.TipoImpositivo)) {
@@ -1011,6 +1181,63 @@ export function validate(
       }
     }
   });
+
+  if (hasRegime06 && ["F2", "F3", "R5"].includes(record.TipoFactura)) {
+    add(
+      "REGIMEN_06_TIPO_FACTURA",
+      "TipoFactura",
+      "IVA/IGIC regime 06 forbids TipoFactura F2, F3 and R5",
+    );
+  }
+  if (hasRegime10) {
+    if (record.TipoFactura !== "F1") {
+      add("REGIMEN_10_TIPO_FACTURA", "TipoFactura", "IVA/IGIC regime 10 requires TipoFactura F1");
+    }
+    if (record.Destinatarios?.IDDestinatario.some(({ NIF }) => NIF === undefined)) {
+      add(
+        "REGIMEN_10_DESTINATARIO_ID",
+        "Destinatarios",
+        "Recipients under IVA/IGIC regime 10 must be identified through NIF",
+      );
+    }
+  }
+  if (hasRegime14) {
+    if (record.FechaOperacion === undefined) {
+      add(
+        "REGIMEN_14_FECHA_OPERACION_REQUIRED",
+        "FechaOperacion",
+        "FechaOperacion is mandatory under IVA/IGIC regime 14",
+      );
+    } else if (
+      operacionOrdinal !== undefined &&
+      expedicionOrdinal !== undefined &&
+      operacionOrdinal <= expedicionOrdinal
+    ) {
+      add(
+        "REGIMEN_14_FECHA_OPERACION_ORDER",
+        "FechaOperacion",
+        "FechaOperacion must be after FechaExpedicionFactura under IVA/IGIC regime 14",
+      );
+    }
+    if (
+      record.Destinatarios?.IDDestinatario.some(
+        ({ NIF }) => NIF === undefined || !/^[PQSV]/.test(NIF),
+      )
+    ) {
+      add(
+        "REGIMEN_14_DESTINATARIO_ID",
+        "Destinatarios",
+        "Recipients under IVA/IGIC regime 14 must use a NIF beginning P, Q, S or V",
+      );
+    }
+    if (!["F1", "R1", "R2", "R3", "R4"].includes(record.TipoFactura)) {
+      add(
+        "REGIMEN_14_TIPO_FACTURA",
+        "TipoFactura",
+        "IVA/IGIC regime 14 permits only TipoFactura F1 or R1-R4",
+      );
+    }
+  }
 
   const hasIvaE5Line = record.Desglose.some(
     (detalle) =>

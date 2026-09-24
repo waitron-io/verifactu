@@ -125,6 +125,7 @@ describe("validate", () => {
     record.Desglose[0]!.Impuesto = "05";
     record.Desglose[0]!.ClaveRegimen = undefined;
     expect(codes(record)).not.toContain("CLAVE_REGIMEN_REQUIRED");
+    expect(codes(record)).not.toContain("CLAVE_REGIMEN_FORBIDDEN");
   });
 
   it("forbids ClaveRegimen for the other-tax code", () => {
@@ -1760,7 +1761,7 @@ describe("validate — AEAT §3.1.3.7–12", () => {
   });
 });
 
-describe("validate — AEAT §3.1.3.14–15.5", () => {
+describe("validate — AEAT §3.1.3.14–15.6", () => {
   const withDetail = (overrides: Partial<DetalleDesglose>) => {
     const record = valid();
     const detail = { ...record.Desglose[0]!, ...overrides } as DetalleDesglose;
@@ -2268,6 +2269,446 @@ describe("validate — AEAT §3.1.3.14–15.5", () => {
     record.TipoFactura = "F2";
     record.Destinatarios = undefined;
     expect(codes(record)).not.toContain("OPERACION_EXENTA_E5_DESTINATARIO_ID");
+  });
+
+  it.each([
+    "01",
+    "02",
+    "03",
+    "04",
+    "05",
+    "06",
+    "07",
+    "08",
+    "09",
+    "10",
+    "11",
+    "14",
+    "15",
+    "17",
+    "18",
+    "19",
+    "20",
+  ])("§3.1.3.15.6 accepts IVA regime code %s from list L8A", (ClaveRegimen) => {
+    expect(codes(withDetail({ ClaveRegimen }))).not.toContain("CLAVE_REGIMEN_VALUE");
+  });
+
+  it.each([
+    "01",
+    "02",
+    "03",
+    "04",
+    "05",
+    "06",
+    "07",
+    "08",
+    "09",
+    "10",
+    "11",
+    "14",
+    "15",
+    "17",
+    "18",
+    "19",
+    "20",
+    "21",
+  ])("§3.1.3.15.6 accepts IGIC regime code %s", (ClaveRegimen) => {
+    expect(codes(withDetail({ Impuesto: "03", ClaveRegimen }))).not.toContain(
+      "CLAVE_REGIMEN_VALUE",
+    );
+  });
+
+  it.each(["01", "08", "11", "18", "19", "20"])(
+    "§3.1.3.15.6 accepts IPSI regime code %s",
+    (ClaveRegimen) => {
+      expect(codes(withDetail({ Impuesto: "02", ClaveRegimen }))).not.toContain(
+        "CLAVE_REGIMEN_VALUE",
+      );
+    },
+  );
+
+  it.each([undefined, "01"])("§3.1.3.15.6 rejects an unknown IVA regime code (%s)", (Impuesto) => {
+    expect(codes(withDetail({ Impuesto, ClaveRegimen: "99" }))).toContain("CLAVE_REGIMEN_VALUE");
+  });
+
+  it("§3.1.3.15.6 rejects an unknown IGIC regime code", () => {
+    expect(codes(withDetail({ Impuesto: "03", ClaveRegimen: "99" }))).toContain(
+      "CLAVE_REGIMEN_VALUE",
+    );
+  });
+
+  it("§3.1.3.15.6 reports an empty regime once as not filled", () => {
+    const issues = validate(withDetail({ ClaveRegimen: "" })).filter(({ field }) =>
+      field.endsWith(".ClaveRegimen"),
+    );
+    expect(issues).toEqual([
+      expect.objectContaining({ code: "CLAVE_REGIMEN_REQUIRED", severity: "error" }),
+    ]);
+  });
+
+  it.each([
+    [{ ClaveRegimen: undefined }, "CLAVE_REGIMEN_REQUIRED"],
+    [{ ClaveRegimen: "99" }, "CLAVE_REGIMEN_VALUE"],
+  ] as const)(
+    "§3.1.3.15.6 reports IPSI %s as an advisory warning through 2026",
+    (overrides, code) => {
+      const record = withDetail({ Impuesto: "02", ...overrides });
+      expect(validate(record, { now: new Date("2026-12-31T12:00:00Z") })).toContainEqual(
+        expect.objectContaining({ code, severity: "warning" }),
+      );
+      expect(() => assertValid(record, { now: new Date("2026-12-31T12:00:00Z") })).not.toThrow();
+    },
+  );
+
+  it.each([
+    [{ ClaveRegimen: undefined }, "CLAVE_REGIMEN_REQUIRED"],
+    [{ ClaveRegimen: "99" }, "CLAVE_REGIMEN_VALUE"],
+  ] as const)("§3.1.3.15.6 rejects IPSI %s beginning in 2027", (overrides, code) => {
+    const record = withDetail({ Impuesto: "02", ...overrides });
+    expect(validate(record, { now: new Date("2027-01-01T12:00:00Z") })).toContainEqual(
+      expect.objectContaining({ code, severity: "error" }),
+    );
+    expect(() => assertValid(record, { now: new Date("2027-01-01T12:00:00Z") })).toThrow(
+      VerifactuValidationError,
+    );
+  });
+
+  it("§3.1.3.15.6 keeps the IPSI transition advisory when the record timestamp is malformed", () => {
+    const record = withDetail({ Impuesto: "02", ClaveRegimen: undefined });
+    record.FechaHoraHusoGenRegistro = "malformed";
+    expect(validate(record)).toContainEqual(
+      expect.objectContaining({ code: "CLAVE_REGIMEN_REQUIRED", severity: "warning" }),
+    );
+  });
+
+  it("§3.1.3.15.6.1 permits only OperacionExenta under IVA/IGIC regime 02", () => {
+    expect(codes(withDetail({ ClaveRegimen: "02", CalificacionOperacion: "S1" }))).toContain(
+      "REGIMEN_02_OPERATION",
+    );
+    expect(
+      codes(withDetail({ Impuesto: "03", ClaveRegimen: "02", OperacionExenta: "E1" })),
+    ).not.toContain("REGIMEN_02_OPERATION");
+  });
+
+  it("§3.1.3.15.6.2 permits only S1 or an exemption under IVA/IGIC regime 03", () => {
+    expect(codes(withDetail({ ClaveRegimen: "03", CalificacionOperacion: "S2" }))).toContain(
+      "REGIMEN_03_CALIFICACION",
+    );
+    expect(
+      codes(withDetail({ Impuesto: "03", ClaveRegimen: "03", OperacionExenta: "E1" })),
+    ).not.toContain("REGIMEN_03_CALIFICACION");
+    expect(codes(withDetail({ ClaveRegimen: "03", CalificacionOperacion: "S1" }))).not.toContain(
+      "REGIMEN_03_CALIFICACION",
+    );
+    expect(codes(withDetail({ ClaveRegimen: "01", CalificacionOperacion: "S2" }))).not.toContain(
+      "REGIMEN_03_CALIFICACION",
+    );
+  });
+
+  it("§3.1.3.15.6.3 permits only S2 or an exemption under IVA/IGIC regime 04", () => {
+    expect(codes(withDetail({ ClaveRegimen: "04", CalificacionOperacion: "S1" }))).toContain(
+      "REGIMEN_04_CALIFICACION",
+    );
+    expect(
+      codes(withDetail({ Impuesto: "03", ClaveRegimen: "04", OperacionExenta: "E1" })),
+    ).not.toContain("REGIMEN_04_CALIFICACION");
+  });
+
+  it("§3.1.3.15.6.3 accepts S2 under regime 04", () => {
+    expect(
+      codes(
+        withDetail({
+          ClaveRegimen: "04",
+          CalificacionOperacion: "S2",
+          TipoImpositivo: "0.00",
+          CuotaRepercutida: "0.00",
+        }),
+      ),
+    ).not.toContain("REGIMEN_04_CALIFICACION");
+  });
+
+  it.each(["F2", "F3", "R5"] as const)(
+    "§3.1.3.15.6.4 rejects invoice type %s under IVA/IGIC regime 06",
+    (TipoFactura) => {
+      const record = withDetail({ ClaveRegimen: "06", BaseImponibleACoste: "100.00" });
+      record.TipoFactura = TipoFactura;
+      if (TipoFactura === "F2") delete record.Destinatarios;
+      if (TipoFactura === "R5") {
+        record.TipoRectificativa = "I";
+        delete record.Destinatarios;
+      }
+      expect(codes(record)).toContain("REGIMEN_06_TIPO_FACTURA");
+    },
+  );
+
+  it("§3.1.3.15.6.4 requires BaseImponibleACoste under IVA/IGIC regime 06", () => {
+    expect(codes(withDetail({ Impuesto: "03", ClaveRegimen: "06" }))).toContain(
+      "REGIMEN_06_BASE_COST_REQUIRED",
+    );
+  });
+
+  it.each(["F1", "R1", "R2", "R3", "R4"] as const)(
+    "§3.1.3.15.6.4 accepts invoice type %s with BaseImponibleACoste under regime 06",
+    (TipoFactura) => {
+      const record = withDetail({ ClaveRegimen: "06", BaseImponibleACoste: "100.00" });
+      record.TipoFactura = TipoFactura;
+      if (TipoFactura !== "F1") record.TipoRectificativa = "I";
+      expect(codes(record)).not.toContain("REGIMEN_06_TIPO_FACTURA");
+      expect(codes(record)).not.toContain("REGIMEN_06_BASE_COST_REQUIRED");
+    },
+  );
+
+  it.each(["S2", "N1", "N2"])(
+    "§3.1.3.15.6.5 rejects qualification %s under IVA/IGIC regime 07",
+    (CalificacionOperacion) => {
+      expect(codes(withDetail({ ClaveRegimen: "07", CalificacionOperacion }))).toContain(
+        "REGIMEN_07_OPERATION",
+      );
+    },
+  );
+
+  it.each(["E2", "E3", "E4", "E5"])(
+    "§3.1.3.15.6.5 rejects exemption %s under IVA/IGIC regime 07",
+    (OperacionExenta) => {
+      expect(codes(withDetail({ Impuesto: "03", ClaveRegimen: "07", OperacionExenta }))).toContain(
+        "REGIMEN_07_OPERATION",
+      );
+    },
+  );
+
+  it.each([
+    { CalificacionOperacion: "S1" },
+    { OperacionExenta: "E1" },
+    { OperacionExenta: "E6" },
+    { Impuesto: "03", OperacionExenta: "E7" },
+    { Impuesto: "03", OperacionExenta: "E8" },
+  ] satisfies Array<Partial<DetalleDesglose>>)(
+    "§3.1.3.15.6.5 accepts a permitted regime-07 operation: %o",
+    (operation) => {
+      expect(codes(withDetail({ ClaveRegimen: "07", ...operation }))).not.toContain(
+        "REGIMEN_07_OPERATION",
+      );
+    },
+  );
+
+  it("§3.1.3.15.6.5 does not apply the regime-07 operation rule to regime 01", () => {
+    expect(codes(withDetail({ ClaveRegimen: "01", CalificacionOperacion: "N1" }))).not.toContain(
+      "REGIMEN_07_OPERATION",
+    );
+  });
+
+  it("§3.1.3.15.6.6 requires N2 under IVA/IGIC regime 08", () => {
+    expect(codes(withDetail({ ClaveRegimen: "08", CalificacionOperacion: "S1" }))).toContain(
+      "REGIMEN_08_CALIFICACION",
+    );
+    expect(
+      codes(withDetail({ Impuesto: "03", ClaveRegimen: "08", CalificacionOperacion: "N2" })),
+    ).not.toContain("REGIMEN_08_CALIFICACION");
+  });
+
+  it("§3.1.3.15.6.7 enforces N1, F1 and NIF recipients under IVA/IGIC regime 10", () => {
+    const qualification = withDetail({ ClaveRegimen: "10", CalificacionOperacion: "S1" });
+    expect(codes(qualification)).toContain("REGIMEN_10_CALIFICACION");
+
+    const invoiceType = withDetail({
+      Impuesto: "03",
+      ClaveRegimen: "10",
+      CalificacionOperacion: "N1",
+    });
+    invoiceType.TipoFactura = "R1";
+    invoiceType.TipoRectificativa = "I";
+    expect(codes(invoiceType)).toContain("REGIMEN_10_TIPO_FACTURA");
+
+    const recipient = withDetail({ ClaveRegimen: "10", CalificacionOperacion: "N1" });
+    recipient.Destinatarios = {
+      IDDestinatario: [
+        { NombreRazon: "French recipient", IDOtro: { IDType: "02", ID: "FR12345678901" } },
+      ],
+    };
+    expect(codes(recipient)).toContain("REGIMEN_10_DESTINATARIO_ID");
+  });
+
+  it("§3.1.3.15.6.7 accepts N1, F1 and NIF recipients under regime 10", () => {
+    const record = withDetail({
+      ClaveRegimen: "10",
+      CalificacionOperacion: "N1",
+      CuotaRepercutida: undefined,
+    });
+    record.Destinatarios = {
+      IDDestinatario: [
+        { NombreRazon: "Administración A", NIF: "P1234567D" },
+        { NombreRazon: "Administración B", NIF: "Q1234567C" },
+      ],
+    };
+    const result = codes(record);
+    expect(result).not.toContain("REGIMEN_10_CALIFICACION");
+    expect(result).not.toContain("REGIMEN_10_TIPO_FACTURA");
+    expect(result).not.toContain("REGIMEN_10_DESTINATARIO_ID");
+  });
+
+  it("§3.1.3.15.6.7 rejects one IDOtro among otherwise valid NIF recipients", () => {
+    const record = withDetail({ ClaveRegimen: "10", CalificacionOperacion: "N1" });
+    record.Destinatarios = {
+      IDDestinatario: [
+        { NombreRazon: "Spanish recipient", NIF: "B99999997" },
+        { NombreRazon: "French recipient", IDOtro: { IDType: "02", ID: "FR12345678901" } },
+      ],
+    };
+    expect(codes(record)).toContain("REGIMEN_10_DESTINATARIO_ID");
+  });
+
+  it("§3.1.3.15.6.7 leaves a missing recipient to the general presence rule", () => {
+    const record = withDetail({ ClaveRegimen: "10", CalificacionOperacion: "N1" });
+    delete record.Destinatarios;
+    const result = codes(record);
+    expect(result).toContain("DESTINATARIOS_REQUIRED");
+    expect(result).not.toContain("REGIMEN_10_DESTINATARIO_ID");
+  });
+
+  it("§3.1.3.15.6.8 requires IVA rate 21 under regime 11", () => {
+    expect(codes(withDetail({ ClaveRegimen: "11", TipoImpositivo: "10.00" }))).toContain(
+      "REGIMEN_11_TIPO_IMPOSITIVO",
+    );
+    expect(codes(withDetail({ ClaveRegimen: "11", TipoImpositivo: "21.00" }))).not.toContain(
+      "REGIMEN_11_TIPO_IMPOSITIVO",
+    );
+    expect(codes(withDetail({ ClaveRegimen: "11", TipoImpositivo: undefined }))).toContain(
+      "REGIMEN_11_TIPO_IMPOSITIVO",
+    );
+    expect(
+      codes(withDetail({ Impuesto: "03", ClaveRegimen: "11", TipoImpositivo: "10.00" })),
+    ).not.toContain("REGIMEN_11_TIPO_IMPOSITIVO");
+  });
+
+  it("§3.1.3.15.6.9 requires FechaOperacion after issue date under regime 14", () => {
+    expect(codes(withDetail({ ClaveRegimen: "14" }))).toContain(
+      "REGIMEN_14_FECHA_OPERACION_REQUIRED",
+    );
+    const equal = withDetail({ ClaveRegimen: "14" });
+    equal.FechaOperacion = equal.IDFactura.FechaExpedicionFactura;
+    expect(codes(equal)).toContain("REGIMEN_14_FECHA_OPERACION_ORDER");
+    const after = withDetail({ Impuesto: "03", ClaveRegimen: "14" });
+    after.FechaOperacion = "29-10-2024";
+    expect(codes(after)).not.toContain("REGIMEN_14_FECHA_OPERACION_ORDER");
+  });
+
+  it("§3.1.3.15.6.9 does not cascade the regime-14 order issue from a malformed date", () => {
+    const record = withDetail({ ClaveRegimen: "14" });
+    record.FechaOperacion = "99-99-2024";
+    const result = codes(record);
+    expect(result).toContain("FECHA_FORMAT");
+    expect(result).not.toContain("REGIMEN_14_FECHA_OPERACION_ORDER");
+  });
+
+  it("§3.1.3.15.6.9 requires P/Q/S/V NIF recipients and a permitted invoice type", () => {
+    const recipient = withDetail({ ClaveRegimen: "14" });
+    recipient.FechaOperacion = "29-10-2024";
+    expect(codes(recipient)).toContain("REGIMEN_14_DESTINATARIO_ID");
+
+    const invoiceType = withDetail({ ClaveRegimen: "14" });
+    invoiceType.FechaOperacion = "29-10-2024";
+    invoiceType.TipoFactura = "F3";
+    expect(codes(invoiceType)).toContain("REGIMEN_14_TIPO_FACTURA");
+
+    const accepted = withDetail({ Impuesto: "03", ClaveRegimen: "14" });
+    accepted.FechaOperacion = "29-10-2024";
+    accepted.Destinatarios = {
+      IDDestinatario: [{ NombreRazon: "Administración", NIF: "P1234567D" }],
+    };
+    expect(codes(accepted)).not.toContain("REGIMEN_14_DESTINATARIO_ID");
+  });
+
+  it.each(["P", "Q", "S", "V"])(
+    "§3.1.3.15.6.9 accepts a regime-14 recipient NIF beginning %s",
+    (prefix) => {
+      const record = withDetail({ ClaveRegimen: "14" });
+      record.FechaOperacion = "29-10-2024";
+      const NIF = `${prefix}1234567${{ P: "D", Q: "C", S: "H", V: "H" }[prefix]}`;
+      record.Destinatarios = { IDDestinatario: [{ NombreRazon: "Administración", NIF }] };
+      expect(codes(record)).not.toContain("REGIMEN_14_DESTINATARIO_ID");
+    },
+  );
+
+  it("§3.1.3.15.6.9 requires the P/Q/S/V letter at the start of every recipient NIF", () => {
+    const record = withDetail({ ClaveRegimen: "14" });
+    record.FechaOperacion = "29-10-2024";
+    record.Destinatarios = {
+      IDDestinatario: [
+        { NombreRazon: "Administración", NIF: "P1234567D" },
+        { NombreRazon: "Not an administration", NIF: "B1234567P" },
+      ],
+    };
+    expect(codes(record)).toContain("REGIMEN_14_DESTINATARIO_ID");
+  });
+
+  it("§3.1.3.15.6.9 leaves missing recipients to the general presence rule", () => {
+    const record = withDetail({ ClaveRegimen: "14" });
+    record.FechaOperacion = "29-10-2024";
+    delete record.Destinatarios;
+    const result = codes(record);
+    expect(result).toContain("DESTINATARIOS_REQUIRED");
+    expect(result).not.toContain("REGIMEN_14_DESTINATARIO_ID");
+  });
+
+  it.each(["F1", "R1", "R2", "R3", "R4"] as const)(
+    "§3.1.3.15.6.9 accepts invoice type %s under regime 14",
+    (TipoFactura) => {
+      const record = withDetail({ ClaveRegimen: "14" });
+      record.FechaOperacion = "29-10-2024";
+      record.TipoFactura = TipoFactura;
+      if (TipoFactura !== "F1") record.TipoRectificativa = "I";
+      record.Destinatarios = {
+        IDDestinatario: [{ NombreRazon: "Administración", NIF: "P1234567D" }],
+      };
+      expect(codes(record)).not.toContain("REGIMEN_14_TIPO_FACTURA");
+    },
+  );
+
+  it("§3.1.3.15.6.10 requires N2 for IGIC regime 20", () => {
+    expect(
+      codes(withDetail({ Impuesto: "03", ClaveRegimen: "20", CalificacionOperacion: "S1" })),
+    ).toContain("REGIMEN_20_IGIC_CALIFICACION");
+    expect(
+      codes(withDetail({ Impuesto: "03", ClaveRegimen: "20", CalificacionOperacion: "N2" })),
+    ).not.toContain("REGIMEN_20_IGIC_CALIFICACION");
+  });
+
+  it("§3.1.3.15.6.10 does not apply the IGIC regime-20 rule to IVA", () => {
+    expect(codes(withDetail({ ClaveRegimen: "20", CalificacionOperacion: "S1" }))).not.toContain(
+      "REGIMEN_20_IGIC_CALIFICACION",
+    );
+  });
+
+  it("§3.1.3.15.6.10 does not apply the IGIC regime-20 rule to another IGIC regime", () => {
+    expect(
+      codes(withDetail({ Impuesto: "03", ClaveRegimen: "01", CalificacionOperacion: "S1" })),
+    ).not.toContain("REGIMEN_20_IGIC_CALIFICACION");
+  });
+
+  it("§3.1.3.15.6 does not apply IVA/IGIC special-regime rules to another tax", () => {
+    const result = codes(
+      withDetail({ Impuesto: "05", ClaveRegimen: "10", CalificacionOperacion: "S1" }),
+    );
+    expect(result).toContain("CLAVE_REGIMEN_FORBIDDEN");
+    expect(result).not.toContain("REGIMEN_10_CALIFICACION");
+    expect(result).not.toContain("REGIMEN_10_TIPO_FACTURA");
+  });
+
+  it("§3.1.3.15.6 applies record-wide rules once in a mixed desglose", () => {
+    const record = withDetail({ ClaveRegimen: "10", CalificacionOperacion: "N1" });
+    record.Desglose.push({
+      ClaveRegimen: "10",
+      CalificacionOperacion: "N1",
+      BaseImponibleOimporteNoSujeto: "10.00",
+    });
+    record.Destinatarios = {
+      IDDestinatario: [
+        { NombreRazon: "French recipient", IDOtro: { IDType: "02", ID: "FR12345678901" } },
+      ],
+    };
+    expect(
+      validate(record).filter(({ code }) => code === "REGIMEN_10_DESTINATARIO_ID"),
+    ).toHaveLength(1);
   });
 });
 
@@ -2914,7 +3355,7 @@ describe("validate — pins the exact field, message and severity for every Vali
       field: "FechaOperacion",
       message: "A future FechaOperacion is allowed for IVA or IGIC only under regime 14 or 15",
       mutate: (r) => {
-        r.FechaOperacion = "24-09-2026";
+        r.FechaOperacion = "31-12-9999";
       },
     },
     {
@@ -3289,6 +3730,179 @@ describe("validate — pins the exact field, message and severity for every Vali
       message: "ClaveRegimen is only allowed for IVA, IPSI and IGIC",
       mutate: (r) => {
         r.Desglose[0]!.Impuesto = "05";
+      },
+    },
+    {
+      description: "CLAVE_REGIMEN_VALUE",
+      code: "CLAVE_REGIMEN_VALUE",
+      field: "Desglose[0].ClaveRegimen",
+      message: "ClaveRegimen is not permitted for this tax",
+      mutate: (r) => {
+        r.Desglose[0]!.ClaveRegimen = "99";
+      },
+    },
+    {
+      description: "REGIMEN_02_OPERATION",
+      code: "REGIMEN_02_OPERATION",
+      field: "Desglose[0].CalificacionOperacion",
+      message: "IVA/IGIC regime 02 permits only OperacionExenta",
+      mutate: (r) => {
+        r.Desglose[0]!.ClaveRegimen = "02";
+      },
+    },
+    {
+      description: "REGIMEN_03_CALIFICACION",
+      code: "REGIMEN_03_CALIFICACION",
+      field: "Desglose[0].CalificacionOperacion",
+      message: "IVA/IGIC regime 03 permits only CalificacionOperacion S1 or OperacionExenta",
+      mutate: (r) => {
+        r.Desglose[0]!.ClaveRegimen = "03";
+        r.Desglose[0]!.CalificacionOperacion = "S2";
+      },
+    },
+    {
+      description: "REGIMEN_04_CALIFICACION",
+      code: "REGIMEN_04_CALIFICACION",
+      field: "Desglose[0].CalificacionOperacion",
+      message: "IVA/IGIC regime 04 requires CalificacionOperacion S2 or OperacionExenta",
+      mutate: (r) => {
+        r.Desglose[0]!.ClaveRegimen = "04";
+      },
+    },
+    {
+      description: "REGIMEN_06_TIPO_FACTURA",
+      code: "REGIMEN_06_TIPO_FACTURA",
+      field: "TipoFactura",
+      message: "IVA/IGIC regime 06 forbids TipoFactura F2, F3 and R5",
+      mutate: (r) => {
+        r.Desglose[0]!.ClaveRegimen = "06";
+        r.Desglose[0]!.BaseImponibleACoste = "100.00";
+        r.TipoFactura = "F2";
+        delete r.Destinatarios;
+      },
+    },
+    {
+      description: "REGIMEN_06_BASE_COST_REQUIRED",
+      code: "REGIMEN_06_BASE_COST_REQUIRED",
+      field: "Desglose[0].BaseImponibleACoste",
+      message: "BaseImponibleACoste is mandatory under IVA/IGIC regime 06",
+      mutate: (r) => {
+        r.Desglose[0]!.ClaveRegimen = "06";
+      },
+    },
+    {
+      description: "REGIMEN_07_OPERATION",
+      code: "REGIMEN_07_OPERATION",
+      field: "Desglose[0]",
+      message: "Operation qualification or exemption is not permitted under IVA/IGIC regime 07",
+      mutate: (r) => {
+        r.Desglose[0]!.ClaveRegimen = "07";
+        r.Desglose[0]!.CalificacionOperacion = "N1";
+      },
+    },
+    {
+      description: "REGIMEN_08_CALIFICACION",
+      code: "REGIMEN_08_CALIFICACION",
+      field: "Desglose[0].CalificacionOperacion",
+      message: "IVA/IGIC regime 08 requires CalificacionOperacion N2",
+      mutate: (r) => {
+        r.Desglose[0]!.ClaveRegimen = "08";
+      },
+    },
+    {
+      description: "REGIMEN_10_CALIFICACION",
+      code: "REGIMEN_10_CALIFICACION",
+      field: "Desglose[0].CalificacionOperacion",
+      message: "IVA/IGIC regime 10 requires CalificacionOperacion N1",
+      mutate: (r) => {
+        r.Desglose[0]!.ClaveRegimen = "10";
+      },
+    },
+    {
+      description: "REGIMEN_10_TIPO_FACTURA",
+      code: "REGIMEN_10_TIPO_FACTURA",
+      field: "TipoFactura",
+      message: "IVA/IGIC regime 10 requires TipoFactura F1",
+      mutate: (r) => {
+        r.Desglose[0]!.ClaveRegimen = "10";
+        r.Desglose[0]!.CalificacionOperacion = "N1";
+        r.TipoFactura = "R1";
+        r.TipoRectificativa = "I";
+      },
+    },
+    {
+      description: "REGIMEN_10_DESTINATARIO_ID",
+      code: "REGIMEN_10_DESTINATARIO_ID",
+      field: "Destinatarios",
+      message: "Recipients under IVA/IGIC regime 10 must be identified through NIF",
+      mutate: (r) => {
+        r.Desglose[0]!.ClaveRegimen = "10";
+        r.Desglose[0]!.CalificacionOperacion = "N1";
+        r.Destinatarios = {
+          IDDestinatario: [
+            { NombreRazon: "French recipient", IDOtro: { IDType: "02", ID: "FR12345678901" } },
+          ],
+        };
+      },
+    },
+    {
+      description: "REGIMEN_11_TIPO_IMPOSITIVO",
+      code: "REGIMEN_11_TIPO_IMPOSITIVO",
+      field: "Desglose[0].TipoImpositivo",
+      message: "IVA regime 11 requires TipoImpositivo 21.00",
+      mutate: (r) => {
+        r.Desglose[0]!.ClaveRegimen = "11";
+        r.Desglose[0]!.TipoImpositivo = "10.00";
+      },
+    },
+    {
+      description: "REGIMEN_14_FECHA_OPERACION_REQUIRED",
+      code: "REGIMEN_14_FECHA_OPERACION_REQUIRED",
+      field: "FechaOperacion",
+      message: "FechaOperacion is mandatory under IVA/IGIC regime 14",
+      mutate: (r) => {
+        r.Desglose[0]!.ClaveRegimen = "14";
+      },
+    },
+    {
+      description: "REGIMEN_14_FECHA_OPERACION_ORDER",
+      code: "REGIMEN_14_FECHA_OPERACION_ORDER",
+      field: "FechaOperacion",
+      message: "FechaOperacion must be after FechaExpedicionFactura under IVA/IGIC regime 14",
+      mutate: (r) => {
+        r.Desglose[0]!.ClaveRegimen = "14";
+        r.FechaOperacion = r.IDFactura.FechaExpedicionFactura;
+      },
+    },
+    {
+      description: "REGIMEN_14_DESTINATARIO_ID",
+      code: "REGIMEN_14_DESTINATARIO_ID",
+      field: "Destinatarios",
+      message: "Recipients under IVA/IGIC regime 14 must use a NIF beginning P, Q, S or V",
+      mutate: (r) => {
+        r.Desglose[0]!.ClaveRegimen = "14";
+        r.FechaOperacion = "29-10-2024";
+      },
+    },
+    {
+      description: "REGIMEN_14_TIPO_FACTURA",
+      code: "REGIMEN_14_TIPO_FACTURA",
+      field: "TipoFactura",
+      message: "IVA/IGIC regime 14 permits only TipoFactura F1 or R1-R4",
+      mutate: (r) => {
+        r.Desglose[0]!.ClaveRegimen = "14";
+        r.FechaOperacion = "29-10-2024";
+        r.TipoFactura = "F3";
+      },
+    },
+    {
+      description: "REGIMEN_20_IGIC_CALIFICACION",
+      code: "REGIMEN_20_IGIC_CALIFICACION",
+      field: "Desglose[0].CalificacionOperacion",
+      message: "IGIC regime 20 requires CalificacionOperacion N2",
+      mutate: (r) => {
+        r.Desglose[0]!.Impuesto = "03";
+        r.Desglose[0]!.ClaveRegimen = "20";
       },
     },
     {
