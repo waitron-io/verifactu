@@ -83,7 +83,10 @@ Use `validate` when you want to show several issues in a form. Call `assertValid
 submission when invalid records should stop the operation. It throws `VerifactuValidationError`
 with a readable message such as `SistemaInformatico.NombreSistemaInformatico: ... at most 30
 characters (NOMBRE_SISTEMA_LENGTH)`. Its `issues` property contains the same structured issues, so
-you can report the exact field without parsing the message.
+you can report the exact field without parsing the message. A malformed predecessor hash produces
+the `HUELLA_ANTERIOR_FORMAT` warning rather than blocking submission because AEAT classifies the
+format problem as non-rejecting. If an earlier version's fatal issue guarded your chain, handle the
+warning explicitly when you upgrade. You should still investigate it before relying on the chain.
 
 `validate` now reports `NIF_CONTROL` for malformed nine-character Spanish tax IDs. If you block
 submission on validation errors, review this new issue when updating from an earlier version.

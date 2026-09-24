@@ -18,6 +18,11 @@ review but does not make `assertValid` throw because AEAT may still accept the r
 catches local format and selected AEAT rules; AEAT's response remains authoritative. Inspect every
 returned line after submission.
 
+A predecessor hash must contain exactly 64 uppercase hexadecimal characters. `validate` reports
+`HUELLA_ANTERIOR_FORMAT` as a warning for both alta and cancellation records. AEAT treats this
+format problem as non-rejecting, so `assertValid` does not block the submission, but you should
+still investigate it before relying on the chain.
+
 The total cross-check allows a €10 difference. AEAT exempts regimes `03`, `05`, `06`, `08`, and
 `09`. `validate` skips both total checks when any tax line uses one of those regimes. The exemption
 applies to the complete record, so a mixed-regime invoice does not produce a total mismatch warning.

@@ -18,6 +18,11 @@ requiere revisión, pero no hace que `assertValid` lance una excepción porque l
 el registro. La validación comprueba formatos locales y algunas reglas de la AEAT. La respuesta de
 la AEAT sigue siendo la fuente definitiva; examina cada línea después de enviar.
 
+La huella anterior debe contener exactamente 64 caracteres hexadecimales en mayúsculas. `validate`
+devuelve el aviso `HUELLA_ANTERIOR_FORMAT` tanto para altas como para anulaciones. La AEAT no
+rechaza el registro por este problema de formato, por lo que `assertValid` no impide el envío, pero
+debes investigarlo antes de confiar en la cadena.
+
 La comprobación de los totales admite una diferencia de 10 €. La AEAT excluye los regímenes `03`,
 `05`, `06`, `08` y `09`. `validate` omite ambas comprobaciones si alguna línea usa uno de esos
 regímenes. La exclusión se aplica al registro completo, por lo que una factura con regímenes mixtos

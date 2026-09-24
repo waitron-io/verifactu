@@ -483,6 +483,7 @@ export function validate(
         "HUELLA_ANTERIOR_FORMAT",
         "Encadenamiento.RegistroAnterior.Huella",
         "Predecessor huella must be 64 uppercase hexadecimal characters",
+        "warning",
       );
     }
     if (anterior === record.Huella) {
