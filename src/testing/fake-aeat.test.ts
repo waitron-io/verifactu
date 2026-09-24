@@ -247,6 +247,9 @@ describe("fake AEAT — submit", () => {
       .submit(cabecera, [{ RegistroAnulacion: anulacionFixture("A/1") }]);
     expect(repeated.RespuestaLinea[0]?.CodigoErrorRegistro).toBe(3000);
     expect(repeated.RespuestaLinea[0]?.RegistroDuplicado?.EstadoRegistroDuplicado).toBe("Anulada");
+    expect(repeated.RespuestaLinea[0]?.RegistroDuplicado?.IdPeticionRegistroDuplicado).toBe(
+      "PET-00000002",
+    );
   });
 
   it("an anulación's own external reference replaces the alta reference", async () => {
@@ -648,13 +651,50 @@ describe("fake AEAT — resubmit (error 3000) and consulta", () => {
     expect(r.registros[0]?.DatosRegistroFacturacion.Huella).toBe("H-A/1");
   });
 
-  it("omits EstadoRegistroDuplicado when detail is dropped (the duplicate_unknown case)", async () => {
+  it("omits the optional duplicate-detail block in the duplicate_unknown case", async () => {
     const aeat = createFakeAeat();
-    await aeat.client().submit(cabecera, [{ RegistroAlta: altaFixture("A/1") }]);
+    let wireResponse = "";
+    const client = createClient({
+      endpoint: "https://example.test/Verifactu",
+      fetch: async (input, init) => {
+        const response = await aeat.fetch(input, init);
+        wireResponse = await response.clone().text();
+        return response;
+      },
+    });
+    await client.submit(cabecera, [{ RegistroAlta: altaFixture("A/1") }]);
     aeat.dropRegistroDuplicadoDetail(keyOf(altaFixture("A/1")));
-    const again = await aeat.client().submit(cabecera, [{ RegistroAlta: altaFixture("A/1") }]);
+    const again = await client.submit(cabecera, [{ RegistroAlta: altaFixture("A/1") }]);
     expect(again.RespuestaLinea[0].CodigoErrorRegistro).toBe(3000);
-    expect(again.RespuestaLinea[0].RegistroDuplicado?.EstadoRegistroDuplicado).toBeUndefined();
+    expect(again.RespuestaLinea[0].RegistroDuplicado).toBeUndefined();
+    expect(wireResponse).not.toContain("<sfR:RegistroDuplicado>");
+  });
+
+  it("emits XSD-ordered duplicate details with a stable petition ID", async () => {
+    const aeat = createFakeAeat();
+    const wireResponses: string[] = [];
+    const client = createClient({
+      endpoint: "https://example.test/Verifactu",
+      fetch: async (input, init) => {
+        const response = await aeat.fetch(input, init);
+        wireResponses.push(await response.clone().text());
+        return response;
+      },
+    });
+    const record = { RegistroAlta: altaFixture("A/DUP") };
+    await client.submit(cabecera, [record]);
+    const firstDuplicate = await client.submit(cabecera, [record]);
+    const secondDuplicate = await client.submit(cabecera, [record]);
+
+    const firstId =
+      firstDuplicate.RespuestaLinea[0]?.RegistroDuplicado?.IdPeticionRegistroDuplicado;
+    expect(firstId).toMatch(/^PET-\d{8}$/);
+    expect(secondDuplicate.RespuestaLinea[0]?.RegistroDuplicado?.IdPeticionRegistroDuplicado).toBe(
+      firstId,
+    );
+    expect(wireResponses[1]).toContain(
+      `<sfR:RegistroDuplicado><sf:IdPeticionRegistroDuplicado>${firstId}</sf:IdPeticionRegistroDuplicado><sf:EstadoRegistroDuplicado>Correcta</sf:EstadoRegistroDuplicado></sfR:RegistroDuplicado>`,
+    );
   });
 
   it("reports an annulled stored record as Anulada on resubmit", async () => {
@@ -663,6 +703,10 @@ describe("fake AEAT — resubmit (error 3000) and consulta", () => {
     aeat.annul(keyOf(altaFixture("A/1")));
     const again = await aeat.client().submit(cabecera, [{ RegistroAlta: altaFixture("A/1") }]);
     expect(again.RespuestaLinea[0].RegistroDuplicado?.EstadoRegistroDuplicado).toBe("Anulada");
+    expect(again.RespuestaLinea[0].RegistroDuplicado?.IdPeticionRegistroDuplicado).toBe(
+      "PET-00000001",
+    );
+    expect(aeat.stored()[0]).toMatchObject({ tipo: "alta", huella: "H-A/1" });
   });
 });
 
