@@ -14,9 +14,9 @@ import { createHash } from "node:crypto";
 
 /**
  * AEAT conformance. These are the authority's own published worked examples,
- * and they are the closest thing to ground truth available before
- * preproduction access exists. If one fails, the implementation is wrong —
- * never adjust a vector to match the code.
+ * and pin their exact inputs and outputs independently of the implementation.
+ * If one fails, investigate the code or a source-version change; never adjust
+ * a vector to match the code.
  */
 describe("AEAT conformance vectors", () => {
   const hash = (cadena: string) =>

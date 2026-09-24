@@ -17,9 +17,8 @@ describe("trimValue", () => {
   });
 
   it("does NOT strip a non-breaking space", () => {
-    // Policy: match AEAT's reference trim (code points <= U+0020) rather than
-    // JS .trim(), which also strips U+00A0 and U+FEFF. Using .trim() here would
-    // produce a different huella from AEAT's recomputation.
+    // Pin the library's <= U+0020 boundary. JS .trim() would also remove
+    // U+00A0 and U+FEFF, but AEAT's exact Unicode boundary is unverified.
     expect(trimValue(" ABC ")).toBe(" ABC ");
   });
 

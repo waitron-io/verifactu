@@ -125,9 +125,9 @@ describe("computeHuella", () => {
     expect(computeHuella({ ...record, ImporteTotal: "123.46" })).not.toBe(VECTOR_1_HUELLA);
   });
 
-  it("distinguishes 123.1 from 123.10", () => {
-    // AEAT recomputes from the literal it received, so these legitimately
-    // differ. This is why records carry pre-formatted strings.
+  it("hashes the supplied decimal text without normalizing trailing zeros", () => {
+    // This pins the library's behavior; AEAT accepts both forms but its
+    // treatment of their hashes still needs a controlled preproduction check.
     const record = altaRecord(VECTOR_1_INPUT, { PrimerRegistro: "S" });
     expect(computeHuella({ ...record, ImporteTotal: "123.1" })).not.toBe(
       computeHuella({ ...record, ImporteTotal: "123.10" }),

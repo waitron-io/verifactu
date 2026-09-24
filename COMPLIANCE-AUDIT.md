@@ -6,15 +6,15 @@ is accepted. The [source watch](sources/README.md) checks for publication change
 
 ## Sources checked through 24 September 2026
 
-| AEAT publication                                                                                                                                                   | Version                                    | Audit status                                                               |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ | -------------------------------------------------------------------------- |
-| [Validation rules and errors](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Validaciones_Errores_Veri-Factu.pdf)          | 1.2.2, 8 April 2026                        | In progress; selected rules below                                          |
-| [Web service description](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_Descripcion_SWeb.pdf)             | 1.0.3, 28 July 2025                        | Pending systematic review                                                  |
-| [Hash specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_especificaciones_huella_hash_registros.pdf) | 0.1.2, 27 August 2024                      | Three published examples checked; remaining prose pending review           |
-| [QR specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf)               | 0.5.0, 10 December 2025                    | Three supported published examples checked; remaining prose pending review |
-| [Developer FAQ](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/FAQs-Desarrolladores.pdf)                              | 1.3, 4 December 2025                       | Pending entry-by-entry review                                              |
-| [Public FAQ](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes.html)                                 | Pages listed by AEAT on 22 September 2026  | Pending entry-by-entry review                                              |
-| [XSD and WSDL files](schemas/README.md)                                                                                                                            | Versions and checksums in the linked index | Pending element-by-element review                                          |
+| AEAT publication                                                                                                                                                   | Version                                    | Audit status                                                                                                               |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| [Validation rules and errors](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Validaciones_Errores_Veri-Factu.pdf)          | 1.2.2, 8 April 2026                        | In progress; selected rules below                                                                                          |
+| [Web service description](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_Descripcion_SWeb.pdf)             | 1.0.3, 28 July 2025                        | Pending systematic review                                                                                                  |
+| [Hash specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_especificaciones_huella_hash_registros.pdf) | 0.1.2, 27 August 2024                      | §§2–7 checked for alta and cancellation; event records out of scope; decimal-variant comparison pending AEAT preproduction |
+| [QR specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf)               | 0.5.0, 10 December 2025                    | Three supported published examples checked; remaining prose pending review                                                 |
+| [Developer FAQ](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/FAQs-Desarrolladores.pdf)                              | 1.3, 4 December 2025                       | Pending entry-by-entry review                                                                                              |
+| [Public FAQ](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes.html)                                 | Pages listed by AEAT on 22 September 2026  | Pending entry-by-entry review                                                                                              |
+| [XSD and WSDL files](schemas/README.md)                                                                                                                            | Versions and checksums in the linked index | Pending element-by-element review                                                                                          |
 
 ## Rules checked in this branch
 
@@ -174,6 +174,15 @@ XSD validity.
 
 ### Own-record hash validation
 
+Hash specification §2 allows SHA-256, represented by `TipoHuella: "01"` in both builders. Section
+3 lists eight ordered alta fields and five ordered cancellation fields; `buildCadenaAlta` and
+`buildCadenaAnulacion` include the preceding record's hash, or an empty `Huella=` for the first
+record, and trim the ends of each input value before joining `name=value` pairs with `&`. Section
+3 requires UTF-8 bytes. Section 5 requires a 64-character uppercase hexadecimal output, including
+for the first record. `src/huella.test.ts`, `src/format.test.ts`, and `src/records.test.ts` cover
+these rules, while `src/conformance.test.ts` pins all three worked examples in §6. The Java
+snippet in §4 illustrates the same input construction; it adds no separate wire format.
+
 Validation §3.1.3.23 and §3.1.4.7 require the submitted alta or cancellation hash to match
 [AEAT's hash specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_especificaciones_huella_hash_registros.pdf).
 The builders hash the serialized field literals in the published order, and `verifyHuella` checks
@@ -183,10 +192,17 @@ Missing values, values exceeding the XSD's 64-character maximum, and XML control
 locally blocking. Both record types, the advisory severity, non-throwing `assertValid`, and those
 XML boundaries are covered in `src/validate.test.ts`. The three AEAT examples are checked directly
 in `src/conformance.test.ts` and through third-party fixtures in `src/upstream-conformance.test.ts`.
-The hash specification also says numeric values with one or two decimal places and trailing zeroes
-are acceptable. The current implementation hashes the XML's literal decimal text, as do AEAT's
-published examples. Whether AEAT normalizes those lexical variants during comparison still needs
-an independent preproduction check before changing hash canonicalization.
+Hash specification §7 says AEAT marks a submitted record `Aceptado con errores` when its hash does
+not match AEAT's calculation; the local mismatch issue is therefore advisory, not a substitute
+for the returned status. Section 3 allows numeric values with one or two decimal places and
+trailing zeroes. The builders always emit two decimals and hash that exact text. A direct record
+with `123.1` instead of `123.10` gets a different _local_ hash, as `src/huella.test.ts` proves;
+the published vectors do not show how AEAT compares the two forms. A controlled preproduction
+submission and read-only consultation remain necessary before claiming they yield distinct AEAT
+hashes or changing local canonicalization. The third-party fixture's prose makes the stronger
+claim but is not an official source; only its three AEAT-derived vectors are used as evidence.
+The specification also defines event-record inputs and `HuellaEvento`. This library does not
+build or submit event records, so those fields are explicitly outside its supported surface.
 
 ### Numeric XML values — service description §6.8
 

@@ -1,22 +1,20 @@
 /**
  * Value formatting for Veri*Factu records.
  *
- * The huella is SHA-256 over a string built from these literals, and AEAT
- * recomputes from the literal it received — so `123.1` and `123.10` are both
- * valid and hash differently. Every value is therefore formatted exactly once,
- * here, and the same literal goes into both the XML and the hash.
+ * The huella is SHA-256 over a string built from these literals. The builder
+ * formats each amount once, then uses the same two-decimal text in the XML and
+ * local hash so later formatting cannot change the submitted record.
  */
 
 const MAX_INTEGER_DIGITS = 12;
 
 /**
- * Strips leading/trailing whitespace using AEAT's reference semantics: code
- * points <= U+0020 only.
+ * Strips leading/trailing code points <= U+0020, as Java String.trim does.
  *
  * Deliberately NOT String.prototype.trim(), which also strips U+00A0 and
- * U+FEFF. AEAT recomputes the huella with the narrower rule, so using the
- * wider one would produce a mismatching hash for any value carrying a
- * non-breaking space. Interior whitespace is preserved verbatim.
+ * U+FEFF. AEAT requires edge-space removal but does not specify its exact
+ * Unicode boundary; preserving these characters avoids changing low-level
+ * inputs without evidence. Interior whitespace is preserved verbatim.
  *
  * The `start < end`/`end > start` loop bounds are mutation-tested as
  * equivalent, not merely untested: `String.prototype.slice` returns "" for
