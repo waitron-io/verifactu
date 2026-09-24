@@ -130,3 +130,16 @@ caracteres centrales; la validación solo comprueba su forma. No confirma su let
 correcta no demuestra que el identificador pertenezca a un contribuyente real.
 `NOMBRE_SISTEMA_LENGTH` señala un `SistemaInformatico.NombreSistemaInformatico` que supera el
 máximo de 30 caracteres del esquema.
+
+`SistemaInformatico` debe identificar al productor del programa con exactamente uno de `NIF` e
+`IDOtro`. Un productor español identificado mediante `IDOtro` debe usar `IDType: "03"`;
+`IDType: "07"` no está permitido; y `IDType: "02"` debe ajustarse a una de las estructuras NIF-IVA
+en mayúsculas publicadas por la AEAT. La regla GB/XI sigue la fecha efectiva de la operación.
+`IdSistemaInformatico` debe contener exactamente dos letras mayúsculas de la A a la Z o dígitos, y
+`NombreSistemaInformatico`, `TipoUsoPosibleSoloVerifactu` y `TipoUsoPosibleMultiOT` deben tener
+contenido. Estas comprobaciones se aplican a los registros de alta y anulación. Solo la AEAT puede
+confirmar que una identidad del productor bien formada está censada.
+
+Al actualizar, corrige antes del despliegue cualquier identificador del sistema de un solo carácter
+o con minúsculas, y cualquier nombre del programa o indicador de uso vacío. Las versiones anteriores
+aceptaban esos valores; ahora `assertValid` los bloquea.

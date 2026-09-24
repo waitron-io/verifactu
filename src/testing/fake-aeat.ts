@@ -52,11 +52,8 @@ function matchesSistema(
   stored: SistemaInformatico,
   requested: SistemaInformaticoConsulta,
 ): boolean {
-  // Submitted records have NIF-only software identities, so an IDOtro filter cannot match this fake's store.
   return (
-    requested.NIF !== undefined &&
-    stored.NombreRazon === requested.NombreRazon &&
-    stored.NIF === requested.NIF &&
+    samePersona(stored, requested) &&
     stored.IdSistemaInformatico === requested.IdSistemaInformatico &&
     stored.NumeroInstalacion === requested.NumeroInstalacion &&
     (requested.NombreSistemaInformatico === undefined ||
@@ -489,10 +486,18 @@ function sfValueXml(name: string, value: string | undefined): string {
 }
 
 function sistemaConsultaXml(value: SistemaInformatico): string {
+  const identity =
+    value.NIF !== undefined
+      ? sfValueXml("NIF", value.NIF)
+      : "<sf:IDOtro>" +
+        sfValueXml("CodigoPais", value.IDOtro.CodigoPais) +
+        sfValueXml("IDType", value.IDOtro.IDType) +
+        sfValueXml("ID", value.IDOtro.ID) +
+        "</sf:IDOtro>";
   return (
     "<sfRC:SistemaInformatico>" +
     `<sf:NombreRazon>${escapeXml(value.NombreRazon)}</sf:NombreRazon>` +
-    `<sf:NIF>${escapeXml(value.NIF)}</sf:NIF>` +
+    identity +
     `<sf:NombreSistemaInformatico>${escapeXml(value.NombreSistemaInformatico)}</sf:NombreSistemaInformatico>` +
     `<sf:IdSistemaInformatico>${escapeXml(value.IdSistemaInformatico)}</sf:IdSistemaInformatico>` +
     `<sf:Version>${escapeXml(value.Version)}</sf:Version>` +

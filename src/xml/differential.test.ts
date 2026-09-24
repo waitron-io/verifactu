@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import { ALTA_INPUT, CABECERA, SISTEMA } from "../../test/fixtures.js";
 import { parseXml, soapPayload, xmlNode, type XmlNode } from "../../test/xml-compare.js";
 import { buildAltaRecord, buildAnulacionRecord } from "../records.js";
-import type { AltaInput, RegistroAlta, RegistroAnulacion } from "../types.js";
+import type { AltaInput, RegistroAlta, RegistroAnulacion, SistemaInformatico } from "../types.js";
 import { validate } from "../validate.js";
 import { NS_LR, serializeEnvio } from "./serialize.js";
 
@@ -20,6 +20,13 @@ function referencePayload(xml: string): XmlNode {
   expect(root.namespaceURI).toBe(NS_LR);
   expect(root.localName).toBe("RegFactuSistemaFacturacion");
   return xmlNode(root);
+}
+
+function referenceSistema(sistema: SistemaInformatico): ReferenceAlta["SistemaInformatico"] {
+  if (sistema.NIF === undefined) {
+    throw new Error("The differential reference serializer does not support IDOtro producers");
+  }
+  return { ...sistema, NIF: sistema.NIF };
 }
 
 function referenceAlta(record: RegistroAlta): ReferenceAlta {
@@ -42,7 +49,7 @@ function referenceAlta(record: RegistroAlta): ReferenceAlta {
     CuotaTotal: record.CuotaTotal,
     ImporteTotal: record.ImporteTotal,
     Encadenamiento: record.Encadenamiento,
-    SistemaInformatico: record.SistemaInformatico,
+    SistemaInformatico: referenceSistema(record.SistemaInformatico),
     FechaHoraHusoGenRegistro: record.FechaHoraHusoGenRegistro,
     TipoHuella: record.TipoHuella,
     Huella: record.Huella,
@@ -58,7 +65,7 @@ function referenceAnulacion(record: RegistroAnulacion): ReferenceAnulacion {
       FechaExpedicionFactura: record.IDFactura.FechaExpedicionFacturaAnulada,
     },
     Encadenamiento: record.Encadenamiento,
-    SistemaInformatico: record.SistemaInformatico,
+    SistemaInformatico: referenceSistema(record.SistemaInformatico),
     FechaHoraHusoGenRegistro: record.FechaHoraHusoGenRegistro,
     TipoHuella: record.TipoHuella,
     Huella: record.Huella,

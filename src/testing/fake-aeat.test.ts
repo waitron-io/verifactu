@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createFakeAeat, keyOf } from "./fake-aeat.js";
 import type { RegistroAlta, RegistroAnulacion } from "../types.js";
 import { serializeConsulta } from "../xml/serialize.js";
+import { withoutNif } from "../../test/fixtures.js";
 
 const cabecera = { ObligadoEmision: { NombreRazon: "Waitron SL", NIF: "89890001K" } };
 
@@ -336,6 +337,7 @@ describe("fake AEAT — resubmit (error 3000) and consulta", () => {
 
   it("narrows consulta by external reference, counterpart, and software identity", async () => {
     const aeat = createFakeAeat({ consultaPageSize: 10 });
+    const foreignSystemCommon = withoutNif(SISTEMA);
     const first: RegistroAlta = {
       ...altaFixture("A/1", "20-07-2026", "ref-one"),
       Destinatarios: { IDDestinatario: [{ NombreRazon: "Buyer One", NIF: "11111111H" }] },
@@ -347,7 +349,12 @@ describe("fake AEAT — resubmit (error 3000) and consulta", () => {
           { NombreRazon: "Buyer Two", IDOtro: { CodigoPais: "FR", IDType: "02", ID: "FR123" } },
         ],
       },
-      SistemaInformatico: { ...SISTEMA, NumeroInstalacion: "2" },
+      SistemaInformatico: {
+        ...foreignSystemCommon,
+        NombreRazon: "Foreign Software",
+        IDOtro: { CodigoPais: "FR", IDType: "02", ID: "FR12345678901" },
+        NumeroInstalacion: "2",
+      },
     };
     await aeat.client().submit(cabecera, [{ RegistroAlta: first }, { RegistroAlta: second }]);
     const base = { Ejercicio: "2026", Periodo: "07" };
@@ -375,21 +382,109 @@ describe("fake AEAT — resubmit (error 3000) and consulta", () => {
           NombreRazon: "Waitron SL",
           NIF: "89890001K",
           IdSistemaInformatico: "77",
-          NumeroInstalacion: "2",
+          NumeroInstalacion: "1",
         },
       }),
-    ).toEqual(["A/2"]);
+    ).toEqual(["A/1"]);
+    const foreignFilter = {
+      NombreRazon: "Foreign Software",
+      IDOtro: { CodigoPais: "FR", IDType: "02", ID: "FR12345678901" },
+      IdSistemaInformatico: "77",
+      NumeroInstalacion: "2",
+    } as const;
+    expect(await serials({ ...base, SistemaInformatico: foreignFilter })).toEqual(["A/2"]);
+
+    const nonmatchingForeignFilters = [
+      { ...foreignFilter, NombreRazon: "Other producer" },
+      { ...foreignFilter, IDOtro: { ...foreignFilter.IDOtro, CodigoPais: "DE" } },
+      { ...foreignFilter, IDOtro: { ...foreignFilter.IDOtro, IDType: "03" } },
+      { ...foreignFilter, IDOtro: { ...foreignFilter.IDOtro, ID: "FR00000000000" } },
+      { ...foreignFilter, IdSistemaInformatico: "XX" },
+      { ...foreignFilter, NumeroInstalacion: "other" },
+      { ...foreignFilter, NombreSistemaInformatico: "Other POS" },
+      { ...foreignFilter, Version: "other" },
+      { ...foreignFilter, TipoUsoPosibleSoloVerifactu: "N" as const },
+      { ...foreignFilter, TipoUsoPosibleMultiOT: "N" as const },
+      { ...foreignFilter, IndicadorMultiplesOT: "S" as const },
+    ];
+    for (const SistemaInformatico of nonmatchingForeignFilters) {
+      expect(await serials({ ...base, SistemaInformatico })).toEqual([]);
+    }
+    expect(
+      await serials({
+        ...base,
+        SistemaInformatico: {
+          NombreRazon: "Waitron SL",
+          NIF: "B12345674",
+          IdSistemaInformatico: "77",
+          NumeroInstalacion: "1",
+        },
+      }),
+    ).toEqual([]);
     expect(
       await serials({
         ...base,
         SistemaInformatico: {
           NombreRazon: "Foreign Software",
-          IDOtro: { CodigoPais: "FR", IDType: "02", ID: "FR123" },
+          NIF: "89890001K",
           IdSistemaInformatico: "77",
           NumeroInstalacion: "2",
         },
       }),
     ).toEqual([]);
+    expect(
+      await serials({
+        ...base,
+        SistemaInformatico: {
+          NombreRazon: "Foreign Software",
+          IDOtro: foreignFilter.IDOtro,
+          IdSistemaInformatico: "77",
+          NumeroInstalacion: "2",
+          NombreSistemaInformatico: second.SistemaInformatico.NombreSistemaInformatico,
+          Version: second.SistemaInformatico.Version,
+          TipoUsoPosibleSoloVerifactu: second.SistemaInformatico.TipoUsoPosibleSoloVerifactu,
+          TipoUsoPosibleMultiOT: second.SistemaInformatico.TipoUsoPosibleMultiOT,
+          IndicadorMultiplesOT: second.SistemaInformatico.IndicadorMultiplesOT,
+        },
+      }),
+    ).toEqual(["A/2"]);
+
+    const foreignExpanded = await aeat.client().consultar(cabecera, {
+      ...base,
+      SistemaInformatico: foreignFilter,
+      DatosAdicionalesRespuesta: { MostrarSistemaInformatico: "S" },
+    });
+    expect(foreignExpanded.registros[0]?.DatosRegistroFacturacion.SistemaInformatico).toEqual(
+      second.SistemaInformatico,
+    );
+
+    const noCountrySystem = {
+      ...foreignSystemCommon,
+      NombreRazon: "No-country Software",
+      IDOtro: { IDType: "03", ID: "NO-COUNTRY-ID" },
+      NumeroInstalacion: "3",
+    };
+    await aeat.client().submit(cabecera, [
+      {
+        RegistroAlta: {
+          ...altaFixture("A/3", "20-07-2026", "ref-three"),
+          SistemaInformatico: noCountrySystem,
+        },
+      },
+    ]);
+    const noCountryExpanded = await aeat.client().consultar(cabecera, {
+      ...base,
+      SistemaInformatico: {
+        NombreRazon: noCountrySystem.NombreRazon,
+        IDOtro: noCountrySystem.IDOtro,
+        IdSistemaInformatico: noCountrySystem.IdSistemaInformatico,
+        NumeroInstalacion: noCountrySystem.NumeroInstalacion,
+      },
+      DatosAdicionalesRespuesta: { MostrarSistemaInformatico: "S" },
+    });
+    expect(noCountryExpanded.registros[0]?.DatosRegistroFacturacion.SistemaInformatico).toEqual(
+      noCountrySystem,
+    );
   });
 
   it("includes extra response fields only when the consulta requests them", async () => {

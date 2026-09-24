@@ -18,7 +18,15 @@ export type ValidationCode =
   | "FECHA_HORA_FORMAT"
   | "HUELLA_FORMAT"
   | "ID_SISTEMA_LENGTH"
+  | "ID_SISTEMA_CHARSET"
   | "NOMBRE_SISTEMA_LENGTH"
+  | "NOMBRE_SISTEMA_REQUIRED"
+  | "TIPO_USO_SOLO_VERIFACTU_REQUIRED"
+  | "TIPO_USO_MULTI_OT_REQUIRED"
+  | "SISTEMA_ID_CHOICE"
+  | "SISTEMA_ES_IDTYPE"
+  | "SISTEMA_IDTYPE_07_FORBIDDEN"
+  | "SISTEMA_VAT_ID_FORMAT"
   | "CONTROL_CHAR"
   | "HUELLA_ANTERIOR_FORMAT"
   | "HUELLA_ANTERIOR_EQUALS_CURRENT"
@@ -424,6 +432,10 @@ export function validate(
   if (expedicionOrdinal === undefined) {
     add("FECHA_FORMAT", fechaField, "Date must be DD-MM-YYYY");
   }
+  const fechaOperacion = isAlta(record) ? record.FechaOperacion : undefined;
+  const operacionOrdinal = fechaOperacion === undefined ? undefined : fechaOrdinal(fechaOperacion);
+  const effectiveOperationDate =
+    fechaOperacion === undefined ? expedicionOrdinal : operacionOrdinal;
 
   if (!HUELLA_PATTERN.test(record.Huella)) {
     add("HUELLA_FORMAT", "Huella", "Huella must be 64 uppercase hexadecimal characters");
@@ -435,21 +447,84 @@ export function validate(
       "FechaHoraHusoGenRegistro must be YYYY-MM-DDThh:mm:ss with a numeric offset in -14:00..+14:00",
     );
   }
-  if (record.SistemaInformatico.IdSistemaInformatico.length > 2) {
+  const sistema = record.SistemaInformatico;
+  const sistemaId = sistema.IdSistemaInformatico ?? "";
+  if (sistemaId.length !== 2) {
     add(
       "ID_SISTEMA_LENGTH",
       "IdSistemaInformatico",
-      "IdSistemaInformatico is at most 2 characters",
+      "IdSistemaInformatico must contain exactly 2 characters",
+    );
+  } else if (!/^[A-Z0-9]{2}$/.test(sistemaId)) {
+    add(
+      "ID_SISTEMA_CHARSET",
+      "IdSistemaInformatico",
+      "IdSistemaInformatico must use exactly 2 uppercase A-Z letters or digits",
     );
   }
-  if (record.SistemaInformatico.NombreSistemaInformatico.length > 30) {
+  if (trimValue(sistema.NombreSistemaInformatico).length === 0) {
+    add(
+      "NOMBRE_SISTEMA_REQUIRED",
+      "SistemaInformatico.NombreSistemaInformatico",
+      "NombreSistemaInformatico must have content",
+    );
+  } else if (sistema.NombreSistemaInformatico.length > 30) {
     add(
       "NOMBRE_SISTEMA_LENGTH",
       "SistemaInformatico.NombreSistemaInformatico",
       "NombreSistemaInformatico is at most 30 characters",
     );
   }
-  checkNif("SistemaInformatico.NIF", record.SistemaInformatico.NIF);
+  if (trimValue(sistema.TipoUsoPosibleSoloVerifactu).length === 0) {
+    add(
+      "TIPO_USO_SOLO_VERIFACTU_REQUIRED",
+      "SistemaInformatico.TipoUsoPosibleSoloVerifactu",
+      "TipoUsoPosibleSoloVerifactu must have content",
+    );
+  }
+  if (trimValue(sistema.TipoUsoPosibleMultiOT).length === 0) {
+    add(
+      "TIPO_USO_MULTI_OT_REQUIRED",
+      "SistemaInformatico.TipoUsoPosibleMultiOT",
+      "TipoUsoPosibleMultiOT must have content",
+    );
+  }
+  const sistemaHasNif = sistema.NIF !== undefined;
+  const sistemaHasIdOtro = sistema.IDOtro !== undefined;
+  if (sistemaHasNif === sistemaHasIdOtro) {
+    add(
+      "SISTEMA_ID_CHOICE",
+      "SistemaInformatico",
+      "SistemaInformatico must carry exactly one of NIF or IDOtro",
+    );
+  }
+  if (sistema.NIF !== undefined) {
+    checkNif("SistemaInformatico.NIF", sistema.NIF);
+  }
+  if (sistema.IDOtro?.CodigoPais === "ES" && sistema.IDOtro.IDType !== "03") {
+    add(
+      "SISTEMA_ES_IDTYPE",
+      "SistemaInformatico.IDOtro.IDType",
+      "A Spanish software producer identified through IDOtro must use IDType 03",
+    );
+  }
+  if (sistema.IDOtro?.IDType === "07") {
+    add(
+      "SISTEMA_IDTYPE_07_FORBIDDEN",
+      "SistemaInformatico.IDOtro.IDType",
+      "A software producer must not use IDType 07",
+    );
+  }
+  if (
+    sistema.IDOtro?.IDType === "02" &&
+    !isValidEuVatId(sistema.IDOtro.ID, effectiveOperationDate)
+  ) {
+    add(
+      "SISTEMA_VAT_ID_FORMAT",
+      "SistemaInformatico.IDOtro.ID",
+      "Software-producer IDType 02 must match a published uppercase EU VAT-number structure",
+    );
+  }
 
   // A control character makes the serialised document not well-formed XML —
   // not merely schema-invalid, but unparseable — so it is rejected rather
@@ -466,10 +541,11 @@ export function validate(
     }
   };
   checkNoControlChars("RefExterna", record.RefExterna);
-  checkNoControlChars("SistemaInformatico.NombreRazon", record.SistemaInformatico.NombreRazon);
+  checkNoControlChars("SistemaInformatico.NombreRazon", sistema.NombreRazon);
+  checkNoControlChars("SistemaInformatico.IDOtro.ID", sistema.IDOtro?.ID);
   checkNoControlChars(
     "SistemaInformatico.NombreSistemaInformatico",
-    record.SistemaInformatico.NombreSistemaInformatico,
+    sistema.NombreSistemaInformatico,
   );
 
   // `!== undefined`, not `"RegistroAnterior" in record.Encadenamiento` — see
@@ -497,10 +573,6 @@ export function validate(
 
   if (!isAlta(record)) return issues;
 
-  const operacionOrdinal =
-    record.FechaOperacion === undefined ? undefined : fechaOrdinal(record.FechaOperacion);
-  const effectiveOperationDate =
-    record.FechaOperacion === undefined ? expedicionOrdinal : operacionOrdinal;
   if (record.FechaOperacion !== undefined && operacionOrdinal === undefined) {
     add("FECHA_FORMAT", "FechaOperacion", "Date must be DD-MM-YYYY");
   }

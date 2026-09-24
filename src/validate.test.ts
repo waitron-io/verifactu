@@ -2,13 +2,15 @@ import { describe, expect, it } from "vitest";
 import { assertValid, validate, VerifactuValidationError } from "./validate.js";
 import type { ValidationCode, ValidationOptions, ValidationSeverity } from "./validate.js";
 import { buildAltaRecord, buildAnulacionRecord } from "./records.js";
-import { SISTEMA } from "../test/fixtures.js";
+import { SISTEMA, withoutNif } from "../test/fixtures.js";
 import type {
   AltaInput,
   AnulacionInput,
   DetalleDesglose,
+  IDOtro,
   RegistroAlta,
   RegistroAnulacion,
+  SistemaInformatico,
 } from "./types.js";
 
 // Deliberately NOT test/fixtures.ts's ALTA_INPUT. This fixture carries the
@@ -57,6 +59,10 @@ const ANULACION_INPUT: AnulacionInput = {
 
 const valid = () => buildAltaRecord(INPUT);
 const validAnulacion = () => buildAnulacionRecord(ANULACION_INPUT);
+const sistemaWithIdOtro = (IDOtro: IDOtro): SistemaInformatico => ({
+  ...withoutNif(SISTEMA),
+  IDOtro,
+});
 const codes = (record: RegistroAlta, options?: ValidationOptions) =>
   validate(record, options).map((issue) => issue.code);
 const anulacionCodes = (record: RegistroAnulacion) => validate(record).map((issue) => issue.code);
@@ -86,14 +92,14 @@ describe("validate", () => {
       "SistemaInformatico.NombreSistemaInformatico: NombreSistemaInformatico is at most 30 characters (NOMBRE_SISTEMA_LENGTH)",
     );
     expect((failure as Error).message).toContain(
-      "IdSistemaInformatico: IdSistemaInformatico is at most 2 characters (ID_SISTEMA_LENGTH)",
+      "IdSistemaInformatico: IdSistemaInformatico must contain exactly 2 characters (ID_SISTEMA_LENGTH)",
     );
     expect((failure as VerifactuValidationError).issues).toEqual([
       {
         code: "ID_SISTEMA_LENGTH",
         severity: "error",
         field: "IdSistemaInformatico",
-        message: "IdSistemaInformatico is at most 2 characters",
+        message: "IdSistemaInformatico must contain exactly 2 characters",
       },
       {
         code: "NOMBRE_SISTEMA_LENGTH",
@@ -758,6 +764,132 @@ describe("validate", () => {
 
   it("accepts ordinary text with no control characters", () => {
     expect(codes(valid())).not.toContain("CONTROL_CHAR");
+  });
+});
+
+describe("validate — AEAT §3.1.5 SistemaInformatico", () => {
+  it.each(["W", "WTX"])("requires both IdSistemaInformatico positions for %j", (value) => {
+    const record = valid();
+    record.SistemaInformatico = { ...SISTEMA, IdSistemaInformatico: value };
+    expect(codes(record)).toContain("ID_SISTEMA_LENGTH");
+  });
+
+  it("reports a missing IdSistemaInformatico field instead of throwing", () => {
+    const record = valid();
+    record.SistemaInformatico = { ...record.SistemaInformatico };
+    delete (record.SistemaInformatico as Partial<SistemaInformatico>).IdSistemaInformatico;
+    expect(codes(record)).toContain("ID_SISTEMA_LENGTH");
+  });
+
+  it.each(["Wt", "WÑ", "W-"])(
+    "allows only uppercase A-Z and digits in IdSistemaInformatico: %j",
+    (value) => {
+      const record = valid();
+      record.SistemaInformatico = { ...SISTEMA, IdSistemaInformatico: value };
+      expect(codes(record)).toContain("ID_SISTEMA_CHARSET");
+    },
+  );
+
+  it.each(["WT", "09"])("accepts a complete system identifier %j", (value) => {
+    const record = valid();
+    record.SistemaInformatico = { ...SISTEMA, IdSistemaInformatico: value };
+    expect(codes(record)).not.toContain("ID_SISTEMA_LENGTH");
+    expect(codes(record)).not.toContain("ID_SISTEMA_CHARSET");
+  });
+
+  it.each([{ ...SISTEMA, IDOtro: { IDType: "03", ID: "FOREIGN" } }, withoutNif(SISTEMA)])(
+    "requires exactly one software-producer identity",
+    (SistemaInformatico) => {
+      const record = valid();
+      record.SistemaInformatico = SistemaInformatico as unknown as SistemaInformatico;
+      expect(codes(record)).toContain("SISTEMA_ID_CHOICE");
+    },
+  );
+
+  it("requires IDType 03 for a Spanish software producer identified through IDOtro", () => {
+    const record = valid();
+    record.SistemaInformatico = sistemaWithIdOtro({
+      CodigoPais: "ES",
+      IDType: "02",
+      ID: "ES123",
+    });
+    expect(codes(record)).toContain("SISTEMA_ES_IDTYPE");
+  });
+
+  it("accepts IDType 03 for a Spanish software producer identified through IDOtro", () => {
+    const record = valid();
+    record.SistemaInformatico = sistemaWithIdOtro({
+      CodigoPais: "ES",
+      IDType: "03",
+      ID: "SPANISH-OTHER-ID",
+    });
+    expect(codes(record)).not.toContain("SISTEMA_ES_IDTYPE");
+  });
+
+  it("does not apply the Spanish IDType restriction to a foreign producer", () => {
+    const record = valid();
+    record.SistemaInformatico = sistemaWithIdOtro({
+      CodigoPais: "FR",
+      IDType: "04",
+      ID: "FOREIGN-ID",
+    });
+    expect(codes(record)).not.toContain("SISTEMA_ES_IDTYPE");
+  });
+
+  it("forbids IDType 07 for a software producer", () => {
+    const record = valid();
+    record.SistemaInformatico = sistemaWithIdOtro({
+      CodigoPais: "FR",
+      IDType: "07",
+      ID: "OTHER",
+    });
+    expect(codes(record)).toContain("SISTEMA_IDTYPE_07_FORBIDDEN");
+  });
+
+  it("rejects XML control characters in a software producer's IDOtro identifier", () => {
+    const record = valid();
+    record.SistemaInformatico = sistemaWithIdOtro({ IDType: "03", ID: "FOREIGN\u0001" });
+    expect(validate(record)).toContainEqual(
+      expect.objectContaining({
+        code: "CONTROL_CHAR",
+        field: "SistemaInformatico.IDOtro.ID",
+      }),
+    );
+  });
+
+  it.each([
+    ["FR12345678901", false],
+    ["fr12345678901", true],
+    ["FR123", true],
+  ] as const)("checks an IDType 02 software-producer VAT number %j", (ID, rejected) => {
+    const record = valid();
+    record.SistemaInformatico = sistemaWithIdOtro({ IDType: "02", ID });
+    expect(codes(record).includes("SISTEMA_VAT_ID_FORMAT")).toBe(rejected);
+  });
+
+  it("uses the annulled invoice date for the producer's GB/XI transition", () => {
+    const record = validAnulacion();
+    record.IDFactura.FechaExpedicionFacturaAnulada = "31-12-2020";
+    record.SistemaInformatico = sistemaWithIdOtro({ IDType: "02", ID: "GB123456789" });
+    expect(anulacionCodes(record)).not.toContain("SISTEMA_VAT_ID_FORMAT");
+  });
+
+  it("uses FechaOperacion instead of the invoice date for the producer's GB/XI transition", () => {
+    const record = valid();
+    record.IDFactura.FechaExpedicionFactura = "31-12-2020";
+    record.FechaOperacion = "01-02-2021";
+    record.SistemaInformatico = sistemaWithIdOtro({ IDType: "02", ID: "GB123456789" });
+    expect(codes(record)).toContain("SISTEMA_VAT_ID_FORMAT");
+  });
+
+  it.each([
+    ["NombreSistemaInformatico", "NOMBRE_SISTEMA_REQUIRED"],
+    ["TipoUsoPosibleSoloVerifactu", "TIPO_USO_SOLO_VERIFACTU_REQUIRED"],
+    ["TipoUsoPosibleMultiOT", "TIPO_USO_MULTI_OT_REQUIRED"],
+  ] as const)("requires nonblank SistemaInformatico.%s", (field, code) => {
+    const record = valid();
+    record.SistemaInformatico = { ...SISTEMA, [field]: "   " };
+    expect(codes(record)).toContain(code);
   });
 });
 
@@ -3645,9 +3777,18 @@ describe("validate — pins the exact field, message and severity for every Vali
       description: "ID_SISTEMA_LENGTH",
       code: "ID_SISTEMA_LENGTH",
       field: "IdSistemaInformatico",
-      message: "IdSistemaInformatico is at most 2 characters",
+      message: "IdSistemaInformatico must contain exactly 2 characters",
       mutate: (r) => {
         r.SistemaInformatico = { ...SISTEMA, IdSistemaInformatico: "WTX" };
+      },
+    },
+    {
+      description: "ID_SISTEMA_CHARSET",
+      code: "ID_SISTEMA_CHARSET",
+      field: "IdSistemaInformatico",
+      message: "IdSistemaInformatico must use exactly 2 uppercase A-Z letters or digits",
+      mutate: (r) => {
+        r.SistemaInformatico = { ...SISTEMA, IdSistemaInformatico: "W-" };
       },
     },
     {
@@ -3660,6 +3801,83 @@ describe("validate — pins the exact field, message and severity for every Vali
           ...SISTEMA,
           NombreSistemaInformatico: "X".repeat(31),
         };
+      },
+    },
+    {
+      description: "NOMBRE_SISTEMA_REQUIRED",
+      code: "NOMBRE_SISTEMA_REQUIRED",
+      field: "SistemaInformatico.NombreSistemaInformatico",
+      message: "NombreSistemaInformatico must have content",
+      mutate: (r) => {
+        r.SistemaInformatico = { ...SISTEMA, NombreSistemaInformatico: "" };
+      },
+    },
+    {
+      description: "TIPO_USO_SOLO_VERIFACTU_REQUIRED",
+      code: "TIPO_USO_SOLO_VERIFACTU_REQUIRED",
+      field: "SistemaInformatico.TipoUsoPosibleSoloVerifactu",
+      message: "TipoUsoPosibleSoloVerifactu must have content",
+      mutate: (r) => {
+        r.SistemaInformatico = {
+          ...SISTEMA,
+          TipoUsoPosibleSoloVerifactu: "",
+        } as unknown as SistemaInformatico;
+      },
+    },
+    {
+      description: "TIPO_USO_MULTI_OT_REQUIRED",
+      code: "TIPO_USO_MULTI_OT_REQUIRED",
+      field: "SistemaInformatico.TipoUsoPosibleMultiOT",
+      message: "TipoUsoPosibleMultiOT must have content",
+      mutate: (r) => {
+        r.SistemaInformatico = {
+          ...SISTEMA,
+          TipoUsoPosibleMultiOT: "",
+        } as unknown as SistemaInformatico;
+      },
+    },
+    {
+      description: "SISTEMA_ID_CHOICE",
+      code: "SISTEMA_ID_CHOICE",
+      field: "SistemaInformatico",
+      message: "SistemaInformatico must carry exactly one of NIF or IDOtro",
+      mutate: (r) => {
+        r.SistemaInformatico = {
+          ...SISTEMA,
+          IDOtro: { IDType: "03", ID: "OTHER" },
+        } as unknown as SistemaInformatico;
+      },
+    },
+    {
+      description: "SISTEMA_ES_IDTYPE",
+      code: "SISTEMA_ES_IDTYPE",
+      field: "SistemaInformatico.IDOtro.IDType",
+      message: "A Spanish software producer identified through IDOtro must use IDType 03",
+      mutate: (r) => {
+        r.SistemaInformatico = sistemaWithIdOtro({
+          CodigoPais: "ES",
+          IDType: "02",
+          ID: "ES123",
+        });
+      },
+    },
+    {
+      description: "SISTEMA_IDTYPE_07_FORBIDDEN",
+      code: "SISTEMA_IDTYPE_07_FORBIDDEN",
+      field: "SistemaInformatico.IDOtro.IDType",
+      message: "A software producer must not use IDType 07",
+      mutate: (r) => {
+        r.SistemaInformatico = sistemaWithIdOtro({ IDType: "07", ID: "OTHER" });
+      },
+    },
+    {
+      description: "SISTEMA_VAT_ID_FORMAT",
+      code: "SISTEMA_VAT_ID_FORMAT",
+      field: "SistemaInformatico.IDOtro.ID",
+      message:
+        "Software-producer IDType 02 must match a published uppercase EU VAT-number structure",
+      mutate: (r) => {
+        r.SistemaInformatico = sistemaWithIdOtro({ IDType: "02", ID: "FR123" });
       },
     },
     {

@@ -49,6 +49,12 @@ console.log(record.Huella); // 64 caracteres hexadecimales en mayúsculas
 console.log(validate(record)); // [] en este ejemplo
 ```
 
+Usa `NIF` si el productor del programa es español. Si se identifica fuera de España, sustituye
+`NIF` por `IDOtro`; no indiques ambos. `IdSistemaInformatico` debe contener exactamente dos letras
+mayúsculas de la A a la Z o dígitos. El nombre del programa y los dos indicadores
+`TipoUsoPosible...` no pueden estar vacíos. Son comprobaciones locales; solo la AEAT puede confirmar
+que la identidad está censada.
+
 `offsetMinutes` es el desfase UTC del lugar de expedición **en el momento de emitir**. La España
 peninsular usa 120 minutos en verano y 60 en invierno. Calcúlalo según el calendario del lugar; no
 lo fijes como una constante. `buildAltaRecord` da formato a fechas e importes una sola vez y

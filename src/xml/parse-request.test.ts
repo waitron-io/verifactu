@@ -50,6 +50,40 @@ const alta: RegistroAlta = {
 };
 
 describe("parseEnvio", () => {
+  it("round-trips a foreign software producer on alta and cancellation records", () => {
+    const foreignSystem = {
+      NombreRazon: "Software France SAS",
+      IDOtro: { CodigoPais: "FR", IDType: "02", ID: "FR12345678901" },
+      NombreSistemaInformatico: "Logiciel POS",
+      IdSistemaInformatico: "FR",
+      Version: "1.0.0",
+      NumeroInstalacion: "PARIS-1",
+      TipoUsoPosibleSoloVerifactu: "S" as const,
+      TipoUsoPosibleMultiOT: "N" as const,
+      IndicadorMultiplesOT: "N" as const,
+    } satisfies RegistroAlta["SistemaInformatico"];
+    const foreignAlta = { ...alta, SistemaInformatico: foreignSystem } satisfies RegistroAlta;
+    const foreignCancellation: RegistroAnulacion = {
+      IDVersion: "1.0",
+      IDFactura: {
+        IDEmisorFacturaAnulada: "89890001K",
+        NumSerieFacturaAnulada: "A/1",
+        FechaExpedicionFacturaAnulada: "20-07-2026",
+      },
+      Encadenamiento: { PrimerRegistro: "S" },
+      SistemaInformatico: foreignSystem,
+      FechaHoraHusoGenRegistro: "2026-07-20T19:20:30+02:00",
+      TipoHuella: "01",
+      Huella: "XYZ",
+    };
+    const registros: EnvioRegistro[] = [
+      { RegistroAlta: foreignAlta },
+      { RegistroAnulacion: foreignCancellation },
+    ];
+
+    expect(parseEnvio(serializeEnvio(cabecera, registros))).toEqual({ cabecera, registros });
+  });
+
   it("round-trips NumRegistroAcuerdoFacturacion", () => {
     const withAgreement = {
       ...alta,
