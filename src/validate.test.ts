@@ -34,11 +34,11 @@ const INPUT: AltaInput = {
       CalificacionOperacion: "S1",
       TipoImpositivo: "10.00",
       BaseImponibleOimporteNoSujeto: "111.10",
-      CuotaRepercutida: "12.35",
+      CuotaRepercutida: "11.11",
     },
   ],
-  CuotaTotal: "12.35",
-  ImporteTotal: "123.45",
+  CuotaTotal: "11.11",
+  ImporteTotal: "122.21",
   Encadenamiento: { PrimerRegistro: "S" },
   SistemaInformatico: SISTEMA,
   generadoEn: new Date("2024-01-01T19:20:30+01:00"),
@@ -2849,6 +2849,66 @@ describe("validate — AEAT §3.1.3.14–15.7", () => {
     );
     expect(result).not.toContain("S1_CUOTA_REPERCUTIDA_SIGN");
     expect(result).not.toContain("S1_CUOTA_REPERCUTIDA_FORMULA");
+  });
+
+  it.each(["40.00", "-30.00"])(
+    "§3.1.3.15.7 rejects zero charged tax on nonzero base %s at a nonzero rate",
+    (BaseImponibleOimporteNoSujeto) => {
+      const result = codes(
+        withDetail({
+          TipoImpositivo: "21.00",
+          BaseImponibleOimporteNoSujeto,
+          CuotaRepercutida: "0.00",
+        }),
+      );
+      expect(result).toContain("S1_CUOTA_REPERCUTIDA_SIGN");
+      expect(result).not.toContain("S1_CUOTA_REPERCUTIDA_FORMULA");
+    },
+  );
+
+  it("§3.1.3.15.7 rejects nonzero charged tax on a zero base", () => {
+    const result = codes(
+      withDetail({
+        TipoImpositivo: "21.00",
+        BaseImponibleOimporteNoSujeto: "0.00",
+        CuotaRepercutida: "9.00",
+      }),
+    );
+    expect(result).toContain("S1_CUOTA_REPERCUTIDA_SIGN");
+    expect(result).not.toContain("S1_CUOTA_REPERCUTIDA_FORMULA");
+  });
+
+  it("§3.1.3.15.7 accepts zero charged tax on a zero base", () => {
+    const result = codes(
+      withDetail({
+        TipoImpositivo: "21.00",
+        BaseImponibleOimporteNoSujeto: "0.00",
+        CuotaRepercutida: "0.00",
+      }),
+    );
+    expect(result).not.toContain("S1_CUOTA_REPERCUTIDA_SIGN");
+    expect(result).not.toContain("S1_CUOTA_REPERCUTIDA_FORMULA");
+  });
+
+  it("§3.1.3.15.7 accepts zero charged tax on a negative base at rate zero", () => {
+    const result = codes(
+      withDetail({
+        TipoImpositivo: "0.00",
+        BaseImponibleOimporteNoSujeto: "-100.00",
+        CuotaRepercutida: "0.00",
+      }),
+    );
+    expect(result).not.toContain("S1_CUOTA_REPERCUTIDA_SIGN");
+    expect(result).not.toContain("S1_CUOTA_REPERCUTIDA_FORMULA");
+  });
+
+  it("§3.1.3.15.7 does not demand S1 tax fields when the desglose choice is already invalid", () => {
+    const record = withDetail({ TipoImpositivo: undefined, CuotaRepercutida: undefined });
+    record.Desglose[0] = { ...record.Desglose[0]!, OperacionExenta: "E1" } as DetalleDesglose;
+    const result = codes(record);
+    expect(result).toContain("DESGLOSE_CHOICE");
+    expect(result).not.toContain("S1_TIPO_IMPOSITIVO_REQUIRED");
+    expect(result).not.toContain("S1_CUOTA_REPERCUTIDA_REQUIRED");
   });
 
   it("§3.1.3.15.7 uses BaseImponibleACoste when it is present", () => {
