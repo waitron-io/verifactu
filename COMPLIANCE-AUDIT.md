@@ -156,6 +156,17 @@ are acceptable. The current implementation hashes the XML's literal decimal text
 published examples. Whether AEAT normalizes those lexical variants during comparison still needs
 an independent preproduction check before changing hash canonicalization.
 
+### Numeric XML values — service description §6.8
+
+AEAT forbids leading zeroes in numeric XML values but permits trailing zeroes in decimals to
+express precision. The record builders emit amounts with exactly two decimal places and no leading
+zeroes. For records constructed or edited directly, `validate` now applies the same leading-zero
+rule to totals, detail amounts, and tax rates. `src/validate.test.ts` covers each field, the
+negative-sign case, valid zero, and suppression of dependent total-mismatch checks after a malformed
+amount. The library's two-decimal policy is stricter than the schema's accepted decimal shapes.
+Date components are the explicit exception: `formatDate` pads day and month to two digits.
+The local check does not replace AEAT's schema or service validation.
+
 ## Remaining work
 
 Review every numbered validation rule, every service and hash/QR requirement, each XSD/WSDL

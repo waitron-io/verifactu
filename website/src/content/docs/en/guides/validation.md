@@ -18,6 +18,12 @@ review but does not make `assertValid` throw because AEAT may still accept the r
 catches local format and selected AEAT rules; AEAT's response remains authoritative. Inspect every
 returned line after submission.
 
+If you edit a built record directly, keep numeric XML values in their canonical form. AEAT does
+not allow leading zeroes: write `11.11`, not `011.11`, and `0.00`, not `00.00`. `validate` reports
+`AMOUNT_FORMAT` for an amount or `TIPO_RANGE` for a tax rate that breaks this rule. The record
+builders produce the right form for you. They also use exactly two decimal places, so a value
+such as `11.10` keeps its trailing zero.
+
 `assertValid` checks a record, not the submission header. `serializeEnvio` checks the header's
 issuer and representative NIF forms, its mutually exclusive remittance blocks, the required
 under-requirement reference and its 18-character limit, both optional `S`/`N` flags, and any `FechaFinVeriFactu`. That date

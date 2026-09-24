@@ -18,6 +18,12 @@ requiere revisión, pero no hace que `assertValid` lance una excepción porque l
 el registro. La validación comprueba formatos locales y algunas reglas de la AEAT. La respuesta de
 la AEAT sigue siendo la fuente definitiva; examina cada línea después de enviar.
 
+Si modificas directamente un registro ya construido, mantén la forma correcta de los valores
+numéricos del XML. La AEAT no permite ceros a la izquierda: escribe `11.11`, no `011.11`, y
+`0.00`, no `00.00`. `validate` devuelve `AMOUNT_FORMAT` para un importe o `TIPO_RANGE` para un
+tipo impositivo que incumpla esta regla. Los constructores generan la forma correcta. También
+usan exactamente dos decimales, por lo que un valor como `11.10` conserva el cero final.
+
 `assertValid` comprueba un registro, no la cabecera del envío. `serializeEnvio` comprueba la forma
 de los NIF del obligado y del representante, que los bloques de remisión sean excluyentes, la
 referencia obligatoria del requerimiento y su límite de 18 caracteres, los dos indicadores
