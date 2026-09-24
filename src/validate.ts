@@ -876,6 +876,7 @@ export function validate(
   record.Desglose.forEach((detalle, index) => {
     // AEAT validation §3.1.3.15.6 requires ClaveRegimen for IVA, IPSI and
     // IGIC (including omitted Impuesto, which means IVA) and forbids it otherwise.
+    // IPSI remains an admissible warning through 2026, then becomes a rejection.
     const claveRegimenAllowed = [undefined, "01", "02", "03"].includes(detalle.Impuesto);
     const ipsiTransitionSeverity: ValidationSeverity =
       today !== undefined && today >= 20270101 ? "error" : "warning";

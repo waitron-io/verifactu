@@ -104,7 +104,10 @@ exemption codes. An IVA `E5` line requires any supplied recipient to use `IDOtro
 is limited to `R1` and `R5` invoices. Regime codes are checked against the IVA, IPSI, or IGIC
 list, including each special rule for regimes `02`, `03`, `04`, `06`, `07`, `08`, `10`, `11`,
 `14`, and IGIC `20`. An invalid or missing IPSI regime remains a warning through 31 December 2026,
-matching AEAT's acceptance window, and becomes an error on 1 January 2027.
+matching AEAT's acceptance window, and becomes an error on 1 January 2027. The boundary uses the
+current instant in the numeric offset carried by `FechaHoraHusoGenRegistro`. A malformed timestamp
+already produces `FECHA_HORA_FORMAT`, so the IPSI issue stays a warning rather than adding a second
+date-derived error.
 
 A rectificativa (`R1`-`R5`) is built the same way, with `TipoRectificativa` set to say whether it
 substitutes (`S`) or adjusts (`I`) the original invoice. `FacturasRectificadas` may identify the

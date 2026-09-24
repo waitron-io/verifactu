@@ -34,7 +34,10 @@ enviado.
 El IPSI tiene una transición con fecha. Un régimen IPSI ausente o desconocido genera un aviso hasta
 el 31 de diciembre de 2026, porque durante ese periodo la AEAT acepta el registro con errores. Pasa
 a ser un error el 1 de enero de 2027, cuando la AEAT empieza a rechazarlo. Puedes pasar `{ now }` a
-`validate` o `assertValid` para probar ambos lados de ese límite.
+`validate` o `assertValid` para probar ambos lados de ese límite. El límite usa ese instante con el
+desfase numérico de `FechaHoraHusoGenRegistro`, por lo que la medianoche sigue la fecha local
+declarada en el registro. Una marca temporal incorrecta ya genera `FECHA_HORA_FORMAT`; en ese caso,
+el problema del IPSI sigue siendo un aviso para no añadir un segundo error derivado de la fecha.
 
 Los campos de rectificación se comprueban en conjunto. Los valores `S` y `X` de `RechazoPrevio`
 exigen `Subsanacion: "S"`; `FacturasRectificadas` solo está permitido en `R1`–`R5`;

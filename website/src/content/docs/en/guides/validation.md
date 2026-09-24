@@ -32,7 +32,10 @@ AEAT response for each submitted record.
 IPSI has a dated transition. A missing or unknown IPSI regime produces a warning through 31
 December 2026 because AEAT accepts the record with errors during that period. It becomes an error
 on 1 January 2027, when AEAT starts rejecting the record. Pass `{ now }` to `validate` or
-`assertValid` when you need to test either side of that boundary.
+`assertValid` when you need to test either side of that boundary. The boundary uses that instant in
+the numeric offset carried by `FechaHoraHusoGenRegistro`, so midnight follows the record's declared
+local date. A malformed timestamp already produces `FECHA_HORA_FORMAT`; in that case the IPSI issue
+stays a warning instead of adding a second date-derived error.
 
 Correction fields are checked together. `RechazoPrevio` values `S` and `X` require
 `Subsanacion: "S"`; `FacturasRectificadas` is limited to `R1`–`R5`; `FacturasSustituidas` is limited
