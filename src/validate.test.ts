@@ -3334,6 +3334,18 @@ describe("validate — AEAT §3.1.3.14–15.8", () => {
     expect(codes(record)).not.toContain("F2_AMOUNT_LIMIT");
   });
 
+  it("§3.1.3.15.8 keeps the F2 limit when only a software agreement ID is present", () => {
+    const record = simplifiedWithDetails([
+      {
+        Impuesto: "05",
+        CalificacionOperacion: "N1",
+        BaseImponibleOimporteNoSujeto: "3010.01",
+      },
+    ]);
+    record.IdAcuerdoSistemaInformatico = "SIF-AGREEMENT-1";
+    expect(codes(record)).toContain("F2_AMOUNT_LIMIT");
+  });
+
   it.each([
     ["", true],
     ["   ", true],
@@ -3411,6 +3423,8 @@ describe("validate — AEAT §3.1.3.14–15.8", () => {
   it.each([
     ["123456789012345", false],
     ["1234567890123456", true],
+    ["𝕊".repeat(15), false],
+    ["𝕊".repeat(16), true],
   ] as const)(
     "validates the NumRegistroAcuerdoFacturacion 15-character boundary: %s",
     (NumRegistroAcuerdoFacturacion, rejected) => {
@@ -3428,6 +3442,25 @@ describe("validate — AEAT §3.1.3.14–15.8", () => {
         code: "CONTROL_CHAR",
         field: "NumRegistroAcuerdoFacturacion",
       }),
+    );
+  });
+
+  it.each([
+    ["1234567890123456", false],
+    ["12345678901234567", true],
+    ["𝕊".repeat(16), false],
+    ["𝕊".repeat(17), true],
+  ] as const)("checks the software agreement ID's 16-character limit: %s", (value, rejected) => {
+    const record = valid();
+    record.IdAcuerdoSistemaInformatico = value;
+    expect(codes(record).includes("ID_ACUERDO_SISTEMA_LENGTH")).toBe(rejected);
+  });
+
+  it("rejects XML control characters in IdAcuerdoSistemaInformatico", () => {
+    const record = valid();
+    record.IdAcuerdoSistemaInformatico = "SIF\u0001";
+    expect(validate(record)).toContainEqual(
+      expect.objectContaining({ code: "CONTROL_CHAR", field: "IdAcuerdoSistemaInformatico" }),
     );
   });
 });
@@ -4805,6 +4838,15 @@ describe("validate — pins the exact field, message and severity for every Vali
       message: "NumRegistroAcuerdoFacturacion is at most 15 characters",
       mutate: (r) => {
         r.NumRegistroAcuerdoFacturacion = "1234567890123456";
+      },
+    },
+    {
+      description: "ID_ACUERDO_SISTEMA_LENGTH",
+      code: "ID_ACUERDO_SISTEMA_LENGTH",
+      field: "IdAcuerdoSistemaInformatico",
+      message: "IdAcuerdoSistemaInformatico is at most 16 characters",
+      mutate: (r) => {
+        r.IdAcuerdoSistemaInformatico = "12345678901234567";
       },
     },
     {

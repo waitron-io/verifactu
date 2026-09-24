@@ -61,6 +61,7 @@ export type ValidationCode =
   | "S1_CUOTA_REPERCUTIDA_FORMULA"
   | "F2_AMOUNT_LIMIT"
   | "NUM_REGISTRO_ACUERDO_LENGTH"
+  | "ID_ACUERDO_SISTEMA_LENGTH"
   | "TIPO_RANGE"
   | "CUOTA_TOTAL_MISMATCH"
   | "IMPORTE_TOTAL_MISMATCH"
@@ -320,6 +321,11 @@ function isValidEuVatId(value: string, effectiveDate: number | undefined): boole
 
 function isValidAmount(value: string): boolean {
   return AMOUNT_PATTERN.test(value);
+}
+
+/** XSD string maxLength counts XML characters, not UTF-16 code units. */
+function xmlCharacterCount(value: string): number {
+  return Array.from(value).length;
 }
 
 interface FechaHoraParts {
@@ -990,7 +996,7 @@ export function validate(
   checkNoControlChars("NombreRazonEmisor", record.NombreRazonEmisor);
   if (
     record.NumRegistroAcuerdoFacturacion !== undefined &&
-    record.NumRegistroAcuerdoFacturacion.length > 15
+    xmlCharacterCount(record.NumRegistroAcuerdoFacturacion) > 15
   ) {
     add(
       "NUM_REGISTRO_ACUERDO_LENGTH",
@@ -999,6 +1005,17 @@ export function validate(
     );
   }
   checkNoControlChars("NumRegistroAcuerdoFacturacion", record.NumRegistroAcuerdoFacturacion);
+  if (
+    record.IdAcuerdoSistemaInformatico !== undefined &&
+    xmlCharacterCount(record.IdAcuerdoSistemaInformatico) > 16
+  ) {
+    add(
+      "ID_ACUERDO_SISTEMA_LENGTH",
+      "IdAcuerdoSistemaInformatico",
+      "IdAcuerdoSistemaInformatico is at most 16 characters",
+    );
+  }
+  checkNoControlChars("IdAcuerdoSistemaInformatico", record.IdAcuerdoSistemaInformatico);
   if (record.Desglose.length < 1 || record.Desglose.length > 12) {
     add("DESGLOSE_COUNT", "Desglose", "Desglose must carry 1 to 12 detail lines");
   }
