@@ -28,6 +28,13 @@ A duplicate-only retry is also rejected as a submission even when the original r
 use `resolveEstadoEfectivo` on its response line to distinguish that case from a record that was
 never registered.
 
+For an alta correction, `Subsanacion: "S"` with `RechazoPrevio` omitted or `N` replaces an
+existing fake record, including one that was annulled. Without that prior record, the fake
+returns error `3002`; use `RechazoPrevio: "X"` for the published no-prior-record path. The fake
+does not track rejected correction attempts or implement every cancellation state in
+[AEAT's annex §6](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Validaciones_Errores_Veri-Factu.pdf).
+Check those workflows in AEAT preproduction.
+
 In particular, the fake keeps leading and trailing spaces in submitted text. AEAT trims those
 spaces before storing and returning text fields. If your test depends on the stored spelling of
 a value such as `RefExterna`, confirm it in AEAT preproduction.

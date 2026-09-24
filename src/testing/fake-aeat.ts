@@ -186,13 +186,32 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
       const existing = store.get(key);
       const forced = rejections.get(key);
       const future = fechaToDate(fecha).getTime() > serverNow.getTime();
+      const replacesExistingAlta =
+        existing !== undefined &&
+        "RegistroAlta" in entry &&
+        entry.RegistroAlta.Subsanacion === "S" &&
+        (entry.RegistroAlta.RechazoPrevio === undefined ||
+          entry.RegistroAlta.RechazoPrevio === "N");
+      // A normal subsanación replaces an AEAT record; only RechazoPrevio=X permits no prior record.
+      if (
+        !existing &&
+        "RegistroAlta" in entry &&
+        entry.RegistroAlta.Subsanacion === "S" &&
+        (entry.RegistroAlta.RechazoPrevio === undefined || entry.RegistroAlta.RechazoPrevio === "N")
+      ) {
+        rejectedCount += 1;
+        lineas.push(
+          lineaXml(idf, "Incorrecto", 3002, "No existe el registro de facturación", ref, operacion),
+        );
+        continue;
+      }
       if (
         existing &&
-        !(tipo === "anulacion" && existing.tipo === "alta" && existing.estado !== "Anulado")
+        !(tipo === "anulacion" && existing.tipo === "alta" && existing.estado !== "Anulado") &&
+        !replacesExistingAlta
       ) {
-        // Anulación of a live alta changes its state; all other resubmissions leave the stored
-        // record untouched. The outer Incorrecto line carries the stored state in
-        // RegistroDuplicado; resolveEstadoEfectivo reads that inner state.
+        // Only an allowed cancellation or subsanación can replace stored state. A duplicate
+        // leaves it untouched and reports that state for resolveEstadoEfectivo.
         rejectedCount += 1;
         const detail = noDuplicadoDetail.has(key) ? undefined : duplicateStateOf(existing.estado);
         const storedPetitionId = petitionIds.get(key);
@@ -215,10 +234,10 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
           huella,
           estado,
           tipo,
-          refExterna: ref ?? existing?.refExterna,
+          refExterna: tipo === "anulacion" ? (ref ?? existing?.refExterna) : ref,
         });
         petitionIds.set(key, `PET-${String(csvSequence).padStart(8, "0")}`);
-        if (!existing) {
+        if (!existing || replacesExistingAlta) {
           metadata.set(
             key,
             "RegistroAlta" in entry

@@ -105,6 +105,8 @@ describe("fake AEAT — submit", () => {
     const aeat = createFakeAeat();
     const alta = { ...altaFixture("A/2"), Subsanacion: "S" as const, RechazoPrevio: "X" as const };
     const accepted = await aeat.client().submit(cabecera, [{ RegistroAlta: alta }]);
+    expect(accepted.RespuestaLinea[0]?.EstadoRegistro).toBe("Correcto");
+    expect(aeat.stored()[0]?.key).toBe(keyOf(alta));
     expect(accepted.RespuestaLinea[0]?.Operacion).toEqual({
       TipoOperacion: "Alta",
       Subsanacion: "S",
@@ -228,6 +230,155 @@ describe("fake AEAT — submit", () => {
     expect(retry.RespuestaLinea[0]?.CodigoErrorRegistro).toBe(3000);
     expect(resolveEstadoEfectivo(retry.RespuestaLinea[0]!)).toBe("accepted");
     expect(aeat.stored()).toHaveLength(1);
+  });
+
+  it("accepts an alta subsanación and replaces the stored record", async () => {
+    const aeat = createFakeAeat();
+    const client = aeat.client();
+    await client.submit(cabecera, [
+      { RegistroAlta: altaFixture("A/SUB", "20-07-2026", "old-ref") },
+    ]);
+
+    const correction = {
+      ...altaFixture("A/SUB", "20-07-2026", "new-ref"),
+      Subsanacion: "S" as const,
+      Huella: "H-CORRECTED",
+    };
+    const response = await client.submit(cabecera, [{ RegistroAlta: correction }]);
+
+    expect(response.EstadoEnvio).toBe("Correcto");
+    expect(response.RespuestaLinea[0]).toMatchObject({
+      EstadoRegistro: "Correcto",
+      Operacion: { TipoOperacion: "Alta", Subsanacion: "S" },
+    });
+    expect(aeat.stored()).toEqual([
+      {
+        key: keyOf(correction),
+        huella: "H-CORRECTED",
+        estado: "Correcto",
+        tipo: "alta",
+        refExterna: "new-ref",
+      },
+    ]);
+  });
+
+  it("reactivates an annulled invoice with an alta subsanación", async () => {
+    const aeat = createFakeAeat();
+    const client = aeat.client();
+    await client.submit(cabecera, [{ RegistroAlta: altaFixture("A/REACT") }]);
+    await client.submit(cabecera, [{ RegistroAnulacion: anulacionFixture("A/REACT") }]);
+
+    const correction = {
+      ...altaFixture("A/REACT"),
+      Subsanacion: "S" as const,
+      Huella: "H-REACTIVATED",
+    };
+    const response = await client.submit(cabecera, [{ RegistroAlta: correction }]);
+
+    expect(response.RespuestaLinea[0]?.EstadoRegistro).toBe("Correcto");
+    expect(aeat.stored()[0]).toMatchObject({
+      key: keyOf(correction),
+      huella: "H-REACTIVATED",
+      estado: "Correcto",
+      tipo: "alta",
+    });
+  });
+
+  it("accepts explicit RechazoPrevio N on a normal alta subsanación", async () => {
+    const aeat = createFakeAeat();
+    const client = aeat.client();
+    await client.submit(cabecera, [{ RegistroAlta: altaFixture("A/EXPLICIT-N") }]);
+
+    const response = await client.submit(cabecera, [
+      {
+        RegistroAlta: {
+          ...altaFixture("A/EXPLICIT-N"),
+          Subsanacion: "S",
+          RechazoPrevio: "N",
+          Huella: "H-EXPLICIT-N",
+        },
+      },
+    ]);
+
+    expect(response.RespuestaLinea[0]?.EstadoRegistro).toBe("Correcto");
+    expect(aeat.stored()[0]?.huella).toBe("H-EXPLICIT-N");
+  });
+
+  it("rejects a subsanación without a prior record unless marked as a prior rejection", async () => {
+    const aeat = createFakeAeat();
+    const correction = { ...altaFixture("A/MISSING"), Subsanacion: "S" as const };
+
+    const response = await aeat.client().submit(cabecera, [{ RegistroAlta: correction }]);
+
+    expect(response.RespuestaLinea[0]).toMatchObject({
+      EstadoRegistro: "Incorrecto",
+      CodigoErrorRegistro: 3002,
+    });
+    expect(aeat.stored()).toEqual([]);
+  });
+
+  it("does not carry an omitted external reference into the replacement alta", async () => {
+    const aeat = createFakeAeat();
+    const client = aeat.client();
+    await client.submit(cabecera, [
+      { RegistroAlta: altaFixture("A/NO-REF", "20-07-2026", "obsolete-ref") },
+    ]);
+
+    await client.submit(cabecera, [
+      { RegistroAlta: { ...altaFixture("A/NO-REF"), Subsanacion: "S" } },
+    ]);
+
+    expect(aeat.stored()[0]?.refExterna).toBeUndefined();
+  });
+
+  it("replaces the recipient used by consulta when an alta is corrected", async () => {
+    const aeat = createFakeAeat();
+    const client = aeat.client();
+    const oldRecipient = { NombreRazon: "Old Buyer", NIF: "11111111H" };
+    const newRecipient = { NombreRazon: "New Buyer", NIF: "22222222J" };
+    const original = {
+      ...altaFixture("A/BUYER"),
+      TipoFactura: "F1" as const,
+      Destinatarios: { IDDestinatario: [oldRecipient] },
+    };
+    await client.submit(cabecera, [{ RegistroAlta: original }]);
+    await client.submit(cabecera, [
+      {
+        RegistroAlta: {
+          ...original,
+          Subsanacion: "S",
+          Destinatarios: { IDDestinatario: [newRecipient] },
+        },
+      },
+    ]);
+
+    const filtro = { Ejercicio: "2026", Periodo: "07" };
+    const oldResults = await client.consultar(cabecera, { ...filtro, Contraparte: oldRecipient });
+    const newResults = await client.consultar(cabecera, { ...filtro, Contraparte: newRecipient });
+    expect(oldResults.registros).toHaveLength(0);
+    expect(newResults.registros.map((record) => record.IDFactura.NumSerieFactura)).toEqual([
+      "A/BUYER",
+    ]);
+  });
+
+  it("does not replace an existing alta when a correction claims no prior record", async () => {
+    const aeat = createFakeAeat();
+    const client = aeat.client();
+    await client.submit(cabecera, [{ RegistroAlta: altaFixture("A/EXISTS") }]);
+
+    const response = await client.submit(cabecera, [
+      {
+        RegistroAlta: {
+          ...altaFixture("A/EXISTS"),
+          Subsanacion: "S",
+          RechazoPrevio: "X",
+          Huella: "H-SHOULD-NOT-STORE",
+        },
+      },
+    ]);
+
+    expect(response.RespuestaLinea[0]?.EstadoRegistro).toBe("Incorrecto");
+    expect(aeat.stored()[0]?.huella).toBe("H-A/EXISTS");
   });
 
   it("decreases TiempoEsperaEnvio on each response", async () => {
