@@ -211,7 +211,9 @@ Read every line through `resolveEstadoEfectivo`. Its result is `accepted`,
 accepted. The resolved state reads the duplicate detail. `duplicate_annulled` needs investigation;
 `duplicate_unknown` means AEAT did not say what it holds, so query and compare huellas before you
 decide what to do. `TiempoEsperaEnvio` is AEAT's wait in **seconds** before the next submission;
-schedule it rather than sending the next batch immediately.
+the example above waits for that full interval. For voluntary Veri*Factu, AEAT also allows the
+next submission when your queue reaches the maximum 1,000 records before the interval ends.
+Schedule whichever happens first. A smaller pending batch must wait for the interval.
 
 If you need to distinguish an alta from a cancellation, read `line.Operacion?.TipoOperacion`.
 `Operacion` is a structured object, not the string `"Alta"` or `"Anulacion"`. The parser
@@ -223,6 +225,19 @@ a new corrected record. First check whether a rectificativa or cancellation is r
 AEAT exempts some admissible errors, including a future generation timestamp, from correction.
 Under an AEAT requirement, do not apply that voluntary repair flow to business-rule errors in
 the preserved records.
+
+## Handle faults and uncertain results
+
+If `client.submit` throws, you have no parsed per-record result or CSV to store. Keep the original
+records and inspect the error. A SOAP `Server` fault, a stalled transmission, or a response that
+is not the expected XML calls for resending the same message. A SOAP `Client` fault means the
+message is malformed or contains incorrect information: use its `faultstring` to fix the problem
+before you resend it. The client reports faults but does not retry automatically.
+
+After an uncertain result, a repeated record may receive error 3000 because AEAT already stored
+it. Do not assign it a new invoice number or hash just to make the retry pass. Interpret the
+duplicate detail and, when it does not settle the outcome, use voluntary consulta to compare
+AEAT's stored hash with yours. The under-requirement service has no consulta.
 
 ## Query a record after an uncertain result
 

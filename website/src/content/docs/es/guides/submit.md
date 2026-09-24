@@ -213,7 +213,9 @@ Interpreta cada línea con `resolveEstadoEfectivo`. Devuelve `accepted`, `accept
 función consulta el detalle del duplicado. `duplicate_annulled` exige investigar;
 `duplicate_unknown` indica que la AEAT no aclaró lo que guarda: consulta y compara las huellas
 antes de decidir. `TiempoEsperaEnvio` son los **segundos** que exige esperar antes del siguiente
-envío; programa el próximo lote en consecuencia.
+envío; el ejemplo espera todo ese intervalo. En VERI*FACTU voluntario, la AEAT también permite
+el siguiente envío si antes se acumula el máximo de 1.000 registros. Programa el envío cuando
+ocurra primero una de esas dos condiciones. Un lote menor debe esperar a que venza el intervalo.
 
 Si necesitas distinguir un alta de una anulación, consulta `line.Operacion?.TipoOperacion`.
 `Operacion` es un objeto con varios campos, no la cadena `"Alta"` ni `"Anulacion"`. El analizador
@@ -225,6 +227,21 @@ un nuevo registro subsanado. Comprueba antes si procede una factura rectificativ
 La AEAT exceptúa algunos errores admisibles, como una hora de generación futura, de la obligación
 de subsanar. Ante un requerimiento, no apliques ese proceso de subsanación voluntaria a los
 errores de negocio de los registros conservados.
+
+## Gestiona fallos y resultados inciertos
+
+Si `client.submit` lanza un error, no tienes un resultado por registro ni un CSV analizado que
+guardar. Conserva los registros originales y examina el error. Si recibes un fallo SOAP `Server`,
+la transmisión no progresa o la respuesta no es el XML esperado, vuelve a enviar el mismo mensaje.
+Si recibes un fallo SOAP `Client`, el mensaje está mal formado o contiene datos incorrectos:
+consulta su `faultstring` y corrige el problema antes de reenviarlo. El cliente informa de los
+fallos, pero no reintenta automáticamente.
+
+Tras un resultado incierto, un registro repetido puede devolver el error 3000 porque la AEAT ya
+lo guardó. No le asignes otro número de factura ni otra huella solo para que pase el reintento.
+Interpreta el detalle del duplicado y, si no aclara el resultado, usa la consulta voluntaria para
+comparar la huella guardada por la AEAT con la tuya. El servicio bajo requerimiento no permite
+consultas.
 
 ## Consulta cuando el resultado es incierto
 

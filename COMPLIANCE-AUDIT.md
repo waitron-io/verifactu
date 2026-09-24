@@ -128,6 +128,18 @@ state-only `annul` hook keeps the original alta and petition ID. This does not e
 whole-response schema validity: the fake still uses placeholder
 namespace URIs and does not emit every required envelope field, including `Cabecera`.
 
+### SOAP faults and voluntary flow control — service description §§5.1, 6.4.4.1
+
+`src/client.ts` identifies SOAP Faults even when HTTP succeeds and includes the fault code and
+reason in the thrown error. It does not classify faults into a typed retry policy or retry on
+behalf of callers. The English and Spanish submission guides now distinguish AEAT's instruction
+to resend the same message after a `Server` fault, stalled transmission, or unusable XML from a
+`Client` fault, which requires inspecting `faultstring` and correcting the message first. They
+also state the voluntary flow-control condition exactly: after a response, the next batch may
+go when its `TiempoEsperaEnvio` expires or the queue reaches the maximum 1,000 records, whichever
+comes first. The example's full-interval scheduler remains a conservative choice. The library
+exposes the response wait and batch maximum but does not own the caller's queue or retry timing.
+
 ### Own-record hash validation
 
 Validation §3.1.3.23 and §3.1.4.7 require the submitted alta or cancellation hash to match
