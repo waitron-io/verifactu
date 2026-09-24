@@ -1214,6 +1214,40 @@ describe("serializeConsulta", () => {
     );
   });
 
+  it("rejects a recipient consulta requesting software details", () => {
+    const recipient: CabeceraConsulta = {
+      Destinatario: { NombreRazon: "Cliente Uno", NIF: "11111111H" },
+    };
+    const filtro = {
+      Ejercicio: "2024",
+      Periodo: "01",
+      DatosAdicionalesRespuesta: { MostrarSistemaInformatico: "S" as const },
+    };
+    expect(() => serializeConsulta(recipient, filtro)).toThrow(
+      "Consulta MostrarSistemaInformatico must be N or omitted for Destinatario",
+    );
+  });
+
+  it("allows N or an omitted software-details option for a recipient consulta", () => {
+    const recipient: CabeceraConsulta = {
+      Destinatario: { NombreRazon: "Cliente Uno", NIF: "11111111H" },
+    };
+    const base = { Ejercicio: "2024", Periodo: "01" };
+    expect(
+      serializeConsulta(recipient, {
+        ...base,
+        DatosAdicionalesRespuesta: { MostrarSistemaInformatico: "N" },
+      }),
+    ).toContain("<sfLRC:MostrarSistemaInformatico>N</sfLRC:MostrarSistemaInformatico>");
+    expect(serializeConsulta(recipient, base)).not.toContain("MostrarSistemaInformatico");
+    expect(
+      serializeConsulta(CABECERA, {
+        ...base,
+        DatosAdicionalesRespuesta: { MostrarSistemaInformatico: "S" },
+      }),
+    ).toContain("<sfLRC:MostrarSistemaInformatico>S</sfLRC:MostrarSistemaInformatico>");
+  });
+
   it("serializes the alternative invoice-date range", () => {
     const xml = serializeConsulta(CABECERA, {
       Ejercicio: "2024",

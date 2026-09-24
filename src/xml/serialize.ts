@@ -108,6 +108,19 @@ export function isValidConsultaPeriodo(value: unknown): value is string {
   return typeof value === "string" && /^(?:0[1-9]|1[0-2])$/.test(value);
 }
 
+export function assertConsultaResponseOptions(
+  cabecera: CabeceraConsulta,
+  filtro: ConsultaFiltro,
+): void {
+  if (
+    cabecera.Destinatario !== undefined &&
+    filtro.DatosAdicionalesRespuesta?.MostrarSistemaInformatico !== undefined &&
+    filtro.DatosAdicionalesRespuesta.MostrarSistemaInformatico !== "N"
+  ) {
+    throw new Error("Consulta MostrarSistemaInformatico must be N or omitted for Destinatario");
+  }
+}
+
 function el(prefix: string, name: string, value: string | undefined): string {
   return value === undefined ? "" : `<${prefix}:${name}>${escapeXml(value)}</${prefix}:${name}>`;
 }
@@ -546,6 +559,7 @@ export function serializeConsulta(cabecera: CabeceraConsulta, filtro: ConsultaFi
   if (!isValidConsultaPeriodo(filtro.Periodo)) {
     throw new Error("Consulta Periodo must be 01 through 12");
   }
+  assertConsultaResponseOptions(cabecera, filtro);
   if (filtro.FechaExpedicionFactura !== undefined && filtro.RangoFechaExpedicion !== undefined) {
     throw new Error("Use either FechaExpedicionFactura or RangoFechaExpedicion, not both");
   }

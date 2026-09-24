@@ -1,5 +1,9 @@
 import { asArray, parser } from "./parse-common.js";
-import { isValidConsultaPeriodo, MAX_REGISTROS_POR_ENVIO } from "./serialize.js";
+import {
+  assertConsultaResponseOptions,
+  isValidConsultaPeriodo,
+  MAX_REGISTROS_POR_ENVIO,
+} from "./serialize.js";
 import type {
   Cabecera,
   CabeceraConsulta,
@@ -398,5 +402,7 @@ export function parseConsulta(xml: string): { cabecera: CabeceraConsulta; filtro
     }
     filtro.DatosAdicionalesRespuesta = options;
   }
-  return { cabecera: cabeceraConsultaOf(body.Cabecera), filtro };
+  const cabecera = cabeceraConsultaOf(body.Cabecera);
+  assertConsultaResponseOptions(cabecera, filtro);
+  return { cabecera, filtro };
 }
