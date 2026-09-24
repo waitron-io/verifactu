@@ -102,8 +102,8 @@ explicitly when you upgrade. You should still investigate it before relying on t
 The builder calculates each record's own hash from the values it writes to XML. If you change a
 hashed field afterward, `validate` reports `HUELLA_MISMATCH` as a warning. A malformed hash of at
 most 64 characters produces `HUELLA_FORMAT` as a warning; a longer one is an error because it
-breaks AEAT's XML schema. An XML control character is also an error. Investigate either warning
-before filing, even though AEAT may accept the record with errors.
+breaks AEAT's XML schema. A missing hash or XML control character is also an error. Investigate
+either warning before filing, even though AEAT may accept the record with errors.
 
 `validate` now reports `NIF_CONTROL` for malformed nine-character Spanish tax IDs. If you block
 submission on validation errors, review this new issue when updating from an earlier version.

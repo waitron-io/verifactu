@@ -321,8 +321,8 @@ function isValidEuVatId(value: string, effectiveDate: number | undefined): boole
   return EU_VAT_SUFFIX_PATTERNS[country]?.test(suffix) ?? false;
 }
 
-function isValidAmount(value: string): boolean {
-  return AMOUNT_PATTERN.test(value);
+function isValidAmount(value: unknown): boolean {
+  return typeof value === "string" && AMOUNT_PATTERN.test(value);
 }
 
 /** XSD string maxLength counts XML characters, not UTF-16 code units. */
@@ -484,15 +484,39 @@ export function validate(
   const operacionOrdinal = fechaOperacion === undefined ? undefined : fechaOrdinal(fechaOperacion);
   const effectiveOperationDate =
     fechaOperacion === undefined ? expedicionOrdinal : operacionOrdinal;
+  const hashInputs = isAlta(record)
+    ? [
+        emisor,
+        numSerie,
+        fecha,
+        record.TipoFactura,
+        record.CuotaTotal,
+        record.ImporteTotal,
+        record.Encadenamiento.RegistroAnterior?.Huella,
+        record.FechaHoraHusoGenRegistro,
+      ]
+    : [
+        emisor,
+        numSerie,
+        fecha,
+        record.Encadenamiento.RegistroAnterior?.Huella,
+        record.FechaHoraHusoGenRegistro,
+      ];
 
   if (!HUELLA_PATTERN.test(record.Huella)) {
     add(
       "HUELLA_FORMAT",
       "Huella",
       "Huella must be 64 uppercase hexadecimal characters",
-      xmlCharacterCount(record.Huella) > 64 ? "error" : "warning",
+      typeof record.Huella !== "string" || xmlCharacterCount(record.Huella) > 64
+        ? "error"
+        : "warning",
     );
-  } else if (!verifyHuella(record)) {
+  } else if (
+    // Malformed untyped input belongs to its field validator, not the hash builder.
+    hashInputs.every((value) => value == null || typeof value === "string") &&
+    !verifyHuella(record)
+  ) {
     add("HUELLA_MISMATCH", "Huella", "Huella does not match the record's hash input", "warning");
   }
   const generationTime = parseFechaHoraHusoGenRegistro(record.FechaHoraHusoGenRegistro);
@@ -592,12 +616,7 @@ export function validate(
   // A control character makes the serialised document not well-formed XML —
   // not merely schema-invalid, but unparseable — so it is rejected rather
   // than silently stripped, which would alter a fiscal record's text.
-  // `value !== undefined &&` is mutation-tested as equivalent: the optional
-  // callers below are RefExterna and a foreign recipient's IDOtro.ID, and
-  // RegExp.prototype.test() coerces an undefined argument to the literal
-  // string "undefined" (verified in Node), which CONTROL_CHAR_PATTERN never
-  // matches — so a `true &&` mutant still evaluates to false at every call
-  // site where the guard could matter. No test can kill an equivalent mutant.
+  // Optional values should be absent from this check, not coerced into text.
   const checkNoControlChars = (field: string, value: string | undefined) => {
     if (value !== undefined && CONTROL_CHAR_PATTERN.test(value)) {
       add("CONTROL_CHAR", field, `${field} must not contain XML control characters`);
@@ -627,7 +646,7 @@ export function validate(
         "HUELLA_ANTERIOR_FORMAT",
         "Encadenamiento.RegistroAnterior.Huella",
         "Predecessor huella must be 64 uppercase hexadecimal characters",
-        xmlCharacterCount(anterior) > 64 ? "error" : "warning",
+        typeof anterior !== "string" || xmlCharacterCount(anterior) > 64 ? "error" : "warning",
       );
     }
     if (anterior === record.Huella) {

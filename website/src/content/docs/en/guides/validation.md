@@ -28,8 +28,8 @@ If you change a record after the builder has hashed it, `validate` reports `HUEL
 hash that is not 64 uppercase hexadecimal characters produces `HUELLA_FORMAT`. These are warnings
 when the value fits AEAT's 64-character XML limit and contains no XML control characters, so
 `assertValid` does not block a record that AEAT would accept with errors. A longer value breaks
-the XML schema and remains an error. Check the warnings before filing rather than assuming
-acceptance means the hash is correct.
+the XML schema and remains an error. A missing hash or XML control character is also an error.
+Check the warnings before filing rather than assuming acceptance means the hash is correct.
 
 `FechaHoraHusoGenRegistro` must be a real calendar instant with a numeric offset. A value more than
 one minute ahead of the current time produces the `FECHA_HORA_FUTURE` warning on both alta and

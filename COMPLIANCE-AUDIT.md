@@ -59,10 +59,10 @@ Validation §3.1.3.23 and §3.1.4.7 require the submitted alta or cancellation h
 The builders hash the serialized field literals in the published order, and `verifyHuella` checks
 an existing record. `validate` now reports a non-blocking `HUELLA_MISMATCH` for a well-formed but
 incorrect hash, and `HUELLA_FORMAT` for a value that is not 64 uppercase hexadecimal characters.
-Values exceeding the XSD's 64-character maximum or containing XML control characters remain
+Missing values, values exceeding the XSD's 64-character maximum, and XML control characters remain
 locally blocking. Both record types, the advisory severity, non-throwing `assertValid`, and those
-XML boundaries are covered in
-`src/validate.test.ts`; the three AEAT examples remain covered in `src/conformance.test.ts`.
+XML boundaries are covered in `src/validate.test.ts`. The three AEAT examples are checked directly
+in `src/conformance.test.ts` and through third-party fixtures in `src/upstream-conformance.test.ts`.
 The hash specification also says numeric values with one or two decimal places and trailing zeroes
 are acceptable. The current implementation hashes the XML's literal decimal text, as do AEAT's
 published examples. Whether AEAT normalizes those lexical variants during comparison still needs

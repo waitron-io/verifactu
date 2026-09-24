@@ -29,8 +29,9 @@ Si cambias un registro después de que el constructor calcule su huella, `valida
 `HUELLA_FORMAT`. Ambos son avisos si el valor cabe en el límite de 64 caracteres del esquema XML
 de la AEAT y no contiene caracteres de control XML: `assertValid` no impide enviar un registro que
 la Agencia podría aceptar con errores.
-Un valor más largo incumple el esquema XML y sigue siendo un error. Comprueba los avisos antes de
-enviar el registro; que la AEAT lo acepte no significa que la huella sea correcta.
+Un valor más largo incumple el esquema XML y sigue siendo un error. También lo son una huella
+ausente y un carácter de control XML. Comprueba los avisos antes de enviar el registro; que la
+AEAT lo acepte no significa que la huella sea correcta.
 
 `FechaHoraHusoGenRegistro` debe representar un instante real del calendario con un desfase
 numérico. Un valor que supere en más de un minuto la hora actual genera el aviso

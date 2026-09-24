@@ -408,6 +408,28 @@ describe("validate", () => {
   it.each([
     ["alta", valid],
     ["anulación", validAnulacion],
+  ] as const)("reports a missing %s huella without throwing", (_kind, makeRecord) => {
+    const record = makeRecord();
+    (record as { Huella?: string }).Huella = undefined;
+    expect(validate(record)).toContainEqual(
+      expect.objectContaining({ code: "HUELLA_FORMAT", severity: "error", field: "Huella" }),
+    );
+    expect(() => assertValid(record)).toThrow(VerifactuValidationError);
+  });
+
+  it("reports a numeric amount without throwing during hash verification", () => {
+    const record = valid();
+    (record as unknown as { ImporteTotal: number }).ImporteTotal = 122.21;
+    const issues = validate(record);
+    expect(issues).toContainEqual(
+      expect.objectContaining({ code: "AMOUNT_FORMAT", severity: "error", field: "ImporteTotal" }),
+    );
+    expect(issues.map((issue) => issue.code)).not.toContain("HUELLA_MISMATCH");
+  });
+
+  it.each([
+    ["alta", valid],
+    ["anulación", validAnulacion],
   ] as const)("blocks a %s predecessor huella longer than the XSD maximum", (_kind, makeRecord) => {
     const record = makeRecord();
     record.Encadenamiento = {
@@ -422,6 +444,24 @@ describe("validate", () => {
       validate(record).find((issue) => issue.code === "HUELLA_ANTERIOR_FORMAT")?.severity,
     ).toBe("error");
     expect(() => assertValid(record)).toThrow(VerifactuValidationError);
+  });
+
+  it("reports a missing predecessor huella without throwing", () => {
+    const record = valid();
+    record.Encadenamiento = {
+      RegistroAnterior: {
+        IDEmisorFactura: "89890001K",
+        NumSerieFactura: "PREVIOUS",
+        FechaExpedicionFactura: "28-10-2024",
+      },
+    } as RegistroAlta["Encadenamiento"];
+    expect(validate(record)).toContainEqual(
+      expect.objectContaining({
+        code: "HUELLA_ANTERIOR_FORMAT",
+        severity: "error",
+        field: "Encadenamiento.RegistroAnterior.Huella",
+      }),
+    );
   });
 
   it.each([
