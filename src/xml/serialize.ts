@@ -393,6 +393,14 @@ export function serializeEnvio(cabecera: Cabecera, registros: EnvioRegistro[]): 
         `RegistroAlta[${index}].IDFactura.IDEmisorFactura must match Cabecera.ObligadoEmision.NIF`,
       );
     }
+    if (
+      "RegistroAnulacion" in entry &&
+      entry.RegistroAnulacion.IDFactura.IDEmisorFacturaAnulada !== cabecera.ObligadoEmision.NIF
+    ) {
+      throw new Error(
+        `RegistroAnulacion[${index}].IDFactura.IDEmisorFacturaAnulada must match Cabecera.ObligadoEmision.NIF`,
+      );
+    }
   });
   const body =
     `<sfLR:RegFactuSistemaFacturacion>` +

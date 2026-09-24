@@ -45,6 +45,27 @@ describe("serializeEnvio", () => {
     ).toThrow("RegistroAlta[1].IDFactura.IDEmisorFactura");
   });
 
+  it.each([undefined, "E", "D", "T"] as const)(
+    "rejects a cancellation issuer that differs from the header when GeneradoPor is %s",
+    (generadoPor) => {
+      const cancellation = buildAnulacionRecord({
+        IDEmisorFacturaAnulada: "89890001K",
+        NumSerieFacturaAnulada: "CANCEL-1",
+        FechaExpedicionFacturaAnulada: new Date("2024-10-28T00:00:00+01:00"),
+        Encadenamiento: { PrimerRegistro: "S" },
+        SistemaInformatico: SISTEMA,
+        generadoEn: new Date("2024-10-28T19:20:30+01:00"),
+        offsetMinutes: 60,
+        ...(generadoPor !== undefined && { GeneradoPor: generadoPor }),
+      });
+      cancellation.IDFactura.IDEmisorFacturaAnulada = "B12345674";
+
+      expect(() => serializeEnvio(CABECERA, [{ RegistroAnulacion: cancellation }])).toThrow(
+        "RegistroAnulacion[0].IDFactura.IDEmisorFacturaAnulada must match Cabecera.ObligadoEmision.NIF",
+      );
+    },
+  );
+
   it("emits a SOAP envelope with one Cabecera and the ObligadoEmision", () => {
     const xml = serializeEnvio(CABECERA, [{ RegistroAlta: record }]);
     expect(xml).toContain("<sfLR:Cabecera>");
