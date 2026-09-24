@@ -27,8 +27,8 @@ function encodeParam(value: string): string {
 /**
  * Builds the QR payload URL: exactly four mandatory parameters, in order.
  *
- * Values are taken from the record's own literals, never recomputed — the QR
- * must show what was hashed and sent.
+ * Values are taken from the record's own literals, never recomputed, so the
+ * QR URL refers to the same invoice values supplied for filing.
  */
 export function buildQrPayload(record: RegistroAlta, environment: Environment): string {
   const params = [

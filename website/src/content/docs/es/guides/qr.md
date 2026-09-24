@@ -13,8 +13,11 @@ console.log(payload);
 ```
 
 Usa `"preproduction"` en las pruebas. La URL toma NIF, número, fecha e importe del registro
-construido, de modo que coinciden con lo enviado. Para obtener un SVG, instala `qrcode-generator`
-en tu aplicación:
+construido, de modo que coinciden con lo enviado. Mantén solo esos cuatro parámetros en la URL
+del QR impreso. Las opciones `idioma` y `formato=json` de la AEAT corresponden a peticiones de
+cotejo separadas, no a la URL codificada en el QR de la factura.
+
+Para obtener un SVG, instala `qrcode-generator` en tu aplicación:
 
 ```sh
 npm install qrcode-generator
@@ -61,5 +64,14 @@ if (jsQR(pixels, width, width)?.data !== payload) throw new Error("El QR cambió
 La [comprobación de los ejemplos publicados](https://github.com/waitron-io/verifactu/blob/main/website/scripts/verify-docs.mjs)
 realiza esta prueba. El valor decodificado debe coincidir **exactamente** con `payload`,
 incluidos signos y escapes de porcentaje. `M` es el nivel de corrección de errores del ejemplo.
-Tu generador de facturas debe respetar el tamaño físico exigido por la AEAT y dejar un margen
-vacío alrededor del QR.
+Los cuatro módulos blancos de la prueba ayudan al lector, pero no demuestran el margen impreso
+en milímetros.
+
+Al colocar el QR en la factura, usa un QR conforme a ISO/IEC 18004:2015 con nivel `M` de
+corrección de errores y dale un tamaño de entre 30 × 30 y 40 × 40 mm. Deja al menos
+2 mm de espacio vacío a cada lado; la AEAT recomienda 6 mm. Asegura un buen contraste,
+colócalo de forma destacada antes del contenido y muéstralo solo una vez en la primera página.
+Escribe `QR tributario:` encima y `Factura verificable en la sede electrónica de la AEAT` o
+`VERI*FACTU` debajo. Ambos textos deben ser al menos tan legibles como los demás datos de la
+factura. Tu generador de facturas, no esta función de URL, debe cumplir estas
+[reglas de presentación de la AEAT](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf).
