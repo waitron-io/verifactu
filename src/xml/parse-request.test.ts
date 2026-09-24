@@ -230,6 +230,26 @@ describe("parseEnvio", () => {
     expect(parseEnvio(serializeEnvio(c, registros))).toEqual({ cabecera: c, registros });
   });
 
+  it("preserves submitted text whitespace while escaping XML-special characters", () => {
+    const c: Cabecera = {
+      ObligadoEmision: { NombreRazon: "  Bar & <Grill>  ", NIF: "89890001K" },
+    };
+    const registros: EnvioRegistro[] = [
+      {
+        RegistroAlta: {
+          ...alta,
+          RefExterna: "  REF & <1>  ",
+          NombreRazonEmisor: "  Bar & <Grill>  ",
+          DescripcionOperacion: "  Venta & <servicio>  ",
+        },
+      },
+    ];
+    const xml = serializeEnvio(c, registros);
+    expect(xml).toContain("<sf:NombreRazon>  Bar &amp; &lt;Grill&gt;  </sf:NombreRazon>");
+    expect(xml).toContain("<sf:RefExterna>  REF &amp; &lt;1&gt;  </sf:RefExterna>");
+    expect(parseEnvio(xml)).toEqual({ cabecera: c, registros });
+  });
+
   // `alta` above deliberately leaves most optional RegistroAlta fields absent, so none of the
   // matrix above ever exercises altaOf's/detalleOf's `pick()` calls for them, nor the
   // FacturasRectificadas/FacturasSustituidas/ImporteRectificacion/OperacionExenta branches. This

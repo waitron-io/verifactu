@@ -21,3 +21,8 @@ El transporte falso acepta el XML que envía `createClient` y devuelve respuesta
 analizadas. También puede forzar un rechazo, omitir detalles de un duplicado y paginar las
 consultas. Úsalo en tus pruebas de aplicación; antes de producción, comprueba además la conexión
 real con tu certificado en la preproducción de la AEAT.
+
+En particular, el transporte falso conserva los espacios al principio y al final del texto
+enviado. La AEAT los elimina antes de almacenar y devolver los campos de texto. Si tu prueba
+depende del valor almacenado de un campo como `RefExterna`, confírmalo en la preproducción de la
+AEAT.
