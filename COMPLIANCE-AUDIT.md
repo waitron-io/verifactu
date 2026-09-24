@@ -128,6 +128,18 @@ state-only `annul` hook keeps the original alta and petition ID. This does not e
 whole-response schema validity: the fake still uses placeholder
 namespace URIs and does not emit every required envelope field, including `Cabecera`.
 
+### Global submission status — service description §§3, 6.5.2
+
+AEAT returns `Correcto` only when every response line is `Correcto`,
+`ParcialmenteCorrecto` when at least one line is `AceptadoConErrores` or a batch mixes
+accepted and rejected lines, and `Incorrecto` when every line is rejected. An all-rejected
+response has no CSV; a partially correct response has one. The fake AEAT now follows these
+batch-level rules. `src/testing/fake-aeat.test.ts` covers a wholly accepted batch, a
+future-dated `AceptadoConErrores` line, a mixed batch, and an all-rejected two-line batch,
+including CSV presence or absence. The real response parser exposes AEAT's global and
+per-line values without reconciling them; the fake remains a transport test double, not
+proof of a schema-valid AEAT response.
+
 ### SOAP faults and voluntary flow control — service description §§5.1, 6.4.4.1
 
 `src/client.ts` identifies SOAP Faults even when HTTP succeeds and includes the fault code and

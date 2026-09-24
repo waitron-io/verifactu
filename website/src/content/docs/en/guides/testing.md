@@ -21,6 +21,10 @@ The fake accepts the same XML that `createClient` sends and returns parsed SOAP 
 also force a rejection, omit duplicate detail, and return paged consulta results. Use it for
 application tests; it does not replace AEAT preproduction checks with your real certificate.
 
+Inspect each response line as well as `EstadoEnvio`. The fake returns `Correcto` only when every
+line is correct, `ParcialmenteCorrecto` if a line is accepted with errors or accepted and rejected
+lines are mixed, and `Incorrecto` if every line is rejected. An all-rejected batch has no `CSV`.
+
 In particular, the fake keeps leading and trailing spaces in submitted text. AEAT trims those
 spaces before storing and returning text fields. If your test depends on the stored spelling of
 a value such as `RefExterna`, confirm it in AEAT preproduction.
