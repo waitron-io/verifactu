@@ -368,10 +368,95 @@ describe("validate", () => {
     expect(issue?.severity).toBe("warning");
   });
 
-  it("rejects a huella that is not 64 uppercase hex characters", () => {
+  it("warns without blocking on a malformed 64-character huella", () => {
     const record = valid();
     record.Huella = record.Huella.toLowerCase();
-    expect(codes(record)).toContain("HUELLA_FORMAT");
+    expect(validate(record).find((issue) => issue.code === "HUELLA_FORMAT")?.severity).toBe(
+      "warning",
+    );
+    expect(() => assertValid(record)).not.toThrow();
+  });
+
+  it.each([
+    ["alta", valid],
+    ["anulación", validAnulacion],
+  ] as const)(
+    "warns without blocking on a wrong but well-formed %s huella",
+    (_kind, makeRecord) => {
+      const record = makeRecord();
+      record.Huella = "0".repeat(64);
+      expect(validate(record).find((issue) => issue.code === "HUELLA_MISMATCH")).toEqual({
+        code: "HUELLA_MISMATCH",
+        severity: "warning",
+        field: "Huella",
+        message: "Huella does not match the record's hash input",
+      });
+      expect(() => assertValid(record)).not.toThrow();
+    },
+  );
+
+  it("blocks a huella longer than the XSD's 64-character maximum", () => {
+    const record = valid();
+    record.Huella = "0".repeat(65);
+    expect(validate(record).find((issue) => issue.code === "HUELLA_FORMAT")?.severity).toBe(
+      "error",
+    );
+    expect(() => assertValid(record)).toThrow(VerifactuValidationError);
+    expect(codes(record)).not.toContain("HUELLA_MISMATCH");
+  });
+
+  it.each([
+    ["alta", valid],
+    ["anulación", validAnulacion],
+  ] as const)("blocks a %s predecessor huella longer than the XSD maximum", (_kind, makeRecord) => {
+    const record = makeRecord();
+    record.Encadenamiento = {
+      RegistroAnterior: {
+        IDEmisorFactura: "89890001K",
+        NumSerieFactura: "PREVIOUS",
+        FechaExpedicionFactura: "28-10-2024",
+        Huella: "A".repeat(65),
+      },
+    };
+    expect(
+      validate(record).find((issue) => issue.code === "HUELLA_ANTERIOR_FORMAT")?.severity,
+    ).toBe("error");
+    expect(() => assertValid(record)).toThrow(VerifactuValidationError);
+  });
+
+  it.each([
+    ["alta", valid],
+    ["anulación", validAnulacion],
+  ] as const)("blocks an XML control character in a %s huella", (_kind, makeRecord) => {
+    const record = makeRecord();
+    record.Huella = `${"A".repeat(63)}\u0001`;
+    expect(validate(record)).toContainEqual(
+      expect.objectContaining({ code: "CONTROL_CHAR", severity: "error", field: "Huella" }),
+    );
+    expect(() => assertValid(record)).toThrow(VerifactuValidationError);
+  });
+
+  it.each([
+    ["alta", valid],
+    ["anulación", validAnulacion],
+  ] as const)("blocks an XML control character in a %s predecessor huella", (_kind, makeRecord) => {
+    const record = makeRecord();
+    record.Encadenamiento = {
+      RegistroAnterior: {
+        IDEmisorFactura: "89890001K",
+        NumSerieFactura: "PREVIOUS",
+        FechaExpedicionFactura: "28-10-2024",
+        Huella: `${"A".repeat(63)}\u0001`,
+      },
+    };
+    expect(validate(record)).toContainEqual(
+      expect.objectContaining({
+        code: "CONTROL_CHAR",
+        severity: "error",
+        field: "Encadenamiento.RegistroAnterior.Huella",
+      }),
+    );
+    expect(() => assertValid(record)).toThrow(VerifactuValidationError);
   });
 
   it.each([
@@ -3893,8 +3978,19 @@ describe("validate — pins the exact field, message and severity for every Vali
       code: "HUELLA_FORMAT",
       field: "Huella",
       message: "Huella must be 64 uppercase hexadecimal characters",
+      severity: "warning",
       mutate: (r) => {
         r.Huella = r.Huella.toLowerCase();
+      },
+    },
+    {
+      description: "HUELLA_MISMATCH",
+      code: "HUELLA_MISMATCH",
+      field: "Huella",
+      message: "Huella does not match the record's hash input",
+      severity: "warning",
+      mutate: (r) => {
+        r.Huella = "0".repeat(64);
       },
     },
     {

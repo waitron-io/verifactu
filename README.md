@@ -94,8 +94,16 @@ with a readable message such as `SistemaInformatico.NombreSistemaInformatico: ..
 characters (NOMBRE_SISTEMA_LENGTH)`. Its `issues` property contains the same structured issues, so
 you can report the exact field without parsing the message. A malformed predecessor hash produces
 the `HUELLA_ANTERIOR_FORMAT` warning rather than blocking submission because AEAT classifies the
-format problem as non-rejecting. If an earlier version's fatal issue guarded your chain, handle the
-warning explicitly when you upgrade. You should still investigate it before relying on the chain.
+format problem as non-rejecting. A predecessor hash longer than 64 characters or containing an
+XML control character still blocks the record because it breaks the XML schema or parsing. If an
+earlier version's fatal issue guarded your chain, handle the warning
+explicitly when you upgrade. You should still investigate it before relying on the chain.
+
+The builder calculates each record's own hash from the values it writes to XML. If you change a
+hashed field afterward, `validate` reports `HUELLA_MISMATCH` as a warning. A malformed hash of at
+most 64 characters produces `HUELLA_FORMAT` as a warning; a longer one is an error because it
+breaks AEAT's XML schema. An XML control character is also an error. Investigate either warning
+before filing, even though AEAT may accept the record with errors.
 
 `validate` now reports `NIF_CONTROL` for malformed nine-character Spanish tax IDs. If you block
 submission on validation errors, review this new issue when updating from an earlier version.

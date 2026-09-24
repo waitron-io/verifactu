@@ -21,7 +21,15 @@ returned line after submission.
 A predecessor hash must contain exactly 64 uppercase hexadecimal characters. `validate` reports
 `HUELLA_ANTERIOR_FORMAT` as a warning for both alta and cancellation records. AEAT treats this
 format problem as non-rejecting, so `assertValid` does not block the submission, but you should
-still investigate it before relying on the chain.
+still investigate it before relying on the chain. A value longer than 64 characters or containing
+an XML control character remains blocking because it breaks the schema or parsing.
+
+If you change a record after the builder has hashed it, `validate` reports `HUELLA_MISMATCH`. A
+hash that is not 64 uppercase hexadecimal characters produces `HUELLA_FORMAT`. These are warnings
+when the value fits AEAT's 64-character XML limit and contains no XML control characters, so
+`assertValid` does not block a record that AEAT would accept with errors. A longer value breaks
+the XML schema and remains an error. Check the warnings before filing rather than assuming
+acceptance means the hash is correct.
 
 `FechaHoraHusoGenRegistro` must be a real calendar instant with a numeric offset. A value more than
 one minute ahead of the current time produces the `FECHA_HORA_FUTURE` warning on both alta and

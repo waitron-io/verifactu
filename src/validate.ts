@@ -1,4 +1,5 @@
 import { MAX_OFFSET_MINUTES, trimValue } from "./format.js";
+import { verifyHuella } from "./huella.js";
 import { hasValidNifControl } from "./nif.js";
 import { isAlta } from "./types.js";
 import type { RegistroAlta, RegistroAnulacion } from "./types.js";
@@ -18,6 +19,7 @@ export type ValidationCode =
   | "FECHA_HORA_FORMAT"
   | "FECHA_HORA_FUTURE"
   | "HUELLA_FORMAT"
+  | "HUELLA_MISMATCH"
   | "ID_SISTEMA_LENGTH"
   | "ID_SISTEMA_CHARSET"
   | "NOMBRE_SISTEMA_LENGTH"
@@ -484,7 +486,14 @@ export function validate(
     fechaOperacion === undefined ? expedicionOrdinal : operacionOrdinal;
 
   if (!HUELLA_PATTERN.test(record.Huella)) {
-    add("HUELLA_FORMAT", "Huella", "Huella must be 64 uppercase hexadecimal characters");
+    add(
+      "HUELLA_FORMAT",
+      "Huella",
+      "Huella must be 64 uppercase hexadecimal characters",
+      xmlCharacterCount(record.Huella) > 64 ? "error" : "warning",
+    );
+  } else if (!verifyHuella(record)) {
+    add("HUELLA_MISMATCH", "Huella", "Huella does not match the record's hash input", "warning");
   }
   const generationTime = parseFechaHoraHusoGenRegistro(record.FechaHoraHusoGenRegistro);
   if (!generationTime) {
@@ -594,6 +603,11 @@ export function validate(
       add("CONTROL_CHAR", field, `${field} must not contain XML control characters`);
     }
   };
+  checkNoControlChars("Huella", record.Huella);
+  checkNoControlChars(
+    "Encadenamiento.RegistroAnterior.Huella",
+    record.Encadenamiento.RegistroAnterior?.Huella,
+  );
   checkNoControlChars("RefExterna", record.RefExterna);
   checkNoControlChars("SistemaInformatico.NombreRazon", sistema.NombreRazon);
   checkNoControlChars("SistemaInformatico.IDOtro.ID", sistema.IDOtro?.ID);
@@ -613,7 +627,7 @@ export function validate(
         "HUELLA_ANTERIOR_FORMAT",
         "Encadenamiento.RegistroAnterior.Huella",
         "Predecessor huella must be 64 uppercase hexadecimal characters",
-        "warning",
+        xmlCharacterCount(anterior) > 64 ? "error" : "warning",
       );
     }
     if (anterior === record.Huella) {
