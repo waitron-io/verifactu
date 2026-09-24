@@ -81,7 +81,7 @@ export interface FakeAeat {
   setServerNow(now: Date): void;
   reject(key: FacturaKey, code: number, message: string): void;
   stored(): StoredRecord[];
-  /** Forces the next resubmit of `key` to omit `RegistroDuplicado.EstadoRegistroDuplicado` (the duplicate_unknown case). */
+  /** Omits the optional `RegistroDuplicado` block on resubmit (the duplicate_unknown case). */
   dropRegistroDuplicadoDetail(key: FacturaKey): void;
   /**
    * Marks a stored record `Anulado` without synthesizing a RegistroAnulacion. This state-only hook
@@ -155,10 +155,11 @@ function fechaToDate(ddMmYyyy: string): Date {
 
 export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
   const store = new Map<FacturaKey, StoredRecord>();
+  const petitionIds = new Map<FacturaKey, string>();
   const metadata = new Map<FacturaKey, StoredMetadata>();
   const rejections = new Map<FacturaKey, { code: number; message: string }>();
-  // Keys for which the next resubmit's 3000 response omits RegistroDuplicado.EstadoRegistroDuplicado
-  // entirely (AEAT reporting a duplicate without saying what it holds — duplicate_unknown).
+  // Keys for which a 3000 response omits the optional duplicate-detail block, leaving the
+  // caller to reconcile the unknown stored state through consulta.
   const noDuplicadoDetail = new Set<FacturaKey>();
   let serverNow = options.serverNow ?? new Date("2026-07-21T00:00:00Z");
   // Clamped into TiempoEsperaEnvio's own schema domain (`\d{0,4}` — at most 9999, and a real wait
@@ -193,7 +194,11 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
         // RegistroDuplicado; resolveEstadoEfectivo reads that inner state.
         anyRejected = true;
         const detail = noDuplicadoDetail.has(key) ? undefined : duplicateStateOf(existing.estado);
-        lineas.push(duplicadoLineaXml(idf, detail, ref, operacion));
+        const storedPetitionId = petitionIds.get(key);
+        if (detail !== undefined && storedPetitionId === undefined) {
+          throw new Error(`Fake AEAT has no petition ID for stored record ${key}`);
+        }
+        lineas.push(duplicadoLineaXml(idf, detail, ref, operacion, storedPetitionId));
         continue;
       }
       if (forced) {
@@ -211,6 +216,7 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
           tipo,
           refExterna: ref ?? existing?.refExterna,
         });
+        petitionIds.set(key, `PET-${String(csvSequence).padStart(8, "0")}`);
         if (!existing) {
           metadata.set(
             key,
@@ -373,6 +379,7 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
     },
     forget: (key) => {
       store.delete(key);
+      petitionIds.delete(key);
       metadata.delete(key);
     },
   };
@@ -445,13 +452,14 @@ function suministroEnvelope(
   );
 }
 
-/** A 3000 (Registro duplicado) response line. `estadoDuplicado` undefined models the
- *  duplicate_unknown case: AEAT reporting a duplicate without saying what it holds. */
+/** A 3000 response. Without detail, omit the optional block rather than emitting an
+ *  empty RegistroDuplicado, whose child fields the XSD requires. */
 function duplicadoLineaXml(
   idf: IDFactura,
   estadoDuplicado: EstadoRegistroDuplicado | undefined,
   ref: string | undefined,
   operacion: string,
+  idPeticion: string | undefined,
 ): string {
   return (
     "<sfR:RespuestaLinea>" +
@@ -465,11 +473,12 @@ function duplicadoLineaXml(
     "<sfR:EstadoRegistro>Incorrecto</sfR:EstadoRegistro>" +
     "<sfR:CodigoErrorRegistro>3000</sfR:CodigoErrorRegistro>" +
     "<sfR:DescripcionErrorRegistro>Registro duplicado</sfR:DescripcionErrorRegistro>" +
-    "<sfR:RegistroDuplicado>" +
-    (estadoDuplicado !== undefined
-      ? `<sfR:EstadoRegistroDuplicado>${estadoDuplicado}</sfR:EstadoRegistroDuplicado>`
+    (estadoDuplicado !== undefined && idPeticion !== undefined
+      ? "<sfR:RegistroDuplicado>" +
+        `<sf:IdPeticionRegistroDuplicado>${escapeXml(idPeticion)}</sf:IdPeticionRegistroDuplicado>` +
+        `<sf:EstadoRegistroDuplicado>${estadoDuplicado}</sf:EstadoRegistroDuplicado>` +
+        "</sfR:RegistroDuplicado>"
       : "") +
-    "</sfR:RegistroDuplicado>" +
     "</sfR:RespuestaLinea>"
   );
 }
