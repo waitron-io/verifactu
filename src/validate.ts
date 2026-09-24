@@ -323,6 +323,11 @@ function isValidAmount(value: string): boolean {
   return AMOUNT_PATTERN.test(value);
 }
 
+/** XSD string maxLength counts XML characters, not UTF-16 code units. */
+function xmlCharacterCount(value: string): number {
+  return Array.from(value).length;
+}
+
 interface FechaHoraParts {
   year: number;
   month: number;
@@ -991,7 +996,7 @@ export function validate(
   checkNoControlChars("NombreRazonEmisor", record.NombreRazonEmisor);
   if (
     record.NumRegistroAcuerdoFacturacion !== undefined &&
-    record.NumRegistroAcuerdoFacturacion.length > 15
+    xmlCharacterCount(record.NumRegistroAcuerdoFacturacion) > 15
   ) {
     add(
       "NUM_REGISTRO_ACUERDO_LENGTH",
@@ -1002,7 +1007,7 @@ export function validate(
   checkNoControlChars("NumRegistroAcuerdoFacturacion", record.NumRegistroAcuerdoFacturacion);
   if (
     record.IdAcuerdoSistemaInformatico !== undefined &&
-    record.IdAcuerdoSistemaInformatico.length > 16
+    xmlCharacterCount(record.IdAcuerdoSistemaInformatico) > 16
   ) {
     add(
       "ID_ACUERDO_SISTEMA_LENGTH",

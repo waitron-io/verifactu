@@ -217,7 +217,7 @@ describe("buildAltaRecord — optional field pass-through", () => {
 });
 
 describe("buildAltaRecord — optional non-hashed fields", () => {
-  // These eight optional fields do not feed the huella. TipoRectificativa is
+  // These nine optional fields do not feed the huella. TipoRectificativa is
   // deliberately not in this shared group: AEAT §3.1.3.3 forbids it whenever
   // TipoFactura is not R1-R5, so an F1 record (ALTA_INPUT's TipoFactura) can
   // never legally carry it. The invoice-family-specific fields added alongside
@@ -232,9 +232,10 @@ describe("buildAltaRecord — optional non-hashed fields", () => {
     Macrodato: "S",
     Cupon: "S",
     NumRegistroAcuerdoFacturacion: "ACUERDO-1",
+    IdAcuerdoSistemaInformatico: "SIF-AGREEMENT-1",
   } as const;
 
-  it("passes through all eight fields when supplied", () => {
+  it("passes through all nine fields when supplied", () => {
     const record = buildAltaRecord({ ...ALTA_INPUT, ...EXTRAS });
     expect(record.Subsanacion).toBe("S");
     expect(record.RechazoPrevio).toBe("S");
@@ -244,16 +245,7 @@ describe("buildAltaRecord — optional non-hashed fields", () => {
     expect(record.Macrodato).toBe("S");
     expect(record.Cupon).toBe("S");
     expect(record.NumRegistroAcuerdoFacturacion).toBe("ACUERDO-1");
-  });
-
-  it("preserves the software agreement ID without changing the record hash", () => {
-    const baseline = buildAltaRecord(ALTA_INPUT);
-    const withAgreement = buildAltaRecord({
-      ...ALTA_INPUT,
-      IdAcuerdoSistemaInformatico: "SIF-AGREEMENT-1",
-    });
-    expect(withAgreement).toHaveProperty("IdAcuerdoSistemaInformatico", "SIF-AGREEMENT-1");
-    expect(withAgreement.Huella).toBe(baseline.Huella);
+    expect(record.IdAcuerdoSistemaInformatico).toBe("SIF-AGREEMENT-1");
   });
 
   it("formats FechaOperacion as DD-MM-YYYY using the record's own offset, like FechaExpedicionFactura", () => {
@@ -266,8 +258,8 @@ describe("buildAltaRecord — optional non-hashed fields", () => {
     expect(record.FechaOperacion).toBe("16-03-2024");
   });
 
-  it("does not change the huella when the eight non-hashed optional fields are populated", () => {
-    // Critical invariant: none of these eight fields feed the huella — the
+  it("does not change the huella when the nine non-hashed optional fields are populated", () => {
+    // Critical invariant: none of these nine fields feed the huella — the
     // canonical hash string (CadenaAltaInput) uses only IDEmisorFactura,
     // NumSerieFactura, FechaExpedicionFactura, TipoFactura, CuotaTotal,
     // ImporteTotal, the predecessor huella and FechaHoraHusoGenRegistro.
