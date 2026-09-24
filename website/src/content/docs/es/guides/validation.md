@@ -26,9 +26,18 @@ para un registro que combinaba los regímenes `01` y `03`.
 
 `validate` también comprueba que el tipo de factura corresponda con la presencia de
 `Destinatarios` y que las líneas de IVA, IPSI e IGIC incluyan `ClaveRegimen`, mientras que las de
-otros impuestos lo omitan. No determina si el
-código de régimen es el adecuado para tu operación; examina la respuesta de la AEAT para cada
-registro enviado.
+otros impuestos lo omitan. No decide qué régimen describe tu operación comercial, pero sí rechaza
+los códigos que no figuran en la lista publicada para ese impuesto y las combinaciones que
+incumplen las reglas específicas del régimen. Examina la respuesta de la AEAT para cada registro
+enviado.
+
+El IPSI tiene una transición con fecha. Un régimen IPSI ausente o desconocido genera un aviso hasta
+el 31 de diciembre de 2026, porque durante ese periodo la AEAT acepta el registro con errores. Pasa
+a ser un error el 1 de enero de 2027, cuando la AEAT empieza a rechazarlo. Puedes pasar `{ now }` a
+`validate` o `assertValid` para probar ambos lados de ese límite. El límite usa ese instante con el
+desfase numérico de `FechaHoraHusoGenRegistro`, por lo que la medianoche sigue la fecha local
+declarada en el registro. Una marca temporal incorrecta ya genera `FECHA_HORA_FORMAT`; en ese caso,
+el problema del IPSI sigue siendo un aviso para no añadir un segundo error derivado de la fecha.
 
 Los campos de rectificación se comprueban en conjunto. Los valores `S` y `X` de `RechazoPrevio`
 exigen `Subsanacion: "S"`; `FacturasRectificadas` solo está permitido en `R1`–`R5`;
@@ -80,6 +89,12 @@ repercutidas y recargos de equivalencia. Todas las líneas exentas deben omitir 
 códigos de exención se contrastan con las listas IVA/IGIC y las restricciones del régimen 01; los
 destinatarios informados en una línea IVA `E5` deben usar `IDOtro`. Por último, `Cupon: "S"` solo es
 válido en `R1` y `R5`.
+
+La validación específica de regímenes cubre las condiciones publicadas sobre operación, tipo,
+base a coste, tipo de factura, identificación del destinatario y fecha de operación para los
+regímenes IVA/IGIC `02`, `03`, `04`, `06`, `07`, `08`, `10`, `11`, `14` y el régimen IGIC `20`.
+En particular, el régimen `14` exige una `FechaOperacion` posterior a la fecha de expedición y
+destinatarios cuyo NIF empiece por `P`, `Q`, `S` o `V`.
 
 Mantén `IDEmisorFactura` igual a `Cabecera.ObligadoEmision.NIF`. `serializeEnvio` rechaza el lote
 si ambos valores difieren, antes de crear el XML. La AEAT permite un conjunto más amplio de

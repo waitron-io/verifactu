@@ -25,8 +25,17 @@ AEAT preproduction confirmed this behavior for a record combining regimes `01` a
 
 `validate` also checks that the invoice type agrees with the presence of `Destinatarios` and that
 IVA, IPSI, and IGIC tax lines include `ClaveRegimen`, while other tax lines omit it. It does not
-establish that a regime code is
-appropriate for your transaction; inspect the AEAT response for each submitted record.
+decide which regime describes your business transaction, but it does reject codes outside the
+published list for that tax and combinations that break AEAT's regime-specific rules. Inspect the
+AEAT response for each submitted record.
+
+IPSI has a dated transition. A missing or unknown IPSI regime produces a warning through 31
+December 2026 because AEAT accepts the record with errors during that period. It becomes an error
+on 1 January 2027, when AEAT starts rejecting the record. Pass `{ now }` to `validate` or
+`assertValid` when you need to test either side of that boundary. The boundary uses that instant in
+the numeric offset carried by `FechaHoraHusoGenRegistro`, so midnight follows the record's declared
+local date. A malformed timestamp already produces `FECHA_HORA_FORMAT`; in that case the IPSI issue
+stays a warning instead of adding a second date-derived error.
 
 Correction fields are checked together. `RechazoPrevio` values `S` and `X` require
 `Subsanacion: "S"`; `FacturasRectificadas` is limited to `R1`–`R5`; `FacturasSustituidas` is limited
@@ -76,6 +85,12 @@ lines require an eligible invoice family plus zero `TipoImpositivo` and `CuotaRe
 omit those fields. Exemption codes are checked against the IVA/IGIC lists and regime-01
 restrictions; supplied recipients of an IVA `E5` line must use `IDOtro`. Finally, `Cupon: "S"` is
 valid only on `R1` and `R5`.
+
+Regime-specific validation covers the published operation, rate, base-at-cost, invoice-type,
+recipient-identity, and operation-date conditions for IVA/IGIC regimes `02`, `03`, `04`, `06`,
+`07`, `08`, `10`, `11`, `14`, and IGIC `20`. In particular, regime `14` requires
+`FechaOperacion` after the invoice issue date and recipients whose NIF begins with `P`, `Q`, `S`,
+or `V`.
 
 Keep `IDEmisorFactura` equal to `Cabecera.ObligadoEmision.NIF`. `serializeEnvio` rejects the batch
 when those values differ, before it creates XML. AEAT permits a wider printable-ASCII alphabet in
