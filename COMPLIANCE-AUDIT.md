@@ -230,6 +230,19 @@ endpoint and cannot prevent consulta being sent to a requirement-only URL; selec
 endpoint for consulta. WSDL structure and local tests do not prove certificate authorization,
 live service acceptance, or element-by-element conformance of every XSD type.
 
+### Submitted invoice-number lengths — `sf:TextoIDFacturaType`
+
+`SuministroInformacion.xsd` uses `TextoIDFacturaType` for an alta's `NumSerieFactura`, a
+cancellation's `NumSerieFacturaAnulada`, and the invoice numbers in rectified or substituted
+references. The type requires 1–60 Unicode code points. `serializeEnvio` now checks each of these
+paths, with the batch and reference indexes in its error, before the client can post XML. Focused
+tests reject empty or 61-character main numbers, reject overlong references in both lists, and
+confirm that the client makes no network call after a length failure. Offline `xmllint` probes
+accept a 60-code-point generated alta number and reject invalid alta, cancellation, and referenced
+numbers against the bundled request XSD. This serializer boundary does not replace `validate`'s
+separate character-set and fiscal checks, validate arbitrary raw XML accepted by `parseEnvio`, or
+prove AEAT will accept a submitted record.
+
 ### XML text and escaping — service description §§6.7, 6.9
 
 AEAT trims leading and trailing whitespace from XML text fields before storing and returning them.
