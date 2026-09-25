@@ -305,6 +305,24 @@ these requirements. Their render/decode example proves payload round-tripping, n
 dimensions, placement, or print contrast. Section 11 cites the governing law but adds no
 separate URL-format rule.
 
+### Correction-state matrix — validation annex §6.1
+
+AEAT's alta matrix distinguishes an initial registration from a `Subsanacion: "S"`
+replacement. With `RechazoPrevio` omitted or `N`, a subsanación requires an existing record;
+`RechazoPrevio: "X"` is the no-prior-record path. The fake AEAT now accepts the normal
+replacement, including reactivating an annulled invoice, and replaces its stored hash,
+reference, and consulta metadata. This includes reactivating a stored cancellation created without
+a prior alta. It rejects a replacement with no prior record when `RechazoPrevio` is omitted,
+`N`, or `S`, using
+the [published `3002` missing-record code](https://prewww2.aeat.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1.0/cont/ws/errores.properties).
+`src/testing/fake-aeat.test.ts` covers these states,
+the no-prior `X` path, and refusal to overwrite an existing record with that path.
+
+This is not full annex §6 fidelity. The fake still does not track the history needed for
+`RechazoPrevio: "S"` after a rejected subsanación, and its cancellation behavior does not yet
+implement every §6.2 state. The library does not select a correction operation for callers;
+check those flows against AEAT preproduction rather than treating the fake as an authority.
+
 ## Remaining work
 
 Review every numbered validation rule, every service and hash/QR requirement, each XSD/WSDL
