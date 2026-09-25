@@ -556,6 +556,24 @@ describe("parseConsulta full header and date choice", () => {
     );
   });
 
+  it("rejects a parsed pagination key with an XSD-invalid issuer NIF", () => {
+    const valid = serializeConsulta(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      ClavePaginacion: {
+        IDEmisorFactura: "89890001K",
+        NumSerieFactura: "INV/41",
+        FechaExpedicionFactura: "01-07-2026",
+      },
+    });
+    const xml = valid.replace(
+      "<sf:IDEmisorFactura>89890001K</sf:IDEmisorFactura>",
+      "<sf:IDEmisorFactura>X</sf:IDEmisorFactura>",
+    );
+    expect(xml).not.toBe(valid);
+    expect(() => parseConsulta(xml)).toThrow("Consulta ClavePaginacion.IDEmisorFactura");
+  });
+
   it("round-trips a recipient header and date range", () => {
     const consultaCabecera = {
       Destinatario: { NombreRazon: "Cliente Uno", NIF: "11111111H" },
@@ -865,6 +883,77 @@ describe("parseConsulta full header and date choice", () => {
     expect(() => parseConsulta(xml)).toThrow(
       "Consulta Cabecera must contain exactly one of ObligadoEmision or Destinatario",
     );
+  });
+
+  it("checks the parsed recipient header identity", () => {
+    const valid = serializeConsulta(
+      { Destinatario: { NombreRazon: "Buyer", NIF: "11111111H" } },
+      { Ejercicio: "2026", Periodo: "07" },
+    );
+    const xml = valid.replace("<sf:NIF>11111111H</sf:NIF>", "<sf:NIF>12345678</sf:NIF>");
+    expect(() => parseConsulta(xml)).toThrow("Consulta Destinatario.NIF");
+  });
+
+  it("names a repeated consultation header identity", () => {
+    const valid = serializeConsulta(cabecera, { Ejercicio: "2026", Periodo: "07" });
+    const identity =
+      "<sf:ObligadoEmision><sf:NombreRazon>Waitron SL</sf:NombreRazon><sf:NIF>89890001K</sf:NIF></sf:ObligadoEmision>";
+    const xml = valid.replace(identity, identity + identity);
+    expect(xml).not.toBe(valid);
+    expect(() => parseConsulta(xml)).toThrow("Consulta ObligadoEmision must appear once");
+  });
+
+  it("names a repeated counterpart block or identity element", () => {
+    const valid = serializeConsulta(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      Contraparte: { NombreRazon: "Buyer", NIF: "11111111H" },
+    });
+    const counterpart =
+      "<sfLRC:Contraparte><sf:NombreRazon>Buyer</sf:NombreRazon><sf:NIF>11111111H</sf:NIF></sfLRC:Contraparte>";
+    const nif = "<sf:NIF>11111111H</sf:NIF>";
+    expect(() => parseConsulta(valid.replace(counterpart, counterpart + counterpart))).toThrow(
+      "Consulta Contraparte must appear once",
+    );
+    expect(() => parseConsulta(valid.replace(nif, nif + nif))).toThrow(
+      "Consulta Contraparte.NIF must appear once",
+    );
+    const name = "<sf:NombreRazon>Buyer</sf:NombreRazon>";
+    expect(() => parseConsulta(valid.replace(name, name + name))).toThrow(
+      "Consulta Contraparte.NombreRazon must appear once",
+    );
+  });
+
+  it("names a repeated counterpart IDOtro block", () => {
+    const valid = serializeConsulta(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      Contraparte: { NombreRazon: "Foreign", IDOtro: { IDType: "03", ID: "FR123" } },
+    });
+    const other = "<sf:IDOtro><sf:IDType>03</sf:IDType><sf:ID>FR123</sf:ID></sf:IDOtro>";
+    const xml = valid.replace(other, other + other);
+    expect(xml).not.toBe(valid);
+    expect(() => parseConsulta(xml)).toThrow("Consulta Contraparte.IDOtro must appear once");
+  });
+
+  it("names repeated fields inside a counterpart IDOtro block", () => {
+    const valid = serializeConsulta(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      Contraparte: {
+        NombreRazon: "Foreign",
+        IDOtro: { CodigoPais: "FR", IDType: "03", ID: "FR123" },
+      },
+    });
+    for (const [name, value] of [
+      ["CodigoPais", "FR"],
+      ["IDType", "03"],
+    ]) {
+      const leaf = `<sf:${name}>${value}</sf:${name}>`;
+      expect(() => parseConsulta(valid.replace(leaf, leaf + leaf))).toThrow(
+        `Consulta Contraparte.IDOtro.${name} must appear once`,
+      );
+    }
   });
 });
 

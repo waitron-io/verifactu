@@ -65,6 +65,8 @@ Usa entre 1 y 60 caracteres para `NumSerieFactura`. Usa `RefExterna` si guardast
 propia en el registro; puede estar vacío, pero no superar los 60 caracteres. El cliente comprueba
 estos límites, incluido el número de factura de `ClavePaginacion`, antes del envío porque el
 esquema de AEAT rechaza valores más largos.
+`ClavePaginacion.IDEmisorFactura` debe contener un NIF de nueve caracteres; el cliente comprueba
+su longitud antes del envío.
 
 Usa `Contraparte` con `NombreRazon` y el `NIF` o `IDOtro` del cliente para buscar sus facturas.
 `SistemaInformatico` limita el resultado a una instalación. Indica `NombreRazon`, `NIF` o

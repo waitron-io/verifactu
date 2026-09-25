@@ -1650,6 +1650,38 @@ describe("serializeConsulta", () => {
     );
   });
 
+  it("rejects an untyped consultation header without either identity deliberately", () => {
+    expect(() =>
+      serializeConsulta({} as CabeceraConsulta, { Ejercicio: "2026", Periodo: "07" }),
+    ).toThrow("Consulta Cabecera must contain exactly one of ObligadoEmision or Destinatario");
+  });
+
+  it("checks the recipient header identity as well as the issuer", () => {
+    const recipient: CabeceraConsulta = {
+      Destinatario: { NombreRazon: "Buyer", NIF: "11111111H" },
+    };
+    expect(() =>
+      serializeConsulta(
+        { Destinatario: { ...recipient.Destinatario!, NIF: "12345678" } },
+        { Ejercicio: "2026", Periodo: "07" },
+      ),
+    ).toThrow("Consulta Destinatario.NIF");
+  });
+
+  it("checks the pagination key's issuer NIF length", () => {
+    expect(() =>
+      serializeConsulta(CABECERA, {
+        Ejercicio: "2026",
+        Periodo: "07",
+        ClavePaginacion: {
+          IDEmisorFactura: "X",
+          NumSerieFactura: "INV/1",
+          FechaExpedicionFactura: "01-07-2026",
+        },
+      }),
+    ).toThrow("Consulta ClavePaginacion.IDEmisorFactura");
+  });
+
   it.each([
     [
       "counterpart name",

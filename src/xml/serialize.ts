@@ -132,13 +132,15 @@ export function isValidConsultaRefExterna(value: unknown): value is string {
 }
 
 function assertConsultaText(field: string, value: unknown, max: number, required: boolean): void {
+  if (Array.isArray(value)) throw new Error(`Consulta ${field} must appear once`);
   if (value === undefined && !required) return;
   if (typeof value !== "string" || Array.from(value).length > max) {
     throw new Error(`Consulta ${field} must be a string of at most ${max} characters`);
   }
 }
 
-function assertConsultaNif(field: string, value: unknown): void {
+export function assertConsultaNif(field: string, value: unknown): void {
+  if (Array.isArray(value)) throw new Error(`Consulta ${field} must appear once`);
   if (typeof value !== "string" || Array.from(value).length !== 9) {
     throw new Error(`Consulta ${field} must contain exactly 9 characters`);
   }
@@ -148,6 +150,7 @@ export function assertConsultaHeaderPersona(
   field: "ObligadoEmision" | "Destinatario",
   value: unknown,
 ): void {
+  if (Array.isArray(value)) throw new Error(`Consulta ${field} must appear once`);
   const raw =
     value && typeof value === "object" && !Array.isArray(value)
       ? (value as Record<string, unknown>)
@@ -160,12 +163,13 @@ export function assertConsultaPersona(
   field: "Contraparte" | "SistemaInformatico",
   value: unknown,
 ): void {
+  if (Array.isArray(value)) throw new Error(`Consulta ${field} must appear once`);
   const raw =
     value && typeof value === "object" && !Array.isArray(value)
       ? (value as Record<string, unknown>)
       : {};
-  const hasNif = "NIF" in raw && raw.NIF !== undefined;
-  const hasOther = "IDOtro" in raw && raw.IDOtro !== undefined;
+  const hasNif = raw.NIF !== undefined;
+  const hasOther = raw.IDOtro !== undefined;
   if (hasNif === hasOther) {
     throw new Error(`Consulta ${field} must contain exactly one of NIF or IDOtro`);
   }
@@ -173,12 +177,19 @@ export function assertConsultaPersona(
   if (hasNif) {
     assertConsultaNif(`${field}.NIF`, raw.NIF);
   } else {
+    if (Array.isArray(raw.IDOtro)) throw new Error(`Consulta ${field}.IDOtro must appear once`);
     const other =
       raw.IDOtro && typeof raw.IDOtro === "object" && !Array.isArray(raw.IDOtro)
         ? (raw.IDOtro as Record<string, unknown>)
         : {};
+    if (Array.isArray(other.CodigoPais)) {
+      throw new Error(`Consulta ${field}.IDOtro.CodigoPais must appear once`);
+    }
     if (other.CodigoPais !== undefined && !isValidConsultaCountryCode(other.CodigoPais)) {
       throw new Error(`Consulta ${field}.IDOtro.CodigoPais must be an AEAT CountryType2 code`);
+    }
+    if (Array.isArray(other.IDType)) {
+      throw new Error(`Consulta ${field}.IDOtro.IDType must appear once`);
     }
     if (typeof other.IDType !== "string" || !/^0[2-7]$/.test(other.IDType)) {
       throw new Error(`Consulta ${field}.IDOtro.IDType must be 02 through 07`);
@@ -718,7 +729,7 @@ export function serializeConsulta(cabecera: CabeceraConsulta, filtro: ConsultaFi
   if (!isValidConsultaPeriodo(filtro.Periodo)) {
     throw new Error("Consulta Periodo must be 01 through 12");
   }
-  if (cabecera.ObligadoEmision !== undefined && cabecera.Destinatario !== undefined) {
+  if ((cabecera.ObligadoEmision === undefined) === (cabecera.Destinatario === undefined)) {
     throw new Error(
       "Consulta Cabecera must contain exactly one of ObligadoEmision or Destinatario",
     );
@@ -759,6 +770,9 @@ export function serializeConsulta(cabecera: CabeceraConsulta, filtro: ConsultaFi
     throw new Error(
       "Consulta ClavePaginacion.NumSerieFactura must be present and contain 1 to 60 characters",
     );
+  }
+  if (filtro.ClavePaginacion !== undefined) {
+    assertConsultaNif("ClavePaginacion.IDEmisorFactura", filtro.ClavePaginacion.IDEmisorFactura);
   }
   if (
     filtro.ClavePaginacion !== undefined &&

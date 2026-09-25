@@ -1,5 +1,5 @@
 /** AEAT's CountryType2 includes special codes beyond ordinary ISO countries. */
-const COUNTRY_CODES = new Set(
+export const AEAT_COUNTRY_TYPE2_CODES = Object.freeze(
   [
     "AF AL DE AD AO AI AQ AG SA DZ AR AM AW AU AT AZ BS BH",
     "BD BB BE BZ BJ BM BY BO BA BW BV BR BN BG BF BI BT CV",
@@ -19,6 +19,8 @@ const COUNTRY_CODES = new Set(
     .join(" ")
     .split(" "),
 );
+
+const COUNTRY_CODES = new Set(AEAT_COUNTRY_TYPE2_CODES);
 
 export function isValidConsultaCountryCode(value: unknown): value is string {
   return typeof value === "string" && COUNTRY_CODES.has(value);

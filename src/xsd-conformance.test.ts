@@ -5,7 +5,7 @@ import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
 import { describe, expect, it } from "vitest";
 import { CABECERA, ALTA_INPUT, SISTEMA } from "../test/fixtures.js";
 import { buildAltaRecord, buildAnulacionRecord } from "./records.js";
-import { isValidConsultaCountryCode } from "./xml/consulta-country.js";
+import { AEAT_COUNTRY_TYPE2_CODES, isValidConsultaCountryCode } from "./xml/consulta-country.js";
 import { NS_LRC, NS_SF, serializeConsulta, serializeEnvio } from "./xml/serialize.js";
 
 const SOAP_NS = "http://schemas.xmlsoap.org/soap/envelope/";
@@ -377,6 +377,26 @@ describe("generated unsigned requests against AEAT XSDs", () => {
     },
   );
 
+  it("rejects an eight-character pagination issuer NIF under the request XSD", () => {
+    const body = soapBodyElement(
+      serializeConsulta(CABECERA, {
+        Ejercicio: "2026",
+        Periodo: "07",
+        ClavePaginacion: {
+          IDEmisorFactura: CABECERA.ObligadoEmision.NIF,
+          NumSerieFactura: "INV/41",
+          FechaExpedicionFactura: "20-07-2026",
+        },
+      }),
+    );
+    const document = new DOMParser().parseFromString(body, "text/xml");
+    const leaf = document.getElementsByTagNameNS(NS_SF, "IDEmisorFactura").item(0);
+    if (!leaf) throw new Error("Consulta fixture has no pagination issuer NIF");
+    leaf.textContent = "12345678";
+    const result = schemaResult(CONSULTA_XSD, new XMLSerializer().serializeToString(document));
+    expect(result.status, result.stderr).not.toBe(0);
+  });
+
   it.each([
     [
       "exact date",
@@ -555,14 +575,13 @@ describe("generated unsigned requests against AEAT XSDs", () => {
         element.getAttribute("value"),
       ),
     );
-    const accepted: string[] = [];
-    for (let first = 65; first <= 90; first++) {
-      for (let second = 65; second <= 90; second++) {
-        const code = String.fromCharCode(first, second);
-        if (isValidConsultaCountryCode(code)) accepted.push(code);
-      }
+    expect([...AEAT_COUNTRY_TYPE2_CODES].sort()).toEqual([...expected].sort());
+    for (const code of AEAT_COUNTRY_TYPE2_CODES) {
+      expect(isValidConsultaCountryCode(code)).toBe(true);
     }
-    expect(accepted).toEqual([...expected].sort());
+    for (const code of ["", "fr", "FRA", "ZZ", " AA", "A1"]) {
+      expect(isValidConsultaCountryCode(code)).toBe(false);
+    }
   });
 
   it("accepts QU but rejects ZZ under AEAT CountryType2", () => {

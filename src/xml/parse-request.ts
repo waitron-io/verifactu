@@ -1,6 +1,7 @@
 import { asArray, parser } from "./parse-common.js";
 import {
   assertConsultaHeaderPersona,
+  assertConsultaNif,
   assertConsultaPersona,
   assertConsultaResponseOptions,
   isValidConsultaEjercicio,
@@ -434,6 +435,9 @@ export function parseConsulta(xml: string): { cabecera: CabeceraConsulta; filtro
     throw new Error(
       "Consulta ClavePaginacion.NumSerieFactura must be present and contain 1 to 60 characters",
     );
+  }
+  if (f.ClavePaginacion !== undefined) {
+    assertConsultaNif("ClavePaginacion.IDEmisorFactura", f.ClavePaginacion.IDEmisorFactura);
   }
   if (
     f.ClavePaginacion !== undefined &&

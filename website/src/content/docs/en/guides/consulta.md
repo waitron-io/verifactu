@@ -62,6 +62,8 @@ Keep `NumSerieFactura` between 1 and 60 characters. Use `RefExterna` when you st
 reference on the record; it may be empty but cannot exceed 60 characters. The client checks these
 limits, including the invoice number in `ClavePaginacion`, before sending because AEAT's request
 schema rejects longer values.
+`ClavePaginacion.IDEmisorFactura` must contain a nine-character NIF; the client checks its length
+before sending.
 
 Use `Contraparte` with the customer's `NombreRazon` and either `NIF` or `IDOtro` when you need
 that customer's records.
