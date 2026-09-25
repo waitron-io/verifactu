@@ -31,6 +31,133 @@ describe("escapeXml", () => {
 });
 
 describe("serializeEnvio", () => {
+  it.each(["alta", "cancellation"] as const)(
+    "preserves the invoice-number error when an untyped %s lacks SistemaInformatico",
+    (kind) => {
+      if (kind === "alta") {
+        const invalid = buildAltaRecord(ALTA_INPUT);
+        invalid.IDFactura.NumSerieFactura = "X".repeat(61);
+        invalid.SistemaInformatico = undefined as unknown as typeof invalid.SistemaInformatico;
+        expect(() => serializeEnvio(CABECERA, [{ RegistroAlta: invalid }])).toThrow(
+          "RegistroAlta[0].IDFactura.NumSerieFactura must contain 1 to 60 characters",
+        );
+      } else {
+        const invalid = buildAnulacionRecord({
+          IDEmisorFacturaAnulada: CABECERA.ObligadoEmision.NIF,
+          NumSerieFacturaAnulada: "CANCEL-COUNTRY",
+          FechaExpedicionFacturaAnulada: new Date("2024-10-28T00:00:00+01:00"),
+          Encadenamiento: { PrimerRegistro: "S" },
+          SistemaInformatico: SISTEMA,
+          generadoEn: new Date("2024-10-28T19:20:30+01:00"),
+          offsetMinutes: 60,
+        });
+        invalid.IDFactura.NumSerieFacturaAnulada = "X".repeat(61);
+        invalid.SistemaInformatico = undefined as unknown as typeof invalid.SistemaInformatico;
+        expect(() => serializeEnvio(CABECERA, [{ RegistroAnulacion: invalid }])).toThrow(
+          "RegistroAnulacion[0].IDFactura.NumSerieFacturaAnulada must contain 1 to 60 characters",
+        );
+      }
+    },
+  );
+
+  it.each([
+    ["CodigoPais", "ZZ", "CodigoPais must be an AEAT CountryType2 code"],
+    ["IDType", "01", "IDType must be 02 through 07"],
+    ["ID", "😀".repeat(21), "ID must be present and contain at most 20 characters"],
+  ] as const)("checks cancellation software-producer IDOtro.%s", (part, invalid, message) => {
+    const other = { CodigoPais: "FR", IDType: "03", ID: "X-1" };
+    other[part] = invalid;
+    const cancellation = buildAnulacionRecord({
+      IDEmisorFacturaAnulada: CABECERA.ObligadoEmision.NIF,
+      NumSerieFacturaAnulada: "CANCEL-COUNTRY",
+      FechaExpedicionFacturaAnulada: new Date("2024-10-28T00:00:00+01:00"),
+      Encadenamiento: { PrimerRegistro: "S" },
+      SistemaInformatico: { ...withoutNif(SISTEMA), IDOtro: other },
+      generadoEn: new Date("2024-10-28T19:20:30+01:00"),
+      offsetMinutes: 60,
+    });
+    expect(() => serializeEnvio(CABECERA, [{ RegistroAnulacion: cancellation }])).toThrow(
+      `RegistroAnulacion[0].SistemaInformatico.IDOtro.${message}`,
+    );
+  });
+
+  it("rejects an IDOtro without its mandatory ID from an untyped caller", () => {
+    const invalid = buildAltaRecord({
+      ...ALTA_INPUT,
+      SistemaInformatico: {
+        ...withoutNif(SISTEMA),
+        IDOtro: { CodigoPais: "FR", IDType: "03", ID: undefined as unknown as string },
+      },
+    });
+    expect(() => serializeEnvio(CABECERA, [{ RegistroAlta: invalid }])).toThrow(
+      "RegistroAlta[0].SistemaInformatico.IDOtro.ID must be present and contain at most 20 characters",
+    );
+  });
+
+  it.each([
+    ["country code", "CodigoPais", "ZZ", "CodigoPais must be an AEAT CountryType2 code"],
+    ["identifier type", "IDType", "01", "IDType must be 02 through 07"],
+    [
+      "overlong identifier",
+      "ID",
+      "😀".repeat(21),
+      "ID must be present and contain at most 20 characters",
+    ],
+  ] as const)(
+    "rejects an XSD-invalid %s on each filing identity before sending",
+    (_description, part, invalid, message) => {
+      for (const role of ["software", "third party", "recipient", "generator"] as const) {
+        const other = { CodigoPais: "FR", IDType: "03", ID: "X-1" };
+        other[part] = invalid;
+        const filing =
+          role === "generator"
+            ? {
+                RegistroAnulacion: buildAnulacionRecord({
+                  IDEmisorFacturaAnulada: CABECERA.ObligadoEmision.NIF,
+                  NumSerieFacturaAnulada: "CANCEL-COUNTRY",
+                  FechaExpedicionFacturaAnulada: new Date("2024-10-28T00:00:00+01:00"),
+                  GeneradoPor: "D",
+                  Generador: { NombreRazon: "Foreign generator", IDOtro: other },
+                  Encadenamiento: { PrimerRegistro: "S" },
+                  SistemaInformatico: SISTEMA,
+                  generadoEn: new Date("2024-10-28T19:20:30+01:00"),
+                  offsetMinutes: 60,
+                }),
+              }
+            : {
+                RegistroAlta: buildAltaRecord({
+                  ...ALTA_INPUT,
+                  ...(role === "software"
+                    ? { SistemaInformatico: { ...withoutNif(SISTEMA), IDOtro: other } }
+                    : {}),
+                  ...(role === "third party"
+                    ? {
+                        EmitidaPorTerceroODestinatario: "T" as const,
+                        Tercero: { NombreRazon: "Foreign issuer", IDOtro: other },
+                      }
+                    : {}),
+                  ...(role === "recipient"
+                    ? {
+                        Destinatarios: {
+                          IDDestinatario: [{ NombreRazon: "Foreign buyer", IDOtro: other }],
+                        },
+                      }
+                    : {}),
+                }),
+              };
+        const fieldRoot = {
+          software: "SistemaInformatico.IDOtro",
+          "third party": "Tercero.IDOtro",
+          recipient: "Destinatarios.IDDestinatario[0].IDOtro",
+          generator: "Generador.IDOtro",
+        }[role];
+        expect(() => serializeEnvio(CABECERA, [filing])).toThrow(
+          `Registro${role === "generator" ? "Anulacion" : "Alta"}[0].${fieldRoot}.${message}`,
+        );
+      }
+    },
+  );
+
   it.each(["", "A".repeat(61)])("rejects an XSD-invalid alta invoice number", (number) => {
     const invalid = buildAltaRecord(ALTA_INPUT);
     invalid.IDFactura.NumSerieFactura = number;

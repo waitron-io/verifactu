@@ -1,6 +1,6 @@
 import { escapeXml } from "./escape.js";
 import { hasValidNifControl } from "../nif.js";
-import { isValidConsultaCountryCode } from "./consulta-country.js";
+import { isValidCountryType2 } from "./country-type2.js";
 import type {
   DesgloseRectificacion,
   Destinatario,
@@ -189,7 +189,7 @@ export function assertConsultaPersona(
     if (Array.isArray(other.CodigoPais)) {
       throw new Error(`Consulta ${field}.IDOtro.CodigoPais must appear once`);
     }
-    if (other.CodigoPais !== undefined && !isValidConsultaCountryCode(other.CodigoPais)) {
+    if (other.CodigoPais !== undefined && !isValidCountryType2(other.CodigoPais)) {
       throw new Error(`Consulta ${field}.IDOtro.CodigoPais must be an AEAT CountryType2 code`);
     }
     if (Array.isArray(other.IDType)) {
@@ -647,6 +647,20 @@ export function serializeEnvio(
       throw new Error(`${field} must be 31-12-20XX from 2027`);
     }
   }
+  const assertIdOtroShape = (field: string, other: IDOtro | undefined) => {
+    if (other?.CodigoPais !== undefined && !isValidCountryType2(other.CodigoPais)) {
+      throw new Error(`${field}.IDOtro.CodigoPais must be an AEAT CountryType2 code`);
+    }
+    if (
+      other !== undefined &&
+      (typeof other.IDType !== "string" || !/^0[2-7]$/.test(other.IDType))
+    ) {
+      throw new Error(`${field}.IDOtro.IDType must be 02 through 07`);
+    }
+    if (other !== undefined && (typeof other.ID !== "string" || Array.from(other.ID).length > 20)) {
+      throw new Error(`${field}.IDOtro.ID must be present and contain at most 20 characters`);
+    }
+  };
   registros.forEach((entry, index) => {
     const hasAlta = entry != null && typeof entry === "object" && "RegistroAlta" in entry;
     const hasAnulacion = entry != null && typeof entry === "object" && "RegistroAnulacion" in entry;
@@ -673,6 +687,15 @@ export function serializeEnvio(
     }
     if ("RegistroAlta" in entry) {
       const alta = entry.RegistroAlta;
+      const field = `RegistroAlta[${index}]`;
+      assertIdOtroShape(`${field}.SistemaInformatico`, alta.SistemaInformatico?.IDOtro);
+      assertIdOtroShape(`${field}.Tercero`, alta.Tercero?.IDOtro);
+      alta.Destinatarios?.IDDestinatario.forEach((recipient, recipientIndex) => {
+        assertIdOtroShape(
+          `${field}.Destinatarios.IDDestinatario[${recipientIndex}]`,
+          recipient.IDOtro,
+        );
+      });
       if (alta.Encadenamiento.RegistroAnterior !== undefined) {
         assertPreviousInvoiceNumberXsd(
           `RegistroAlta[${index}].Encadenamiento.RegistroAnterior.NumSerieFactura`,
@@ -696,6 +719,10 @@ export function serializeEnvio(
         ),
       );
     } else if ("RegistroAnulacion" in entry) {
+      const cancellation = entry.RegistroAnulacion;
+      const field = `RegistroAnulacion[${index}]`;
+      assertIdOtroShape(`${field}.SistemaInformatico`, cancellation.SistemaInformatico?.IDOtro);
+      assertIdOtroShape(`${field}.Generador`, cancellation.Generador?.IDOtro);
       if (entry.RegistroAnulacion.Encadenamiento.RegistroAnterior !== undefined) {
         assertPreviousInvoiceNumberXsd(
           `RegistroAnulacion[${index}].Encadenamiento.RegistroAnterior.NumSerieFactura`,

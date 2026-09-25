@@ -5,7 +5,7 @@ import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
 import { describe, expect, it } from "vitest";
 import { CABECERA, ALTA_INPUT, SISTEMA } from "../test/fixtures.js";
 import { buildAltaRecord, buildAnulacionRecord } from "./records.js";
-import { AEAT_COUNTRY_TYPE2_CODES, isValidConsultaCountryCode } from "./xml/consulta-country.js";
+import { AEAT_COUNTRY_TYPE2_CODES, isValidCountryType2 } from "./xml/country-type2.js";
 import { NS_LRC, NS_SF, serializeConsulta, serializeEnvio } from "./xml/serialize.js";
 
 const SOAP_NS = "http://schemas.xmlsoap.org/soap/envelope/";
@@ -568,7 +568,7 @@ describe("generated unsigned requests against AEAT XSDs", () => {
     expect(result.status, result.stderr).not.toBe(0);
   });
 
-  it("keeps the consultation country-code guard equal to AEAT CountryType2", () => {
+  it("keeps the shared country-code guard equal to AEAT CountryType2", () => {
     const schema = new DOMParser().parseFromString(readFileSync(INFO_XSD, "utf8"), "text/xml");
     const namespace = "http://www.w3.org/2001/XMLSchema";
     const countryType = Array.from(schema.getElementsByTagNameNS(namespace, "simpleType")).find(
@@ -582,11 +582,79 @@ describe("generated unsigned requests against AEAT XSDs", () => {
     );
     expect([...AEAT_COUNTRY_TYPE2_CODES].sort()).toEqual([...expected].sort());
     for (const code of AEAT_COUNTRY_TYPE2_CODES) {
-      expect(isValidConsultaCountryCode(code)).toBe(true);
+      expect(isValidCountryType2(code)).toBe(true);
     }
     for (const code of ["", "fr", "FRA", "ZZ", " AA", "A1"]) {
-      expect(isValidConsultaCountryCode(code)).toBe(false);
+      expect(isValidCountryType2(code)).toBe(false);
     }
+  });
+
+  it("pins the filing IDOtro identifier-type enumeration to 02 through 07", () => {
+    const schema = new DOMParser().parseFromString(readFileSync(INFO_XSD, "utf8"), "text/xml");
+    const namespace = "http://www.w3.org/2001/XMLSchema";
+    const idType = Array.from(schema.getElementsByTagNameNS(namespace, "simpleType")).find(
+      (element) => element.getAttribute("name") === "PersonaFisicaJuridicaIDTypeType",
+    );
+    if (!idType) throw new Error("AEAT schema has no PersonaFisicaJuridicaIDTypeType");
+    const values = Array.from(idType.getElementsByTagNameNS(namespace, "enumeration"), (element) =>
+      element.getAttribute("value"),
+    );
+    expect(values).toEqual(["02", "03", "04", "05", "06", "07"]);
+  });
+
+  it("accepts special filing country QU but rejects ZZ under the filing XSD", () => {
+    const alta = buildAltaRecord({
+      ...ALTA_INPUT,
+      Destinatarios: {
+        IDDestinatario: [
+          { NombreRazon: "Foreign buyer", IDOtro: { CodigoPais: "QU", IDType: "03", ID: "X" } },
+        ],
+      },
+    });
+    const body = soapBodyElement(serializeEnvio(CABECERA, [{ RegistroAlta: alta }]));
+    const valid = schemaResult(ENVIO_XSD, body);
+    expect(valid.status, valid.stderr).toBe(0);
+    const document = new DOMParser().parseFromString(body, "text/xml");
+    const country = document.getElementsByTagNameNS(NS_SF, "CodigoPais").item(0);
+    if (!country) throw new Error("Filing fixture has no CodigoPais");
+    country.textContent = "ZZ";
+    const invalid = schemaResult(ENVIO_XSD, new XMLSerializer().serializeToString(document));
+    expect(invalid.status, invalid.stderr).not.toBe(0);
+  });
+
+  it.each([
+    ["01", "X", "IDType"],
+    ["03", "😀".repeat(21), "ID"],
+  ] as const)("rejects filing IDOtro.%s outside its XSD restriction", (type, id, field) => {
+    const alta = buildAltaRecord({
+      ...ALTA_INPUT,
+      Destinatarios: {
+        IDDestinatario: [
+          { NombreRazon: "Foreign buyer", IDOtro: { CodigoPais: "FR", IDType: "03", ID: "X" } },
+        ],
+      },
+    });
+    const body = soapBodyElement(serializeEnvio(CABECERA, [{ RegistroAlta: alta }]));
+    const document = new DOMParser().parseFromString(body, "text/xml");
+    const element = document.getElementsByTagNameNS(NS_SF, field).item(0);
+    if (!element) throw new Error(`Filing fixture has no ${field}`);
+    element.textContent = field === "IDType" ? type : id;
+    const result = schemaResult(ENVIO_XSD, new XMLSerializer().serializeToString(document));
+    expect(result.status, result.stderr).not.toBe(0);
+  });
+
+  it.each(["", "😀".repeat(20)])("accepts a filing IDOtro.ID with %s at the XSD boundary", (id) => {
+    const alta = buildAltaRecord({
+      ...ALTA_INPUT,
+      Destinatarios: {
+        IDDestinatario: [
+          { NombreRazon: "Foreign buyer", IDOtro: { CodigoPais: "FR", IDType: "03", ID: id } },
+        ],
+      },
+    });
+    const body = soapBodyElement(serializeEnvio(CABECERA, [{ RegistroAlta: alta }]));
+    const result = schemaResult(ENVIO_XSD, body);
+    expect(result.status, result.stderr).toBe(0);
   });
 
   it("accepts QU but rejects ZZ under AEAT CountryType2", () => {
