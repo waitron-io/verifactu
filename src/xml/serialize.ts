@@ -113,6 +113,11 @@ export function isValidConsultaEjercicio(value: unknown): value is string {
   return typeof value === "string" && /^[0-9]{4}$/.test(value);
 }
 
+/** sf:fecha fixes the shape; its \d includes Unicode decimal digits, not calendar validity. */
+export function isValidConsultaFecha(value: unknown): value is string {
+  return typeof value === "string" && /^\p{Nd}{2}-\p{Nd}{2}-\p{Nd}{4}$/u.test(value);
+}
+
 /** XML Schema string lengths count Unicode code points. */
 export function isValidConsultaNumSerieFactura(value: unknown): value is string {
   if (typeof value !== "string") return false;
@@ -644,6 +649,24 @@ export function serializeConsulta(cabecera: CabeceraConsulta, filtro: ConsultaFi
   }
   if (filtro.RefExterna !== undefined && !isValidConsultaRefExterna(filtro.RefExterna)) {
     throw new Error("Consulta RefExterna must contain at most 60 characters");
+  }
+  if (
+    filtro.FechaExpedicionFactura !== undefined &&
+    !isValidConsultaFecha(filtro.FechaExpedicionFactura)
+  ) {
+    throw new Error("Consulta FechaExpedicionFactura must be DD-MM-YYYY");
+  }
+  for (const field of ["Desde", "Hasta"] as const) {
+    const date = filtro.RangoFechaExpedicion?.[field];
+    if (date !== undefined && !isValidConsultaFecha(date)) {
+      throw new Error(`Consulta RangoFechaExpedicion.${field} must be DD-MM-YYYY`);
+    }
+  }
+  if (
+    filtro.ClavePaginacion !== undefined &&
+    !isValidConsultaFecha(filtro.ClavePaginacion.FechaExpedicionFactura)
+  ) {
+    throw new Error("Consulta ClavePaginacion.FechaExpedicionFactura must be DD-MM-YYYY");
   }
   if (
     filtro.ClavePaginacion !== undefined &&

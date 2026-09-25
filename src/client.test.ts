@@ -201,6 +201,19 @@ describe("createClient", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("does not send a consulta with an XSD-invalid invoice date", async () => {
+    const fetch = fakeFetch(CONSULTA_OK);
+    const client = createClient({ endpoint: "https://example.test/soap", fetch });
+    await expect(
+      client.consultar(CABECERA, {
+        Ejercicio: "2026",
+        Periodo: "07",
+        FechaExpedicionFactura: "20/07/2026",
+      }),
+    ).rejects.toThrow("Consulta FechaExpedicionFactura must be DD-MM-YYYY");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("does not send a recipient consulta requesting software details", async () => {
     const fetch = fakeFetch(CONSULTA_OK);
     const client = createClient({ endpoint: "https://example.test/soap", fetch });

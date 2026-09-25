@@ -334,6 +334,15 @@ cursor in a later request now fails locally. `RespuestaConsultaLR.xsd` declares 
 cursor with the same `IDFacturaExpedidaBCType`, but the library has not verified live response
 behavior or harmonized the two parser bounds.
 
+The service description §6.4.1 and `sf:fecha` require `DD-MM-YYYY` text for an exact issue-date
+filter, each supplied range endpoint, and the pagination key's required date. `serializeConsulta`
+and `parseConsulta` reject malformed values at those paths; the client therefore sends no request
+with a malformed date. Offline request-XSD probes reject slash-formatted dates in all four places
+and accept a `31-02-2026` literal, which demonstrates that the XSD tests text shape rather than
+calendar reality. The XSD's `\d` also accepts Unicode decimal digits; an offline Arabic-digit
+probe and serializer/parser tests keep that valid path open. The library leaves real-date and range-order policy to the caller. Empty range
+endpoints remain optional under `RangoFechaExpedicionType`; the pagination date is required.
+
 ### Consultation response flags and cursor — service description §§6.4.2–6.4.3
 
 `RespuestaConsultaLR.xsd` restricts `ResultadoConsulta` to `ConDatos`/`SinDatos` and

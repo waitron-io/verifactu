@@ -2,6 +2,7 @@ import { asArray, parser } from "./parse-common.js";
 import {
   assertConsultaResponseOptions,
   isValidConsultaEjercicio,
+  isValidConsultaFecha,
   isValidConsultaNumSerieFactura,
   isValidConsultaPeriodo,
   isValidConsultaRefExterna,
@@ -372,6 +373,24 @@ export function parseConsulta(xml: string): { cabecera: CabeceraConsulta; filtro
   }
   if (f.RefExterna !== undefined && !isValidConsultaRefExterna(f.RefExterna)) {
     throw new Error("Consulta RefExterna must contain at most 60 characters");
+  }
+  if (
+    f.FechaExpedicionFactura?.FechaExpedicionFactura !== undefined &&
+    !isValidConsultaFecha(f.FechaExpedicionFactura.FechaExpedicionFactura)
+  ) {
+    throw new Error("Consulta FechaExpedicionFactura must be DD-MM-YYYY");
+  }
+  for (const field of ["Desde", "Hasta"] as const) {
+    const date = f.FechaExpedicionFactura?.RangoFechaExpedicion?.[field];
+    if (date !== undefined && !isValidConsultaFecha(date)) {
+      throw new Error(`Consulta RangoFechaExpedicion.${field} must be DD-MM-YYYY`);
+    }
+  }
+  if (
+    f.ClavePaginacion !== undefined &&
+    !isValidConsultaFecha(f.ClavePaginacion.FechaExpedicionFactura)
+  ) {
+    throw new Error("Consulta ClavePaginacion.FechaExpedicionFactura must be DD-MM-YYYY");
   }
   if (
     f.ClavePaginacion !== undefined &&

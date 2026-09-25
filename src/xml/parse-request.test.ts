@@ -571,6 +571,66 @@ describe("parseConsulta full header and date choice", () => {
     });
   });
 
+  it.each([
+    [
+      "exact",
+      { FechaExpedicionFactura: "20-07-2026" },
+      "20-07-2026",
+      "20/07/2026",
+      "FechaExpedicionFactura",
+    ],
+    [
+      "range start",
+      { RangoFechaExpedicion: { Desde: "01-07-2026" } },
+      "01-07-2026",
+      "1-07-2026",
+      "RangoFechaExpedicion.Desde",
+    ],
+    [
+      "range end",
+      { RangoFechaExpedicion: { Hasta: "31-07-2026" } },
+      "31-07-2026",
+      "31/07/2026",
+      "RangoFechaExpedicion.Hasta",
+    ],
+  ] as const)("rejects a parsed XSD-invalid %s date", (_case, filter, valid, invalid, field) => {
+    const xml = serializeConsulta(cabecera, { Ejercicio: "2026", Periodo: "07", ...filter });
+    expect(() => parseConsulta(xml.replace(valid, invalid))).toThrow(
+      `Consulta ${field} must be DD-MM-YYYY`,
+    );
+  });
+
+  it("rejects a parsed pagination key with an absent or malformed date", () => {
+    const valid = serializeConsulta(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      ClavePaginacion: {
+        IDEmisorFactura: cabecera.ObligadoEmision.NIF,
+        NumSerieFactura: "INV/41",
+        FechaExpedicionFactura: "20-07-2026",
+      },
+    });
+    for (const date of ["", "20/07/2026"]) {
+      const xml = valid.replace(
+        "<sf:FechaExpedicionFactura>20-07-2026</sf:FechaExpedicionFactura>",
+        date,
+      );
+      expect(() => parseConsulta(xml)).toThrow(
+        "Consulta ClavePaginacion.FechaExpedicionFactura must be DD-MM-YYYY",
+      );
+    }
+  });
+
+  it("accepts Unicode decimal digits in a parsed consultation date", () => {
+    const valid = serializeConsulta(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      FechaExpedicionFactura: "20-07-2026",
+    });
+    const xml = valid.replace("20-07-2026", "٢٠-٠٧-٢٠٢٦");
+    expect(parseConsulta(xml).filtro.FechaExpedicionFactura).toBe("٢٠-٠٧-٢٠٢٦");
+  });
+
   it("round-trips an issuer header with IndicadorRepresentante", () => {
     const consultaCabecera = {
       ObligadoEmision: cabecera.ObligadoEmision,

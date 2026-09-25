@@ -1465,6 +1465,42 @@ describe("serializeConsulta", () => {
     );
   });
 
+  it.each([
+    ["exact", { FechaExpedicionFactura: "01/07/2026" }, "FechaExpedicionFactura"],
+    ["range start", { RangoFechaExpedicion: { Desde: "1-07-2026" } }, "RangoFechaExpedicion.Desde"],
+    ["range end", { RangoFechaExpedicion: { Hasta: "31/07/2026" } }, "RangoFechaExpedicion.Hasta"],
+  ] as const)("rejects an XSD-invalid %s consultation date", (_case, filter, field) => {
+    expect(() =>
+      serializeConsulta(CABECERA, { Ejercicio: "2026", Periodo: "07", ...filter }),
+    ).toThrow(`Consulta ${field} must be DD-MM-YYYY`);
+  });
+
+  it("rejects an absent or malformed pagination date", () => {
+    const cursor = {
+      IDEmisorFactura: CABECERA.ObligadoEmision.NIF,
+      NumSerieFactura: "INV/41",
+      FechaExpedicionFactura: "20-07-2026",
+    };
+    for (const date of ["", "20/07/2026"]) {
+      expect(() =>
+        serializeConsulta(CABECERA, {
+          Ejercicio: "2026",
+          Periodo: "07",
+          ClavePaginacion: { ...cursor, FechaExpedicionFactura: date },
+        }),
+      ).toThrow("Consulta ClavePaginacion.FechaExpedicionFactura must be DD-MM-YYYY");
+    }
+  });
+
+  it("accepts Unicode decimal digits allowed by the consultation date XSD", () => {
+    const xml = serializeConsulta(CABECERA, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      FechaExpedicionFactura: "٢٠-٠٧-٢٠٢٦",
+    });
+    expect(xml).toContain("<sf:FechaExpedicionFactura>٢٠-٠٧-٢٠٢٦</sf:FechaExpedicionFactura>");
+  });
+
   it("rejects both exact date and date range in one JavaScript request", () => {
     expect(() =>
       serializeConsulta(CABECERA, {
