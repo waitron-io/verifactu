@@ -699,8 +699,24 @@ export function serializeEnvio(
       for (const [name, value, allowed, description] of [
         ["Subsanacion", alta.Subsanacion, ["S", "N"], "S or N"],
         ["RechazoPrevio", alta.RechazoPrevio, ["N", "S", "X"], "N, S or X"],
+        [
+          "TipoFactura",
+          alta.TipoFactura,
+          ["F1", "F2", "F3", "R1", "R2", "R3", "R4", "R5"],
+          "F1, F2, F3 or R1 through R5",
+        ],
+        ["TipoRectificativa", alta.TipoRectificativa, ["S", "I"], "S or I"],
+        [
+          "EmitidaPorTerceroODestinatario",
+          alta.EmitidaPorTerceroODestinatario,
+          ["D", "T"],
+          "D or T",
+        ],
       ] as const) {
-        if (value !== undefined && !allowed.some((allowedValue) => allowedValue === value)) {
+        if (
+          (name === "TipoFactura" || value !== undefined) &&
+          !allowed.some((allowedValue) => allowedValue === value)
+        ) {
           throw new Error(`RegistroAlta[${index}].${name} must be ${description}`);
         }
       }

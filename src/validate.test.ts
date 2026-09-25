@@ -136,11 +136,26 @@ describe("validate", () => {
     },
   );
 
+  it("rejects a present but undefined required TipoFactura from an untyped caller", () => {
+    const record = valid();
+    record.TipoFactura = undefined as unknown as typeof record.TipoFactura;
+    expect(validate(record)).toContainEqual({
+      code: "XSD_ENUM_VALUE",
+      severity: "error",
+      field: "TipoFactura",
+      message: "TipoFactura must be F1, F2, F3 or R1 through R5",
+    });
+  });
+
   it.each([
     ["Subsanacion", "S or N"],
     ["RechazoPrevio", "N, S or X"],
+    ["TipoFactura", "F1, F2, F3 or R1 through R5"],
+    ["TipoRectificativa", "S or I"],
+    ["EmitidaPorTerceroODestinatario", "D or T"],
   ] as const)("rejects an XSD-invalid alta %s", (field, allowed) => {
     const record = valid();
+    if (field === "TipoRectificativa") record.TipoFactura = "R1";
     (record as unknown as Record<string, unknown>)[field] = "Z";
     expect(validate(record)).toContainEqual({
       code: "XSD_ENUM_VALUE",

@@ -69,13 +69,18 @@ rule from a section whose examples or tables still need line-by-line comparison.
 
 ### Filing correction and cancellation enums — `SuministroInformacion.xsd`
 
-The alta XSD permits `Subsanacion` `S`/`N` and `RechazoPrevio` `N`/`S`/`X`. Cancellation
+The alta XSD permits `Subsanacion` `S`/`N`, `RechazoPrevio` `N`/`S`/`X`, `TipoFactura`
+`F1`–`F3`/`R1`–`R5`, `TipoRectificativa` `S`/`I`, and
+`EmitidaPorTerceroODestinatario` `D`/`T`. Cancellation
 `SinRegistroPrevio` and `RechazoPrevio` permit only `S`/`N`, while `GeneradoPor` permits
 `E`/`D`/`T`. The public TypeScript types already express these choices, but JavaScript callers
 could previously pass other values through `validate` and `serializeEnvio`. Both boundaries now
-report the invalid field before XML submission. Focused invalid-value tests and offline XSD
-mutations cover every flag, including cancellation `RechazoPrevio: "X"` versus the valid alta
+report the invalid field before XML submission. The required `TipoFactura` also rejects an
+undefined value from an untyped caller. Focused invalid-value tests and offline XSD
+mutations cover every value, including cancellation `RechazoPrevio: "X"` versus the valid alta
 value. This is lexical XSD checking; existing business rules for valid combinations still apply.
+An untyped object missing the `TipoFactura` key entirely is a separate shape problem because
+`isAlta` uses that key to distinguish record kinds; this branch does not change that discriminator.
 
 ### Cancellation generator — validation §3.1.4.1–3
 

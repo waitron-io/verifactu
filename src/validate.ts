@@ -495,8 +495,12 @@ export function validate(
     value: unknown,
     allowed: readonly string[],
     description: string,
+    required = false,
   ) => {
-    if (value !== undefined && (typeof value !== "string" || !allowed.includes(value))) {
+    if (
+      (required || value !== undefined) &&
+      (typeof value !== "string" || !allowed.includes(value))
+    ) {
       add("XSD_ENUM_VALUE", field, `${field} must be ${description}`);
     }
   };
@@ -783,6 +787,20 @@ export function validate(
 
   checkXsdEnum("Subsanacion", record.Subsanacion, ["S", "N"], "S or N");
   checkXsdEnum("RechazoPrevio", record.RechazoPrevio, ["N", "S", "X"], "N, S or X");
+  checkXsdEnum(
+    "TipoFactura",
+    record.TipoFactura,
+    ["F1", "F2", "F3", "R1", "R2", "R3", "R4", "R5"],
+    "F1, F2, F3 or R1 through R5",
+    true,
+  );
+  checkXsdEnum("TipoRectificativa", record.TipoRectificativa, ["S", "I"], "S or I");
+  checkXsdEnum(
+    "EmitidaPorTerceroODestinatario",
+    record.EmitidaPorTerceroODestinatario,
+    ["D", "T"],
+    "D or T",
+  );
 
   if (record.FechaOperacion !== undefined && operacionOrdinal === undefined) {
     add("FECHA_FORMAT", "FechaOperacion", "Date must be DD-MM-YYYY");

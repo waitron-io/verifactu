@@ -206,13 +206,31 @@ describe("generated unsigned requests against AEAT XSDs", () => {
   it.each([
     ["alta", "Subsanacion", "Z"],
     ["alta", "RechazoPrevio", "Z"],
+    ["alta", "TipoFactura", "Z"],
+    ["alta", "TipoRectificativa", "Z"],
+    ["alta", "EmitidaPorTerceroODestinatario", "Z"],
     ["cancellation", "SinRegistroPrevio", "Z"],
     ["cancellation", "RechazoPrevio", "X"],
     ["cancellation", "GeneradoPor", "Z"],
   ] as const)("rejects %s %s=%s under the filing XSD", (kind, field, invalid) => {
     const entry =
       kind === "alta"
-        ? { RegistroAlta: buildAltaRecord({ ...ALTA_INPUT, Subsanacion: "S", RechazoPrevio: "X" }) }
+        ? {
+            RegistroAlta: buildAltaRecord({
+              ...ALTA_INPUT,
+              Subsanacion: "S",
+              RechazoPrevio: "X",
+              ...(field === "TipoRectificativa"
+                ? { TipoFactura: "R1" as const, TipoRectificativa: "I" as const }
+                : {}),
+              ...(field === "EmitidaPorTerceroODestinatario"
+                ? {
+                    EmitidaPorTerceroODestinatario: "T" as const,
+                    Tercero: { NombreRazon: "Third-party issuer", NIF: "B99999997" },
+                  }
+                : {}),
+            }),
+          }
         : {
             RegistroAnulacion: buildAnulacionRecord({
               IDEmisorFacturaAnulada: CABECERA.ObligadoEmision.NIF,

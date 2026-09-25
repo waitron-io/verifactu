@@ -85,6 +85,9 @@ enter the QR payload. AEAT remains responsible for confirming that a NIF is regi
 
 When you supply these flags on an alta, use `S` or `N` for `Subsanacion` and `N`, `S`, or `X` for
 `RechazoPrevio`. An untyped value outside those lists is rejected before filing XML is sent.
+The same check accepts only `F1`–`F3` or `R1`–`R5` for `TipoFactura`, `S` or `I` for a present
+`TipoRectificativa`, and `D` or `T` for a present `EmitidaPorTerceroODestinatario`. Existing
+requirements about when those fields may appear still apply.
 
 For an alta, `FechaExpedicionFactura` cannot be before 28 October 2024 or after the current date.
 It also cannot be before `FechaOperacion` on an IVA or IGIC line unless that line uses regime `14`

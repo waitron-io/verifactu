@@ -94,6 +94,9 @@ confirma si un NIF está censado.
 
 Si indicas estos campos en un alta, usa `S` o `N` para `Subsanacion` y `N`, `S` o `X` para
 `RechazoPrevio`. Un valor fuera de estas listas se rechaza antes de enviar el XML.
+La misma comprobación solo admite `F1`–`F3` o `R1`–`R5` en `TipoFactura`, `S` o `I` en un
+`TipoRectificativa` presente, y `D` o `T` en un `EmitidaPorTerceroODestinatario` presente. Siguen
+aplicándose las reglas existentes sobre cuándo puedes indicar esos campos.
 
 En un alta, `FechaExpedicionFactura` no puede ser anterior al 28 de octubre de 2024 ni posterior a
 la fecha actual. Tampoco puede preceder a `FechaOperacion` en una línea de IVA o IGIC, salvo que

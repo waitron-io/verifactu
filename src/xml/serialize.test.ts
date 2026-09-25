@@ -94,11 +94,23 @@ describe("serializeEnvio", () => {
     );
   });
 
+  it("rejects a present but undefined required TipoFactura before sending", () => {
+    const invalid = buildAltaRecord(ALTA_INPUT);
+    invalid.TipoFactura = undefined as unknown as typeof invalid.TipoFactura;
+    expect(() => serializeEnvio(CABECERA, [{ RegistroAlta: invalid }])).toThrow(
+      "RegistroAlta[0].TipoFactura must be F1, F2, F3 or R1 through R5",
+    );
+  });
+
   it.each([
     ["Subsanacion", "S or N"],
     ["RechazoPrevio", "N, S or X"],
+    ["TipoFactura", "F1, F2, F3 or R1 through R5"],
+    ["TipoRectificativa", "S or I"],
+    ["EmitidaPorTerceroODestinatario", "D or T"],
   ] as const)("rejects an XSD-invalid alta %s before sending", (field, allowed) => {
     const invalid = buildAltaRecord(ALTA_INPUT);
+    if (field === "TipoRectificativa") invalid.TipoFactura = "R1";
     (invalid as unknown as Record<string, unknown>)[field] = "Z";
     expect(() => serializeEnvio(CABECERA, [{ RegistroAlta: invalid }])).toThrow(
       `RegistroAlta[0].${field} must be ${allowed}`,
