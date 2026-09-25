@@ -753,6 +753,83 @@ describe("fake AEAT — submit", () => {
     );
   });
 
+  it("keeps an alta recipient visible after its cancellation is replaced", async () => {
+    const aeat = createFakeAeat();
+    const client = aeat.client();
+    const buyer = { NombreRazon: "Invoice Buyer", NIF: "11111111H" };
+    await client.submit(cabecera, [
+      {
+        RegistroAlta: {
+          ...altaFixture("A/BUYER-ANUL"),
+          TipoFactura: "F1",
+          Destinatarios: { IDDestinatario: [buyer] },
+        },
+      },
+    ]);
+    await client.submit(cabecera, [{ RegistroAnulacion: anulacionFixture("A/BUYER-ANUL") }]);
+    await client.submit(cabecera, [
+      {
+        RegistroAnulacion: {
+          ...anulacionFixture("A/BUYER-ANUL"),
+          Huella: "H-REPLACED-BUYER-ANUL",
+        },
+      },
+    ]);
+
+    const issued = await client.consultar(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      Contraparte: buyer,
+    });
+    expect(issued.registros.map((record) => record.IDFactura.NumSerieFactura)).toEqual([
+      "A/BUYER-ANUL",
+    ]);
+    const received = await client.consultar(
+      { Destinatario: buyer },
+      { Ejercicio: "2026", Periodo: "07", Contraparte: cabecera.ObligadoEmision },
+    );
+    expect(received.registros.map((record) => record.IDFactura.NumSerieFactura)).toEqual([
+      "A/BUYER-ANUL",
+    ]);
+  });
+
+  it("reports each accepted cancellation's software system consistently", async () => {
+    const aeat = createFakeAeat();
+    const client = aeat.client();
+    await client.submit(cabecera, [{ RegistroAlta: altaFixture("A/SIF-ANUL") }]);
+    await client.submit(cabecera, [
+      {
+        RegistroAnulacion: {
+          ...anulacionFixture("A/SIF-ANUL"),
+          SistemaInformatico: { ...SISTEMA, IdSistemaInformatico: "78" },
+        },
+      },
+    ]);
+    const filtro = {
+      Ejercicio: "2026",
+      Periodo: "07",
+      DatosAdicionalesRespuesta: { MostrarSistemaInformatico: "S" as const },
+    };
+    const first = await client.consultar(cabecera, filtro);
+    expect(first.registros[0]?.DatosRegistroFacturacion.SistemaInformatico).toMatchObject({
+      IdSistemaInformatico: "78",
+    });
+
+    await client.submit(cabecera, [
+      {
+        RegistroAnulacion: {
+          ...anulacionFixture("A/SIF-ANUL"),
+          Huella: "H-REPLACED-SIF-ANUL",
+          SistemaInformatico: { ...SISTEMA, IdSistemaInformatico: "79" },
+        },
+      },
+    ]);
+    const second = await client.consultar(cabecera, filtro);
+    expect(second.registros[0]?.DatosRegistroFacturacion.SistemaInformatico).toMatchObject({
+      IdSistemaInformatico: "79",
+    });
+  });
+
   it("replaces a stored no-prior cancellation through the normal cancellation path", async () => {
     const aeat = createFakeAeat();
     const client = aeat.client();
@@ -793,6 +870,22 @@ describe("fake AEAT — submit", () => {
       huella: "H-ANUL-A/REF-ONLY-ANUL",
       refExterna: "new-ref",
     });
+  });
+
+  it("treats an omitted reference on an exact cancellation retry as a duplicate", async () => {
+    const aeat = createFakeAeat();
+    const client = aeat.client();
+    await client.submit(cabecera, [{ RegistroAlta: altaFixture("A/DROP-REF-ANUL") }]);
+    await client.submit(cabecera, [
+      { RegistroAnulacion: anulacionFixture("A/DROP-REF-ANUL", "20-07-2026", "old-ref") },
+    ]);
+
+    const retry = await client.submit(cabecera, [
+      { RegistroAnulacion: anulacionFixture("A/DROP-REF-ANUL") },
+    ]);
+
+    expect(retry.RespuestaLinea[0]?.CodigoErrorRegistro).toBe(3000);
+    expect(aeat.stored()[0]?.refExterna).toBe("old-ref");
   });
 
   it("does not treat RechazoPrevio S as a normal cancellation replacement", async () => {

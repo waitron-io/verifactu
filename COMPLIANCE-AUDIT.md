@@ -360,9 +360,13 @@ code and duplicate-detail shape for each state remain a preproduction check.
 For a normal cancellation of an existing cancellation, annex §6.2 marks replacement with new
 data as admissible (OK 8). The fake now replaces the stored hash, external reference, petition
 ID, and consultation software-system metadata when the submitted hash or explicit reference
-differs; exact hash/reference retries keep their prior duplicate behavior. Tests cover a stored
+differs; the original invoice's issuer name and recipients remain available to consulta. The
+first accepted cancellation and its replacement each report their own software system. An
+unchanged hash with the same or an omitted reference keeps the fake's duplicate behavior and
+the stored reference. Tests cover a stored
 alta followed by two cancellations, a no-prior cancellation followed by a normal one, a
-reference-only change, consulta of the new snapshot, and the exact retry's petition ID. The
+reference-only change, buyer-side and issuer-side consulta of the new snapshot, both software
+systems, and the exact retry's petition ID. The
 hash/reference comparison is the fake's limited way to detect new data: it does not compare
 every non-hashed field or establish AEAT's retry behavior for an identical cancellation.
 
