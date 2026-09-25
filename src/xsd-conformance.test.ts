@@ -1121,13 +1121,7 @@ describe("generated unsigned requests against AEAT XSDs", () => {
 });
 
 describe("consultation response identity fields against AEAT XSDs", () => {
-  const response =
-    `<rc:RespuestaConsultaFactuSistemaFacturacion xmlns:rc="${NS_RC}" xmlns:sf="${NS_SF}">` +
-    `<rc:Cabecera><sf:IDVersion>1.0</sf:IDVersion><sf:ObligadoEmision>` +
-    `<sf:NombreRazon>Issuer</sf:NombreRazon><sf:NIF>89890001K</sf:NIF>` +
-    `</sf:ObligadoEmision></rc:Cabecera>` +
-    `<rc:PeriodoImputacion><rc:Ejercicio>2026</rc:Ejercicio><rc:Periodo>07</rc:Periodo></rc:PeriodoImputacion>` +
-    `<rc:IndicadorPaginacion>S</rc:IndicadorPaginacion><rc:ResultadoConsulta>ConDatos</rc:ResultadoConsulta>` +
+  const record =
     `<rc:RegistroRespuestaConsultaFactuSistemaFacturacion>` +
     `<rc:IDFactura><sf:IDEmisorFactura>89890001K</sf:IDEmisorFactura>` +
     `<sf:NumSerieFactura>INV/42</sf:NumSerieFactura>` +
@@ -1135,15 +1129,310 @@ describe("consultation response identity fields against AEAT XSDs", () => {
     `<rc:DatosRegistroFacturacion/>` +
     `<rc:EstadoRegistro><rc:TimestampUltimaModificacion>2026-07-21T09:10:00+02:00</rc:TimestampUltimaModificacion>` +
     `<rc:EstadoRegistro>Correcto</rc:EstadoRegistro></rc:EstadoRegistro>` +
-    `</rc:RegistroRespuestaConsultaFactuSistemaFacturacion>` +
+    `</rc:RegistroRespuestaConsultaFactuSistemaFacturacion>`;
+  const cursor =
     `<rc:ClavePaginacion><sf:IDEmisorFactura>89890001K</sf:IDEmisorFactura>` +
     `<sf:NumSerieFactura>INV/42</sf:NumSerieFactura>` +
-    `<sf:FechaExpedicionFactura>20-07-2026</sf:FechaExpedicionFactura></rc:ClavePaginacion>` +
+    `<sf:FechaExpedicionFactura>20-07-2026</sf:FechaExpedicionFactura></rc:ClavePaginacion>`;
+  const response =
+    `<rc:RespuestaConsultaFactuSistemaFacturacion xmlns:rc="${NS_RC}" xmlns:sf="${NS_SF}">` +
+    `<rc:Cabecera><sf:IDVersion>1.0</sf:IDVersion><sf:ObligadoEmision>` +
+    `<sf:NombreRazon>Issuer</sf:NombreRazon><sf:NIF>89890001K</sf:NIF>` +
+    `</sf:ObligadoEmision></rc:Cabecera>` +
+    `<rc:PeriodoImputacion><rc:Ejercicio>2026</rc:Ejercicio><rc:Periodo>07</rc:Periodo></rc:PeriodoImputacion>` +
+    `<rc:IndicadorPaginacion>S</rc:IndicadorPaginacion><rc:ResultadoConsulta>ConDatos</rc:ResultadoConsulta>` +
+    record +
+    cursor +
     `</rc:RespuestaConsultaFactuSistemaFacturacion>`;
 
   it("accepts a minimal record and continuing cursor", () => {
     const result = schemaResult(RESPUESTA_CONSULTA_XSD, response);
     expect(result.status, result.stderr).toBe(0);
+  });
+
+  it("accepts every consultation-response record field in schema order", () => {
+    const data =
+      `<rc:DatosRegistroFacturacion>` +
+      `<rc:NombreRazonEmisor>${"N".repeat(120)}</rc:NombreRazonEmisor>` +
+      `<rc:RefExterna>${"R".repeat(60)}</rc:RefExterna>` +
+      `<rc:Subsanacion>S</rc:Subsanacion><rc:RechazoPrevio>N</rc:RechazoPrevio>` +
+      `<rc:SinRegistroPrevio>N</rc:SinRegistroPrevio><rc:GeneradoPor>T</rc:GeneradoPor>` +
+      `<rc:Generador><sf:NombreRazon>Generator</sf:NombreRazon><sf:NIF>89890001K</sf:NIF></rc:Generador>` +
+      `<rc:TipoFactura>R1</rc:TipoFactura><rc:TipoRectificativa>I</rc:TipoRectificativa>` +
+      `<rc:FacturasRectificadas><rc:IDFacturaRectificada>` +
+      `<sf:IDEmisorFactura>89890001K</sf:IDEmisorFactura><sf:NumSerieFactura>RECT-1</sf:NumSerieFactura>` +
+      `<sf:FechaExpedicionFactura>01-07-2026</sf:FechaExpedicionFactura>` +
+      `</rc:IDFacturaRectificada></rc:FacturasRectificadas>` +
+      `<rc:FacturasSustituidas><rc:IDFacturaSustituida>` +
+      `<sf:IDEmisorFactura>89890001K</sf:IDEmisorFactura><sf:NumSerieFactura>SUB-1</sf:NumSerieFactura>` +
+      `<sf:FechaExpedicionFactura>02-07-2026</sf:FechaExpedicionFactura>` +
+      `</rc:IDFacturaSustituida></rc:FacturasSustituidas>` +
+      `<rc:ImporteRectificacion><sf:BaseRectificada>100.00</sf:BaseRectificada>` +
+      `<sf:CuotaRectificada>21.00</sf:CuotaRectificada>` +
+      `<sf:CuotaRecargoRectificado>5.00</sf:CuotaRecargoRectificado></rc:ImporteRectificacion>` +
+      `<rc:FechaOperacion>20-07-2026</rc:FechaOperacion>` +
+      `<rc:DescripcionOperacion>${"D".repeat(500)}</rc:DescripcionOperacion>` +
+      `<rc:FacturaSimplificadaArt7273>S</rc:FacturaSimplificadaArt7273>` +
+      `<rc:FacturaSinIdentifDestinatarioArt61d>N</rc:FacturaSinIdentifDestinatarioArt61d>` +
+      `<rc:Macrodato>S</rc:Macrodato><rc:EmitidaPorTerceroODestinatario>T</rc:EmitidaPorTerceroODestinatario>` +
+      `<rc:Tercero><sf:NombreRazon>Third party</sf:NombreRazon><sf:NIF>89890001K</sf:NIF></rc:Tercero>` +
+      `<rc:Destinatarios><rc:IDDestinatario><sf:NombreRazon>Buyer</sf:NombreRazon>` +
+      `<sf:NIF>89890001K</sf:NIF></rc:IDDestinatario></rc:Destinatarios>` +
+      `<rc:Cupon>N</rc:Cupon><rc:Desglose><sf:DetalleDesglose>` +
+      `<sf:Impuesto>01</sf:Impuesto><sf:ClaveRegimen>01</sf:ClaveRegimen>` +
+      `<sf:CalificacionOperacion>S1</sf:CalificacionOperacion><sf:TipoImpositivo>21.00</sf:TipoImpositivo>` +
+      `<sf:BaseImponibleOimporteNoSujeto>100.00</sf:BaseImponibleOimporteNoSujeto>` +
+      `<sf:CuotaRepercutida>21.00</sf:CuotaRepercutida></sf:DetalleDesglose></rc:Desglose>` +
+      `<rc:CuotaTotal>21.00</rc:CuotaTotal><rc:ImporteTotal>121.00</rc:ImporteTotal>` +
+      `<rc:Encadenamiento><rc:PrimerRegistro>S</rc:PrimerRegistro></rc:Encadenamiento>` +
+      `<rc:SistemaInformatico><sf:NombreRazon>Waitron</sf:NombreRazon><sf:NIF>89890001K</sf:NIF>` +
+      `<sf:NombreSistemaInformatico>Waitron POS</sf:NombreSistemaInformatico>` +
+      `<sf:IdSistemaInformatico>WT</sf:IdSistemaInformatico><sf:Version>1.0.0</sf:Version>` +
+      `<sf:NumeroInstalacion>001</sf:NumeroInstalacion>` +
+      `<sf:TipoUsoPosibleSoloVerifactu>S</sf:TipoUsoPosibleSoloVerifactu>` +
+      `<sf:TipoUsoPosibleMultiOT>S</sf:TipoUsoPosibleMultiOT>` +
+      `<sf:IndicadorMultiplesOT>N</sf:IndicadorMultiplesOT></rc:SistemaInformatico>` +
+      `<rc:FechaHoraHusoGenRegistro>2026-07-21T09:00:00+02:00</rc:FechaHoraHusoGenRegistro>` +
+      `<rc:NumRegistroAcuerdoFacturacion>${"A".repeat(15)}</rc:NumRegistroAcuerdoFacturacion>` +
+      `<rc:IdAcuerdoSistemaInformatico>${"I".repeat(16)}</rc:IdAcuerdoSistemaInformatico>` +
+      `<rc:TipoHuella>01</rc:TipoHuella><rc:Huella>${"H".repeat(64)}</rc:Huella>` +
+      `<rc:NifRepresentante>89890001K</rc:NifRepresentante>` +
+      `<rc:FechaFinVeriFactu>31-12-2026</rc:FechaFinVeriFactu><rc:Incidencia>S</rc:Incidencia>` +
+      `</rc:DatosRegistroFacturacion>`;
+    const presentation =
+      `<rc:DatosPresentacion><sf:NIFPresentador>89890001K</sf:NIFPresentador>` +
+      `<sf:TimestampPresentacion>2026-07-21T09:00:00+02:00</sf:TimestampPresentacion>` +
+      `<sf:IdPeticion>PET-42</sf:IdPeticion></rc:DatosPresentacion>`;
+    const maximal = response
+      .replace("<rc:DatosRegistroFacturacion/>", data)
+      .replace("<rc:EstadoRegistro>", presentation + "<rc:EstadoRegistro>");
+    const result = schemaResult(RESPUESTA_CONSULTA_XSD, maximal);
+    expect(result.status, result.stderr).toBe(0);
+
+    const schema = new DOMParser().parseFromString(
+      readFileSync(RESPUESTA_CONSULTA_XSD, "utf8"),
+      "text/xml",
+    );
+    const document = new DOMParser().parseFromString(maximal, "text/xml");
+    const directElementNames = (typeName: string): string[] => {
+      const type = Array.from(schema.getElementsByTagNameNS("*", "complexType")).find(
+        (element) => element.getAttribute("name") === typeName,
+      );
+      const sequence = Array.from(type?.childNodes ?? []).find(
+        (node) => node.nodeType === 1 && node.localName === "sequence",
+      );
+      return Array.from(sequence?.childNodes ?? [])
+        .filter((node) => node.nodeType === 1 && node.localName === "element")
+        .map((node) =>
+          (node as unknown as { getAttribute(name: string): string | null }).getAttribute("name")!,
+        );
+    };
+    const directChildNames = (elementName: string): string[] => {
+      const element = document.getElementsByTagNameNS(NS_RC, elementName).item(0);
+      return Array.from(element?.childNodes ?? [])
+        .filter((node) => node.nodeType === 1)
+        .map((node) => node.localName!);
+    };
+    expect(directChildNames("DatosRegistroFacturacion")).toEqual(
+      directElementNames("RespuestaDatosRegistroFacturacionType"),
+    );
+    expect(directChildNames("RegistroRespuestaConsultaFactuSistemaFacturacion")).toEqual(
+      directElementNames("RegistroRespuestaConsultaRegFacturacionType"),
+    );
+  });
+
+  it.each(["Cabecera", "PeriodoImputacion", "IndicadorPaginacion", "ResultadoConsulta"])(
+    "requires the response-level %s block",
+    (field) => {
+      const document = new DOMParser().parseFromString(response, "text/xml");
+      const root = document.documentElement;
+      const element = document.getElementsByTagNameNS(NS_RC, field).item(0);
+      if (!root || !element) throw new Error(`Response fixture has no ${field}`);
+      root.removeChild(element);
+      const result = schemaResult(
+        RESPUESTA_CONSULTA_XSD,
+        new XMLSerializer().serializeToString(document),
+      );
+      expect(result.status, result.stderr).not.toBe(0);
+    },
+  );
+
+  it("rejects response-level elements outside their declared sequence", () => {
+    const reordered = response.replace(
+      `<rc:IndicadorPaginacion>S</rc:IndicadorPaginacion><rc:ResultadoConsulta>ConDatos</rc:ResultadoConsulta>`,
+      `<rc:ResultadoConsulta>ConDatos</rc:ResultadoConsulta><rc:IndicadorPaginacion>S</rc:IndicadorPaginacion>`,
+    );
+    expect(schemaResult(RESPUESTA_CONSULTA_XSD, response).status).toBe(0);
+    const result = schemaResult(RESPUESTA_CONSULTA_XSD, reordered);
+    expect(result.status, result.stderr).not.toBe(0);
+    expect(result.stderr).toContain("ResultadoConsulta");
+  });
+
+  it("accepts an empty final page and rejects records placed after its cursor", () => {
+    const emptyFinal = response
+      .replace(">S</rc:IndicadorPaginacion>", ">N</rc:IndicadorPaginacion>")
+      .replace(">ConDatos</rc:ResultadoConsulta>", ">SinDatos</rc:ResultadoConsulta>")
+      .replace(record, "")
+      .replace(cursor, "");
+    const valid = schemaResult(RESPUESTA_CONSULTA_XSD, emptyFinal);
+    expect(valid.status, valid.stderr).toBe(0);
+    const recordAfterCursor = response.replace(cursor, cursor + record);
+    const invalidOrder = schemaResult(RESPUESTA_CONSULTA_XSD, recordAfterCursor);
+    expect(invalidOrder.status, invalidOrder.stderr).not.toBe(0);
+    expect(invalidOrder.stderr).toContain("RegistroRespuestaConsultaFactuSistemaFacturacion");
+    const duplicateCursor = schemaResult(
+      RESPUESTA_CONSULTA_XSD,
+      response.replace(cursor, cursor + cursor),
+    );
+    expect(duplicateCursor.status, duplicateCursor.stderr).not.toBe(0);
+    expect(duplicateCursor.stderr).toContain("ClavePaginacion");
+  });
+
+  it("accepts 10,000 response records and rejects 10,001", () => {
+    const maximum = response.replace(record, record.repeat(10_000));
+    const valid = schemaResult(RESPUESTA_CONSULTA_XSD, maximum);
+    expect(valid.status, valid.stderr).toBe(0);
+    const invalid = schemaResult(
+      RESPUESTA_CONSULTA_XSD,
+      response.replace(record, record.repeat(10_001)),
+    );
+    expect(invalid.status, invalid.stderr).not.toBe(0);
+    expect(invalid.stderr).toContain("RegistroRespuestaConsultaFactuSistemaFacturacion");
+  });
+
+  it.each([
+    [
+      "FacturasRectificadas",
+      "IDFacturaRectificada",
+      `<sf:IDEmisorFactura>89890001K</sf:IDEmisorFactura>` +
+        `<sf:NumSerieFactura>RECT-1</sf:NumSerieFactura>` +
+        `<sf:FechaExpedicionFactura>01-07-2026</sf:FechaExpedicionFactura>`,
+    ],
+    [
+      "FacturasSustituidas",
+      "IDFacturaSustituida",
+      `<sf:IDEmisorFactura>89890001K</sf:IDEmisorFactura>` +
+        `<sf:NumSerieFactura>SUB-1</sf:NumSerieFactura>` +
+        `<sf:FechaExpedicionFactura>01-07-2026</sf:FechaExpedicionFactura>`,
+    ],
+    [
+      "Destinatarios",
+      "IDDestinatario",
+      `<sf:NombreRazon>Buyer</sf:NombreRazon><sf:NIF>89890001K</sf:NIF>`,
+    ],
+  ] as const)("accepts 1,000 %s entries and rejects 1,001", (parent, child, contents) => {
+    const entry = `<rc:${child}>${contents}</rc:${child}>`;
+    const withCount = (count: number) =>
+      response.replace(
+        "<rc:DatosRegistroFacturacion/>",
+        `<rc:DatosRegistroFacturacion><rc:${parent}>${entry.repeat(count)}</rc:${parent}></rc:DatosRegistroFacturacion>`,
+      );
+    const maximum = schemaResult(RESPUESTA_CONSULTA_XSD, withCount(1_000));
+    expect(maximum.status, maximum.stderr).toBe(0);
+    const invalid = schemaResult(RESPUESTA_CONSULTA_XSD, withCount(1_001));
+    expect(invalid.status, invalid.stderr).not.toBe(0);
+    expect(invalid.stderr).toContain(child);
+  });
+
+  it.each([
+    ["Subsanacion", ["S", "N"]],
+    ["RechazoPrevio", ["S", "N", "X"]],
+    ["SinRegistroPrevio", ["S", "N"]],
+    ["GeneradoPor", ["E", "D", "T"]],
+    ["TipoFactura", ["F1", "F2", "F3", "R1", "R2", "R3", "R4", "R5"]],
+    ["TipoRectificativa", ["S", "I"]],
+    ["FacturaSimplificadaArt7273", ["S", "N"]],
+    ["FacturaSinIdentifDestinatarioArt61d", ["S", "N"]],
+    ["Macrodato", ["S", "N"]],
+    ["EmitidaPorTerceroODestinatario", ["D", "T"]],
+    ["Cupon", ["S", "N"]],
+    ["TipoHuella", ["01"]],
+    ["Incidencia", ["S", "N"]],
+  ] as const)("accepts every returned-record %s value", (field, values) => {
+    for (const value of values) {
+      const candidate = response.replace(
+        "<rc:DatosRegistroFacturacion/>",
+        `<rc:DatosRegistroFacturacion><rc:${field}>${value}</rc:${field}></rc:DatosRegistroFacturacion>`,
+      );
+      const result = schemaResult(RESPUESTA_CONSULTA_XSD, candidate);
+      expect(result.status, `${field}=${value}: ${result.stderr}`).toBe(0);
+    }
+    const invalid = response.replace(
+      "<rc:DatosRegistroFacturacion/>",
+      `<rc:DatosRegistroFacturacion><rc:${field}>Z</rc:${field}></rc:DatosRegistroFacturacion>`,
+    );
+    const result = schemaResult(RESPUESTA_CONSULTA_XSD, invalid);
+    expect(result.status, result.stderr).not.toBe(0);
+    expect(result.stderr).toContain(field);
+  });
+
+  it.each(["IDFactura", "DatosRegistroFacturacion", "EstadoRegistro"])(
+    "requires each response-record %s block exactly once",
+    (field) => {
+      const document = new DOMParser().parseFromString(response, "text/xml");
+      const parent = document
+        .getElementsByTagNameNS(NS_RC, "RegistroRespuestaConsultaFactuSistemaFacturacion")
+        .item(0);
+      const element = parent?.getElementsByTagNameNS(NS_RC, field).item(0);
+      if (!parent || !element) throw new Error(`Response fixture has no record ${field}`);
+      parent.appendChild(element.cloneNode(true));
+      const result = schemaResult(
+        RESPUESTA_CONSULTA_XSD,
+        new XMLSerializer().serializeToString(document),
+      );
+      expect(result.status, result.stderr).not.toBe(0);
+      expect(result.stderr).toContain(field);
+    },
+  );
+
+  it.each(["TimestampUltimaModificacion", "EstadoRegistro"])(
+    "requires each stored-state %s field exactly once",
+    (field) => {
+      const document = new DOMParser().parseFromString(response, "text/xml");
+      const states = document.getElementsByTagNameNS(NS_RC, "EstadoRegistro");
+      const wrapper = states.item(0);
+      const element = Array.from(wrapper?.childNodes ?? []).find(
+        (node) => node.nodeType === 1 && node.localName === field,
+      );
+      if (!wrapper || !element) throw new Error(`Response fixture has no state ${field}`);
+      wrapper.appendChild(element.cloneNode(true));
+      const result = schemaResult(
+        RESPUESTA_CONSULTA_XSD,
+        new XMLSerializer().serializeToString(document),
+      );
+      expect(result.status, result.stderr).not.toBe(0);
+      expect(result.stderr).toContain(field);
+    },
+  );
+
+  it.each(["Correcto", "AceptadoConErrores", "Anulado"])(
+    "accepts the consultation record state %s",
+    (state) => {
+      const candidate = response.replace(
+        `<rc:EstadoRegistro>Correcto</rc:EstadoRegistro>`,
+        `<rc:EstadoRegistro>${state}</rc:EstadoRegistro>`,
+      );
+      const result = schemaResult(RESPUESTA_CONSULTA_XSD, candidate);
+      expect(result.status, result.stderr).toBe(0);
+    },
+  );
+
+  it("applies timestamp, integer, and error-description restrictions to stored state", () => {
+    const detailed = response.replace(
+      `<rc:EstadoRegistro>Correcto</rc:EstadoRegistro>`,
+      `<rc:EstadoRegistro>AceptadoConErrores</rc:EstadoRegistro>` +
+        `<rc:CodigoErrorRegistro>1180</rc:CodigoErrorRegistro>` +
+        `<rc:DescripcionErrorRegistro>${"E".repeat(500)}</rc:DescripcionErrorRegistro>`,
+    );
+    expect(schemaResult(RESPUESTA_CONSULTA_XSD, detailed).status).toBe(0);
+    for (const invalid of [
+      detailed.replace("2026-07-21T09:10:00+02:00", "not-a-dateTime"),
+      detailed.replace(">1180<", ">1180.0<"),
+      detailed.replace("E".repeat(500), "E".repeat(501)),
+    ]) {
+      const result = schemaResult(RESPUESTA_CONSULTA_XSD, invalid);
+      expect(result.status, result.stderr).not.toBe(0);
+    }
   });
 
   it.each(["IDFactura", "ClavePaginacion"] as const)(
@@ -1182,6 +1471,12 @@ describe("consultation response identity fields against AEAT XSDs", () => {
     );
     const valid = schemaResult(RESPUESTA_CONSULTA_XSD, withPresentation);
     expect(valid.status, valid.stderr).toBe(0);
+    const duplicate = schemaResult(
+      RESPUESTA_CONSULTA_XSD,
+      withPresentation.replace(presentation, presentation + presentation),
+    );
+    expect(duplicate.status, duplicate.stderr).not.toBe(0);
+    expect(duplicate.stderr).toContain("DatosPresentacion");
     const emptyPetition = schemaResult(
       RESPUESTA_CONSULTA_XSD,
       withPresentation.replace("<sf:IdPeticion>PET-42</sf:IdPeticion>", "<sf:IdPeticion/>"),
