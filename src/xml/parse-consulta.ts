@@ -94,9 +94,9 @@ interface RawRegistroConsultado {
 }
 
 interface RawRespuestaConsulta {
-  ResultadoConsulta: string;
-  IndicadorPaginacion: string;
-  ClavePaginacion?: IDFactura;
+  ResultadoConsulta: unknown;
+  IndicadorPaginacion: unknown;
+  ClavePaginacion?: unknown;
   RegistroRespuestaConsultaFactuSistemaFacturacion?:
     RawRegistroConsultado | RawRegistroConsultado[];
 }
@@ -114,6 +114,38 @@ function parseIDFactura(raw: IDFactura): IDFactura {
     IDEmisorFactura: raw.IDEmisorFactura,
     NumSerieFactura: raw.NumSerieFactura,
     FechaExpedicionFactura: raw.FechaExpedicionFactura,
+  };
+}
+
+function resultadoConsultaOf(value: unknown): RespuestaConsulta["ResultadoConsulta"] {
+  if (value === "ConDatos" || value === "SinDatos") return value;
+  throw new Error(`Unexpected consulta result: ${JSON.stringify(value)}`);
+}
+
+function indicadorPaginacionOf(value: unknown): RespuestaConsulta["IndicadorPaginacion"] {
+  if (value === "S" || value === "N") return value;
+  throw new Error(`Unexpected pagination indicator: ${JSON.stringify(value)}`);
+}
+
+function paginationKeyOf(raw: unknown): IDFactura {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error("ClavePaginacion must contain one invoice identity");
+  }
+  const key = raw as Partial<IDFactura>;
+  if (
+    typeof key.IDEmisorFactura !== "string" ||
+    key.IDEmisorFactura.length === 0 ||
+    typeof key.NumSerieFactura !== "string" ||
+    key.NumSerieFactura.length === 0 ||
+    typeof key.FechaExpedicionFactura !== "string" ||
+    key.FechaExpedicionFactura.length === 0
+  ) {
+    throw new Error("ClavePaginacion must contain one invoice identity");
+  }
+  return {
+    IDEmisorFactura: key.IDEmisorFactura,
+    NumSerieFactura: key.NumSerieFactura,
+    FechaExpedicionFactura: key.FechaExpedicionFactura,
   };
 }
 
@@ -142,10 +174,19 @@ export function parseRespuestaConsulta(xml: string): RespuestaConsulta {
   if (!body) {
     throw new Error("Response does not contain a RespuestaConsultaFactuSistemaFacturacion body");
   }
+  const resultadoConsulta = resultadoConsultaOf(body.ResultadoConsulta);
+  const indicadorPaginacion = indicadorPaginacionOf(body.IndicadorPaginacion);
+  const rawCursor = body.ClavePaginacion;
+  if (indicadorPaginacion === "S" && rawCursor === undefined) {
+    throw new Error("ClavePaginacion is required when IndicadorPaginacion is S");
+  }
+  if (indicadorPaginacion === "N" && rawCursor !== undefined) {
+    throw new Error("ClavePaginacion is forbidden when IndicadorPaginacion is N");
+  }
   return {
-    ResultadoConsulta: body.ResultadoConsulta as "ConDatos" | "SinDatos",
-    IndicadorPaginacion: body.IndicadorPaginacion as "S" | "N",
-    ClavePaginacion: body.ClavePaginacion ? parseIDFactura(body.ClavePaginacion) : undefined,
+    ResultadoConsulta: resultadoConsulta,
+    IndicadorPaginacion: indicadorPaginacion,
+    ClavePaginacion: rawCursor === undefined ? undefined : paginationKeyOf(rawCursor),
     registros: asArray(body.RegistroRespuestaConsultaFactuSistemaFacturacion).map(
       parseRegistroConsultado,
     ),

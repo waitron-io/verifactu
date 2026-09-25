@@ -76,4 +76,8 @@ consulta como representante del emisor. `"N"` no es válido en una consulta; omi
 si no consultas como representante. No lo incluyas en una consulta como destinatario.
 
 Cuando `IndicadorPaginacion` sea `"S"`, envía la `ClavePaginacion` recibida en la
-siguiente consulta. El CSV del envío no se puede recuperar aquí: la consulta no lo devuelve.
+siguiente consulta. El analizador comprueba que `ResultadoConsulta` sea `ConDatos` o `SinDatos`,
+que `IndicadorPaginacion` sea `S` o `N`, y que `S` vaya acompañado de una única clave utilizable,
+mientras que `N` no lleve ninguna. Si los datos de paginación no son válidos, lanza un error para
+que no repitas la primera página ni te detengas antes de tiempo. El CSV del envío no se puede
+recuperar aquí: la consulta no lo devuelve.

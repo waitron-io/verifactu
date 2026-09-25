@@ -239,6 +239,17 @@ offline `xmllint --schema` check of a consultation request could not compile bec
 common schema imports the external XML-signature schema; these tests do not claim whole-request
 XSD validity.
 
+### Consultation response flags and cursor — service description §§6.4.2–6.4.3
+
+`RespuestaConsultaLR.xsd` restricts `ResultadoConsulta` to `ConDatos`/`SinDatos` and
+`IndicadorPaginacion` to `S`/`N`. Service description §6.4.3 requires the response's
+`ClavePaginacion` only when the indicator is `S`, so callers can echo that last-record identity
+in the next query. `parseRespuestaConsulta` now checks the literal enum values, rejects absent
+or duplicated flag elements, and requires one complete invoice identity exactly for an `S`
+response. Focused tests cover the valid final and continuing pages, malformed flag values,
+missing or repeated elements, and unusable cursor fields. This is a response-boundary check,
+not whole-response XSD validation; AEAT preproduction remains the source of actual responses.
+
 ### Own-record hash validation
 
 Hash specification §2 allows SHA-256, represented by `TipoHuella: "01"` in both builders. Section
