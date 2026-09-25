@@ -173,10 +173,14 @@ missing or unfamiliar line status rather than falsely calling it rejected; focus
 boundaries and a mixed batch. An unfamiliar duplicate-detail status still resolves to
 `duplicate_unknown`. The exported known-code types describe AEAT's XSD enums, while parsed
 status properties are wider because malformed or future responses must not hide an
-unretrievable CSV. A missing or malformed `TiempoEsperaEnvio` still throws before the caller
-receives the CSV; that separate response-boundary case remains to be audited. The parser does
-not reconcile global and per-line values or validate the entire response XSD; the fake remains
-a transport test double, not proof of a schema-valid AEAT response.
+unretrievable CSV. `TiempoEsperaEnvio` now becomes `undefined` when absent or unusable, with its
+literal in `TiempoEsperaEnvioRaw` when present, so callers can persist a one-time CSV and line
+states before stopping their submission queue. The parser accepts one to four ASCII digits as a
+usable wait, matching `sf:Tipo6Type`'s upper bound; although that XSD also permits an empty
+value, an empty wait is unusable for scheduling. Focused parser and client tests cover missing,
+empty, nonnumeric, signed, fractional, and overlong values without returning `NaN`. The parser
+does not reconcile global and per-line values or validate the entire response XSD; the fake
+remains a transport test double, not proof of a schema-valid AEAT response.
 
 ### SOAP faults and voluntary flow control — service description §§5.1, 6.4.4.1
 

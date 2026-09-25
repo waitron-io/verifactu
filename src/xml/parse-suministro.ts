@@ -1,4 +1,4 @@
-import { asArray, asNumber, asRequiredNumber, parser } from "./parse-common.js";
+import { asArray, asNumber, parser } from "./parse-common.js";
 import type { IDFactura } from "../types.js";
 
 export type EstadoEnvio = "Correcto" | "ParcialmenteCorrecto" | "Incorrecto";
@@ -41,7 +41,10 @@ export interface RespuestaSuministro {
   CSV?: string;
   /** Raw AEAT status; inspect unfamiliar values before acting on the batch. */
   EstadoEnvio: string | undefined;
-  TiempoEsperaEnvio: number;
+  /** Undefined when the response has no usable wait; never schedule another envio from that value. */
+  TiempoEsperaEnvio: number | undefined;
+  /** Literal wait field, retained so callers can diagnose an unusable AEAT response. */
+  TiempoEsperaEnvioRaw?: string;
   RespuestaLinea: RespuestaLinea[];
 }
 
@@ -89,7 +92,7 @@ interface RawRespuestaLinea {
 interface RawRespuestaSuministro {
   CSV?: string;
   EstadoEnvio: string;
-  TiempoEsperaEnvio: string;
+  TiempoEsperaEnvio?: unknown;
   RespuestaLinea?: RawRespuestaLinea | RawRespuestaLinea[];
 }
 
@@ -141,6 +144,11 @@ function parseRespuestaLinea(raw: RawRespuestaLinea): RespuestaLinea {
   };
 }
 
+/** sf:Tipo6Type permits up to four digits; an empty value gives no usable wait. */
+function waitSeconds(value: unknown): number | undefined {
+  return typeof value === "string" && /^\d{1,4}$/.test(value) ? Number(value) : undefined;
+}
+
 /** Parses a `RespuestaRegFactuSistemaFacturacion` SOAP response into a plain object. */
 export function parseRespuestaSuministro(xml: string): RespuestaSuministro {
   const parsed = parser.parse(xml) as RawEnvelope;
@@ -151,11 +159,10 @@ export function parseRespuestaSuministro(xml: string): RespuestaSuministro {
   return {
     CSV: body.CSV,
     EstadoEnvio: statusText(body.EstadoEnvio),
-    // \d{0,4} in the schema, so up to 9999 seconds — never narrow this to 8 bits.
-    // This value drives the caller's next-submission scheduling, so a
-    // malformed or absent element must throw here rather than silently
-    // becoming NaN and poisoning that schedule.
-    TiempoEsperaEnvio: asRequiredNumber(body.TiempoEsperaEnvio, "TiempoEsperaEnvio"),
+    // Preserve the one-time CSV even when the wait cannot safely drive a schedule.
+    TiempoEsperaEnvio: waitSeconds(body.TiempoEsperaEnvio),
+    TiempoEsperaEnvioRaw:
+      typeof body.TiempoEsperaEnvio === "string" ? body.TiempoEsperaEnvio : undefined,
     RespuestaLinea: asArray(body.RespuestaLinea).map(parseRespuestaLinea),
   };
 }
