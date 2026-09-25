@@ -330,12 +330,10 @@ serializer/parser tests cover missing-length and overlong cases, and offline XSD
 the 60-code-point boundary and rejection of the invalid values. The pagination key's
 `IDEmisorFactura` also has the `NIFType` length of exactly nine Unicode code points; both request
 boundaries enforce it, with an offline XSD rejection probe. Other nested identity/text fields have
-targeted checks below, not full request-XSD validation.
-The consulta response parser still accepts an overlong returned pagination number; echoing that
-cursor in a later request now fails locally. The same asymmetry applies to a returned cursor date
-with a malformed shape. `RespuestaConsultaLR.xsd` declares the returned
-cursor with the same `IDFacturaExpedidaBCType`, but the library has not verified live response
-behavior or harmonized the two parser bounds.
+targeted checks below, not full request-XSD validation. The response parser now applies the same
+invoice-number and date-shape bounds to a continuing cursor before returning it. Both request and
+response XSDs declare that cursor with `IDFacturaExpedidaBCType`; actual AEAT responses still need
+preproduction observation.
 
 The service description §6.4.1 and `sf:fecha` require `DD-MM-YYYY` text for an exact issue-date
 filter, each supplied range endpoint, and the pagination key's required date. `serializeConsulta`
@@ -381,8 +379,8 @@ NIF control remain separate.
 `IndicadorPaginacion` to `S`/`N`. Service description §6.4.3 says AEAT fills
 `ClavePaginacion` for a continuing `S` page, so callers can echo that last-record identity in
 the next query. `parseRespuestaConsulta` checks the literal enum values, rejects absent or
-duplicated flag elements, and requires a single cursor with three nonblank identity fields for
-`S`. The XSD makes the cursor block optional without a conditional constraint; an unexpected
+duplicated flag elements, and requires a single cursor with three present, XSD-shaped identity
+fields for `S`. The XSD makes the cursor block optional without a conditional constraint; an unexpected
 cursor on a final `N` page is ignored rather than discarding the page's records. The parser also
 rejects incomplete invoice identities inside returned records. Focused tests cover valid final
 and continuing pages, malformed flags, missing or repeated elements, and blank identity fields.

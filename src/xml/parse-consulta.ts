@@ -1,5 +1,9 @@
 import { asArray, asNumber, parser } from "./parse-common.js";
-import { isValidConsultaFecha, isValidConsultaNumSerieFactura } from "./serialize.js";
+import {
+  assertConsultaNif,
+  isValidConsultaFecha,
+  isValidConsultaNumSerieFactura,
+} from "./serialize.js";
 import type { IDFactura } from "../types.js";
 
 /**
@@ -138,9 +142,7 @@ function invoiceIdentityOf(raw: unknown, field: "IDFactura" | "ClavePaginacion")
   ) {
     throw new Error(`${field} must contain one invoice identity`);
   }
-  if (Array.from(key.IDEmisorFactura).length !== 9) {
-    throw new Error(`${field}.IDEmisorFactura must contain exactly 9 characters`);
-  }
+  assertConsultaNif(`${field}.IDEmisorFactura`, key.IDEmisorFactura);
   if (!isValidConsultaNumSerieFactura(key.NumSerieFactura)) {
     throw new Error(`${field}.NumSerieFactura must contain 1 to 60 characters`);
   }
@@ -161,9 +163,7 @@ function datosPresentacionOf(raw: unknown): DatosPresentacionConsulta | undefine
     throw new Error("DatosPresentacion must contain its three fields");
   }
   const block = raw as Record<string, unknown>;
-  if (typeof block.NIFPresentador !== "string" || Array.from(block.NIFPresentador).length !== 9) {
-    throw new Error("DatosPresentacion.NIFPresentador must contain exactly 9 characters");
-  }
+  assertConsultaNif("DatosPresentacion.NIFPresentador", block.NIFPresentador);
   if (typeof block.TimestampPresentacion !== "string" || !block.TimestampPresentacion.trim()) {
     throw new Error("DatosPresentacion.TimestampPresentacion is required");
   }

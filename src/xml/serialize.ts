@@ -139,7 +139,7 @@ function assertConsultaText(field: string, value: unknown, max: number, required
   }
 }
 
-export function assertConsultaNif(field: string, value: unknown): void {
+export function assertConsultaNif(field: string, value: unknown): asserts value is string {
   if (Array.isArray(value)) throw new Error(`Consulta ${field} must appear once`);
   if (typeof value !== "string" || Array.from(value).length !== 9) {
     throw new Error(`Consulta ${field} must contain exactly 9 characters`);
