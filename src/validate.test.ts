@@ -165,6 +165,209 @@ describe("validate", () => {
     });
   });
 
+  it.each([
+    ["IDVersion", "1.0"],
+    ["FacturaSimplificadaArt7273", "S or N"],
+    ["FacturaSinIdentifDestinatarioArt61d", "S or N"],
+    ["Macrodato", "S or N"],
+    ["Cupon", "S or N"],
+    ["TipoHuella", "01"],
+  ] as const)("rejects a remaining XSD-invalid alta literal in %s", (field, allowed) => {
+    const filing = valid();
+    (filing as unknown as Record<string, unknown>)[field] = "Z";
+    expect(validate(filing)).toContainEqual({
+      code: "XSD_ENUM_VALUE",
+      severity: "error",
+      field,
+      message: `${field} must be ${allowed}`,
+    });
+  });
+
+  it.each([
+    "TipoUsoPosibleSoloVerifactu",
+    "TipoUsoPosibleMultiOT",
+    "IndicadorMultiplesOT",
+  ] as const)("rejects an XSD-invalid SistemaInformatico.%s literal", (field) => {
+    const filing = valid();
+    filing.SistemaInformatico = { ...filing.SistemaInformatico, [field]: "Z" };
+    expect(validate(filing)).toContainEqual({
+      code: "XSD_ENUM_VALUE",
+      severity: "error",
+      field: `SistemaInformatico.${field}`,
+      message: `SistemaInformatico.${field} must be S or N`,
+    });
+  });
+
+  it.each([
+    ["Impuesto", "04", "01, 02, 03 or 05"],
+    ["ClaveRegimen", "99", "an AEAT regime code"],
+    ["CalificacionOperacion", "Z", "S1, S2, N1 or N2"],
+  ] as const)("rejects an XSD-invalid Desglose %s literal", (field, invalid, allowed) => {
+    const filing = valid();
+    (filing.Desglose[0] as unknown as Record<string, unknown>)[field] = invalid;
+    expect(validate(filing)).toContainEqual({
+      code: "XSD_ENUM_VALUE",
+      severity: "error",
+      field: `Desglose[0].${field}`,
+      message: `Desglose[0].${field} must be ${allowed}`,
+    });
+  });
+
+  it.each([
+    [
+      "RefExterna",
+      60,
+      "XSD_TEXT_LENGTH",
+      "RefExterna must contain at most 60 characters",
+      (filing: RegistroAlta, value: string) => (filing.RefExterna = value),
+    ],
+    [
+      "NombreRazonEmisor",
+      120,
+      "XSD_TEXT_LENGTH",
+      "NombreRazonEmisor must contain at most 120 characters",
+      (filing: RegistroAlta, value: string) => (filing.NombreRazonEmisor = value),
+    ],
+    [
+      "DescripcionOperacion",
+      500,
+      "DESCRIPCION_LENGTH",
+      "DescripcionOperacion is at most 500 characters",
+      (filing: RegistroAlta, value: string) => (filing.DescripcionOperacion = value),
+    ],
+    [
+      "SistemaInformatico.NombreRazon",
+      120,
+      "XSD_TEXT_LENGTH",
+      "SistemaInformatico.NombreRazon must contain at most 120 characters",
+      (filing: RegistroAlta, value: string) =>
+        (filing.SistemaInformatico = { ...filing.SistemaInformatico, NombreRazon: value }),
+    ],
+    [
+      "SistemaInformatico.NombreSistemaInformatico",
+      30,
+      "NOMBRE_SISTEMA_LENGTH",
+      "NombreSistemaInformatico is at most 30 characters",
+      (filing: RegistroAlta, value: string) =>
+        (filing.SistemaInformatico = {
+          ...filing.SistemaInformatico,
+          NombreSistemaInformatico: value,
+        }),
+    ],
+    [
+      "SistemaInformatico.Version",
+      50,
+      "XSD_TEXT_LENGTH",
+      "SistemaInformatico.Version must contain at most 50 characters",
+      (filing: RegistroAlta, value: string) =>
+        (filing.SistemaInformatico = { ...filing.SistemaInformatico, Version: value }),
+    ],
+    [
+      "SistemaInformatico.NumeroInstalacion",
+      100,
+      "XSD_TEXT_LENGTH",
+      "SistemaInformatico.NumeroInstalacion must contain at most 100 characters",
+      (filing: RegistroAlta, value: string) =>
+        (filing.SistemaInformatico = { ...filing.SistemaInformatico, NumeroInstalacion: value }),
+    ],
+    [
+      "Tercero.NombreRazon",
+      120,
+      "XSD_TEXT_LENGTH",
+      "Tercero.NombreRazon must contain at most 120 characters",
+      (filing: RegistroAlta, value: string) => {
+        filing.TipoFactura = "F3";
+        filing.EmitidaPorTerceroODestinatario = "T";
+        filing.Tercero = { NombreRazon: value, NIF: "B99999997" };
+      },
+    ],
+    [
+      "Destinatarios.IDDestinatario[0].NombreRazon",
+      120,
+      "XSD_TEXT_LENGTH",
+      "Destinatarios.IDDestinatario[0].NombreRazon must contain at most 120 characters",
+      (filing: RegistroAlta, value: string) => {
+        filing.Destinatarios = { IDDestinatario: [{ NombreRazon: value, NIF: "B99999997" }] };
+      },
+    ],
+  ] as const)(
+    "counts Unicode code points for %s's XSD maximum",
+    (field, max, code, message, mutate) => {
+      const boundary = valid();
+      mutate(boundary, "😀".repeat(max));
+      expect(validate(boundary)).not.toContainEqual(expect.objectContaining({ code, field }));
+
+      const over = valid();
+      mutate(over, "😀".repeat(max + 1));
+      expect(validate(over)).toContainEqual({
+        code,
+        severity: "error",
+        field,
+        message,
+      });
+    },
+  );
+
+  it.each([
+    ["FacturasRectificadas", "IDFacturaRectificada"],
+    ["FacturasSustituidas", "IDFacturaSustituida"],
+    ["Destinatarios", "IDDestinatario"],
+  ] as const)("enforces the 1000-entry XSD maximum for %s", (field, child) => {
+    const entry = {
+      IDEmisorFactura: "89890001K",
+      NumSerieFactura: "REF",
+      FechaExpedicionFactura: "28-10-2024",
+    };
+    const recipient = { NombreRazon: "Buyer", NIF: "B99999997" };
+    const make = (count: number) => {
+      const filing = valid();
+      if (field === "FacturasRectificadas") {
+        filing.TipoFactura = "R1";
+        filing.TipoRectificativa = "I";
+        filing.FacturasRectificadas = { IDFacturaRectificada: Array(count).fill(entry) };
+      } else if (field === "FacturasSustituidas") {
+        filing.TipoFactura = "F3";
+        filing.FacturasSustituidas = { IDFacturaSustituida: Array(count).fill(entry) };
+      } else {
+        filing.Destinatarios = { IDDestinatario: Array(count).fill(recipient) };
+      }
+      return filing;
+    };
+    expect(validate(make(1000))).not.toContainEqual(
+      expect.objectContaining({ code: "XSD_OCCURRENCE", field }),
+    );
+    expect(validate(make(1001))).toContainEqual({
+      code: "XSD_OCCURRENCE",
+      severity: "error",
+      field,
+      message: `${field}.${child} may contain at most 1000 entries`,
+    });
+  });
+
+  it.each(["both", "neither", "invalid first literal"] as const)(
+    "rejects an Encadenamiento with %s",
+    (kind) => {
+      const filing = valid();
+      const previous = {
+        IDEmisorFactura: "89890001K",
+        NumSerieFactura: "PREV",
+        FechaExpedicionFactura: "28-10-2024",
+        Huella: "0".repeat(64),
+      };
+      filing.Encadenamiento = (kind === "both"
+        ? { PrimerRegistro: "S", RegistroAnterior: previous }
+        : kind === "neither"
+          ? {}
+          : { PrimerRegistro: "N" }) as unknown as RegistroAlta["Encadenamiento"];
+      expect(validate(filing)).toContainEqual({
+        code: "ENCADENAMIENTO_CHOICE",
+        severity: "error",
+        field: "Encadenamiento",
+        message: "Encadenamiento must contain exactly PrimerRegistro S or RegistroAnterior",
+      });
+    },
+  );
+
   it("returns no issues for a well-formed record", () => {
     expect(validate(valid())).toEqual([]);
   });
@@ -668,6 +871,14 @@ describe("validate", () => {
     const record = valid();
     record.SistemaInformatico = { ...SISTEMA, IdSistemaInformatico: "WTX" };
     expect(codes(record)).toContain("ID_SISTEMA_LENGTH");
+  });
+
+  it("counts IdSistemaInformatico length in Unicode code points before applying its stricter alphabet", () => {
+    const record = valid();
+    record.SistemaInformatico = { ...SISTEMA, IdSistemaInformatico: "😀😀" };
+    const issues = codes(record);
+    expect(issues).not.toContain("ID_SISTEMA_LENGTH");
+    expect(issues).toContain("ID_SISTEMA_CHARSET");
   });
 
   it("rejects a NombreSistemaInformatico longer than thirty characters", () => {
@@ -2936,19 +3147,27 @@ describe("validate — AEAT §3.1.3.14–15.8", () => {
     ]);
   });
 
-  it.each([
-    [{ ClaveRegimen: undefined }, "CLAVE_REGIMEN_REQUIRED"],
-    [{ ClaveRegimen: "99" }, "CLAVE_REGIMEN_VALUE"],
-  ] as const)(
-    "§3.1.3.15.6 reports IPSI %s as an advisory warning through 2026",
-    (overrides, code) => {
-      const record = withDetail({ Impuesto: "02", ...overrides });
-      expect(validate(record, { now: new Date("2026-12-31T12:00:00Z") })).toContainEqual(
-        expect.objectContaining({ code, severity: "warning" }),
-      );
-      expect(() => assertValid(record, { now: new Date("2026-12-31T12:00:00Z") })).not.toThrow();
-    },
-  );
+  it("§3.1.3.15.6 reports a missing IPSI regime as an advisory warning through 2026", () => {
+    const record = withDetail({ Impuesto: "02", ClaveRegimen: undefined });
+    expect(validate(record, { now: new Date("2026-12-31T12:00:00Z") })).toContainEqual(
+      expect.objectContaining({ code: "CLAVE_REGIMEN_REQUIRED", severity: "warning" }),
+    );
+    expect(() => assertValid(record, { now: new Date("2026-12-31T12:00:00Z") })).not.toThrow();
+  });
+
+  it("§3.1.3.15.6 preserves the IPSI warning but rejects an out-of-schema regime through 2026", () => {
+    const record = withDetail({ Impuesto: "02", ClaveRegimen: "99" });
+    const issues = validate(record, { now: new Date("2026-12-31T12:00:00Z") });
+    expect(issues).toContainEqual(
+      expect.objectContaining({ code: "CLAVE_REGIMEN_VALUE", severity: "warning" }),
+    );
+    expect(issues).toContainEqual(
+      expect.objectContaining({ code: "XSD_ENUM_VALUE", severity: "error" }),
+    );
+    expect(() => assertValid(record, { now: new Date("2026-12-31T12:00:00Z") })).toThrow(
+      VerifactuValidationError,
+    );
+  });
 
   it.each([
     [{ ClaveRegimen: undefined }, "CLAVE_REGIMEN_REQUIRED"],
@@ -4295,6 +4514,35 @@ describe("validate — pins the exact field, message and severity for every Vali
   }
 
   const cases = [
+    {
+      description: "XSD_TEXT_LENGTH",
+      code: "XSD_TEXT_LENGTH",
+      field: "RefExterna",
+      message: "RefExterna must contain at most 60 characters",
+      mutate: (r) => {
+        r.RefExterna = "X".repeat(61);
+      },
+    },
+    {
+      description: "XSD_OCCURRENCE",
+      code: "XSD_OCCURRENCE",
+      field: "Destinatarios",
+      message: "Destinatarios.IDDestinatario may contain at most 1000 entries",
+      mutate: (r) => {
+        r.Destinatarios = {
+          IDDestinatario: Array(1001).fill({ NombreRazon: "Buyer", NIF: "B99999997" }),
+        };
+      },
+    },
+    {
+      description: "ENCADENAMIENTO_CHOICE",
+      code: "ENCADENAMIENTO_CHOICE",
+      field: "Encadenamiento",
+      message: "Encadenamiento must contain exactly PrimerRegistro S or RegistroAnterior",
+      mutate: (r) => {
+        r.Encadenamiento = {} as RegistroAlta["Encadenamiento"];
+      },
+    },
     {
       description: "IDOTRO_COUNTRY_CODE",
       code: "IDOTRO_COUNTRY_CODE",

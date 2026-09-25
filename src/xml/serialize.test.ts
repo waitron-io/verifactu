@@ -10,7 +10,7 @@ import type {
 } from "./serialize.js";
 import { buildAltaRecord, buildAnulacionRecord } from "../records.js";
 import { ALTA_INPUT, CABECERA, SISTEMA, withoutNif } from "../../test/fixtures.js";
-import type { AltaInput, AnulacionInput } from "../types.js";
+import type { AltaInput, AnulacionInput, RegistroAlta } from "../types.js";
 
 const record = buildAltaRecord(ALTA_INPUT);
 
@@ -59,6 +59,86 @@ describe("serializeEnvio", () => {
       }
     },
   );
+
+  it.each([
+    "2024-02-29T24:00:00Z",
+    "2024-02-29T12:34:56.789Z",
+    "2024-02-29T12:34:56",
+    "2024-02-29T12:34:56+14:00",
+  ])("accepts the supported XML Schema dateTime boundary %s", (timestamp) => {
+    const filing = buildAltaRecord(ALTA_INPUT);
+    filing.FechaHoraHusoGenRegistro = timestamp;
+    expect(() => serializeEnvio(CABECERA, [{ RegistroAlta: filing }])).not.toThrow();
+  });
+
+  it.each([
+    "2023-02-29T12:34:56Z",
+    "2024-02-29T24:00:01Z",
+    "2024-02-29T12:34:56+14:01",
+    "01234-02-28T12:34:56Z",
+  ])("rejects the XML Schema dateTime boundary %s", (timestamp) => {
+    const filing = buildAltaRecord(ALTA_INPUT);
+    filing.FechaHoraHusoGenRegistro = timestamp;
+    expect(() => serializeEnvio(CABECERA, [{ RegistroAlta: filing }])).toThrow(
+      "RegistroAlta[0].FechaHoraHusoGenRegistro must be an XML Schema dateTime",
+    );
+  });
+
+  it("reports a missing required filing text as missing rather than overlong", () => {
+    const filing = buildAltaRecord(ALTA_INPUT);
+    filing.NombreRazonEmisor = undefined as unknown as string;
+    expect(() => serializeEnvio(CABECERA, [{ RegistroAlta: filing }])).toThrow(
+      "RegistroAlta[0].NombreRazonEmisor must be a string",
+    );
+  });
+
+  it.each([
+    [
+      "person NIF length",
+      "RegistroAlta[0].Tercero.NIF must contain exactly 9 characters",
+      (filing: RegistroAlta) => {
+        filing.EmitidaPorTerceroODestinatario = "T";
+        filing.Tercero = { NombreRazon: "Issuer", NIF: "SHORT" };
+      },
+    ],
+    [
+      "date shape",
+      "RegistroAlta[0].FechaOperacion must be DD-MM-YYYY",
+      (filing: RegistroAlta): void => {
+        filing.FechaOperacion = "2024/10/28";
+      },
+    ],
+    [
+      "signed amount shape",
+      "RegistroAlta[0].CuotaTotal must match ImporteSgn12.2Type",
+      (filing: RegistroAlta): void => {
+        filing.CuotaTotal = "not-an-amount";
+      },
+    ],
+    [
+      "tax-rate shape",
+      "RegistroAlta[0].Desglose[0].TipoImpositivo must match Tipo2.2Type",
+      (filing: RegistroAlta): void => {
+        filing.Desglose[0]!.TipoImpositivo = "1234.00";
+      },
+    ],
+    [
+      "rectification amount shape",
+      "RegistroAlta[0].ImporteRectificacion.BaseRectificada must match ImporteSgn12.2Type",
+      (filing: RegistroAlta) => {
+        filing.TipoFactura = "R1";
+        filing.TipoRectificativa = "S";
+        filing.ImporteRectificacion = {
+          BaseRectificada: "invalid",
+          CuotaRectificada: "0.00",
+        };
+      },
+    ],
+  ] as const)("rejects an XSD-invalid filing %s before sending", (_name, message, mutate) => {
+    const filing = buildAltaRecord(ALTA_INPUT);
+    mutate(filing);
+    expect(() => serializeEnvio(CABECERA, [{ RegistroAlta: filing }])).toThrow(message);
+  });
 
   it.each([
     ["CodigoPais", "ZZ", "CodigoPais must be an AEAT CountryType2 code"],
@@ -116,6 +196,215 @@ describe("serializeEnvio", () => {
       `RegistroAlta[0].${field} must be ${allowed}`,
     );
   });
+
+  it.each([
+    ["IDVersion", "1.0"],
+    ["FacturaSimplificadaArt7273", "S or N"],
+    ["FacturaSinIdentifDestinatarioArt61d", "S or N"],
+    ["Macrodato", "S or N"],
+    ["Cupon", "S or N"],
+    ["TipoHuella", "01"],
+  ] as const)("rejects a remaining XSD-invalid alta %s before sending", (field, allowed) => {
+    const invalid = buildAltaRecord(ALTA_INPUT);
+    (invalid as unknown as Record<string, unknown>)[field] = "Z";
+    expect(() => serializeEnvio(CABECERA, [{ RegistroAlta: invalid }])).toThrow(
+      `RegistroAlta[0].${field} must be ${allowed}`,
+    );
+  });
+
+  it.each(["alta", "cancellation"] as const)(
+    "rejects an XSD-invalid %s generation timestamp before sending",
+    (kind) => {
+      const entry: EnvioRegistro =
+        kind === "alta"
+          ? { RegistroAlta: buildAltaRecord(ALTA_INPUT) }
+          : {
+              RegistroAnulacion: buildAnulacionRecord({
+                IDEmisorFacturaAnulada: CABECERA.ObligadoEmision.NIF,
+                NumSerieFacturaAnulada: "CANCEL-DATETIME",
+                FechaExpedicionFacturaAnulada: new Date("2024-10-28T00:00:00+01:00"),
+                Encadenamiento: { PrimerRegistro: "S" },
+                SistemaInformatico: SISTEMA,
+                generadoEn: new Date("2024-10-28T19:20:30+01:00"),
+                offsetMinutes: 60,
+              }),
+            };
+      const record = "RegistroAlta" in entry ? entry.RegistroAlta : entry.RegistroAnulacion;
+      record.FechaHoraHusoGenRegistro = "not-a-dateTime";
+      expect(() => serializeEnvio(CABECERA, [entry])).toThrow(
+        `Registro${kind === "alta" ? "Alta" : "Anulacion"}[0].FechaHoraHusoGenRegistro must be an XML Schema dateTime`,
+      );
+    },
+  );
+
+  it.each([
+    "TipoUsoPosibleSoloVerifactu",
+    "TipoUsoPosibleMultiOT",
+    "IndicadorMultiplesOT",
+  ] as const)("rejects an XSD-invalid software %s before sending", (field) => {
+    const invalid = buildAltaRecord(ALTA_INPUT);
+    invalid.SistemaInformatico = { ...invalid.SistemaInformatico, [field]: "Z" };
+    expect(() => serializeEnvio(CABECERA, [{ RegistroAlta: invalid }])).toThrow(
+      `RegistroAlta[0].SistemaInformatico.${field} must be S or N`,
+    );
+  });
+
+  it.each([
+    ["RefExterna", 60, (filing: RegistroAlta, value: string) => (filing.RefExterna = value)],
+    [
+      "NombreRazonEmisor",
+      120,
+      (filing: RegistroAlta, value: string) => (filing.NombreRazonEmisor = value),
+    ],
+    [
+      "DescripcionOperacion",
+      500,
+      (filing: RegistroAlta, value: string) => (filing.DescripcionOperacion = value),
+    ],
+    [
+      "SistemaInformatico.NombreRazon",
+      120,
+      (filing: RegistroAlta, value: string) =>
+        (filing.SistemaInformatico = { ...filing.SistemaInformatico, NombreRazon: value }),
+    ],
+    [
+      "SistemaInformatico.NombreSistemaInformatico",
+      30,
+      (filing: RegistroAlta, value: string) =>
+        (filing.SistemaInformatico = {
+          ...filing.SistemaInformatico,
+          NombreSistemaInformatico: value,
+        }),
+    ],
+    [
+      "SistemaInformatico.Version",
+      50,
+      (filing: RegistroAlta, value: string) =>
+        (filing.SistemaInformatico = { ...filing.SistemaInformatico, Version: value }),
+    ],
+    [
+      "SistemaInformatico.NumeroInstalacion",
+      100,
+      (filing: RegistroAlta, value: string) =>
+        (filing.SistemaInformatico = { ...filing.SistemaInformatico, NumeroInstalacion: value }),
+    ],
+  ] as const)("counts XSD characters for %s before sending", (field, max, mutate) => {
+    const boundary = buildAltaRecord(ALTA_INPUT);
+    mutate(boundary, "😀".repeat(max));
+    expect(() => serializeEnvio(CABECERA, [{ RegistroAlta: boundary }])).not.toThrow();
+
+    const over = buildAltaRecord(ALTA_INPUT);
+    mutate(over, "😀".repeat(max + 1));
+    expect(() => serializeEnvio(CABECERA, [{ RegistroAlta: over }])).toThrow(
+      `RegistroAlta[0].${field} must contain at most ${max} characters`,
+    );
+  });
+
+  it.each([
+    ["FacturasRectificadas", "IDFacturaRectificada"],
+    ["FacturasSustituidas", "IDFacturaSustituida"],
+    ["Destinatarios", "IDDestinatario"],
+  ] as const)("enforces the 1000-entry XSD maximum for %s before sending", (field, child) => {
+    const filing = buildAltaRecord(ALTA_INPUT);
+    const reference = {
+      IDEmisorFactura: CABECERA.ObligadoEmision.NIF,
+      NumSerieFactura: "REF",
+      FechaExpedicionFactura: "28-10-2024",
+    };
+    if (field === "FacturasRectificadas") {
+      filing.TipoFactura = "R1";
+      filing.TipoRectificativa = "I";
+      filing.FacturasRectificadas = { IDFacturaRectificada: Array(1001).fill(reference) };
+    } else if (field === "FacturasSustituidas") {
+      filing.TipoFactura = "F3";
+      filing.FacturasSustituidas = { IDFacturaSustituida: Array(1001).fill(reference) };
+    } else {
+      filing.Destinatarios = {
+        IDDestinatario: Array(1001).fill({ NombreRazon: "Buyer", NIF: "B99999997" }),
+      };
+    }
+    expect(() => serializeEnvio(CABECERA, [{ RegistroAlta: filing }])).toThrow(
+      `RegistroAlta[0].${field}.${child} may contain at most 1000 entries`,
+    );
+  });
+
+  it.each(["both", "neither", "invalid first literal"] as const)(
+    "rejects an Encadenamiento with %s before sending",
+    (kind) => {
+      const filing = buildAltaRecord(ALTA_INPUT);
+      const previous = {
+        IDEmisorFactura: CABECERA.ObligadoEmision.NIF,
+        NumSerieFactura: "PREV",
+        FechaExpedicionFactura: "28-10-2024",
+        Huella: "0".repeat(64),
+      };
+      filing.Encadenamiento = (kind === "both"
+        ? { PrimerRegistro: "S", RegistroAnterior: previous }
+        : kind === "neither"
+          ? {}
+          : { PrimerRegistro: "N" }) as unknown as RegistroAlta["Encadenamiento"];
+      expect(() => serializeEnvio(CABECERA, [{ RegistroAlta: filing }])).toThrow(
+        "RegistroAlta[0].Encadenamiento must contain exactly PrimerRegistro S or RegistroAnterior",
+      );
+    },
+  );
+
+  it.each(["SistemaInformatico", "Tercero", "Destinatarios", "Generador"] as const)(
+    "rejects both identity branches in %s before sending",
+    (role) => {
+      const both = {
+        NombreRazon: "Ambiguous identity",
+        NIF: "B99999997",
+        IDOtro: { CodigoPais: "FR", IDType: "03", ID: "X-1" },
+      };
+      if (role === "Generador") {
+        const cancellation = buildAnulacionRecord({
+          IDEmisorFacturaAnulada: CABECERA.ObligadoEmision.NIF,
+          NumSerieFacturaAnulada: "CANCEL-CHOICE",
+          FechaExpedicionFacturaAnulada: new Date("2024-10-28T00:00:00+01:00"),
+          GeneradoPor: "D",
+          Generador: both as never,
+          Encadenamiento: { PrimerRegistro: "S" },
+          SistemaInformatico: SISTEMA,
+          generadoEn: new Date("2024-10-28T19:20:30+01:00"),
+          offsetMinutes: 60,
+        });
+        expect(() => serializeEnvio(CABECERA, [{ RegistroAnulacion: cancellation }])).toThrow(
+          "RegistroAnulacion[0].Generador must contain exactly one of NIF or IDOtro",
+        );
+        return;
+      }
+      const filing = buildAltaRecord(ALTA_INPUT);
+      if (role === "SistemaInformatico") filing.SistemaInformatico = both as never;
+      if (role === "Tercero") {
+        filing.EmitidaPorTerceroODestinatario = "T";
+        filing.Tercero = both as never;
+      }
+      if (role === "Destinatarios") {
+        filing.Destinatarios = { IDDestinatario: [both as never] };
+      }
+      const path = role === "Destinatarios" ? "Destinatarios.IDDestinatario[0]" : role;
+      expect(() => serializeEnvio(CABECERA, [{ RegistroAlta: filing }])).toThrow(
+        `RegistroAlta[0].${path} must contain exactly one of NIF or IDOtro`,
+      );
+    },
+  );
+
+  it.each(["both", "neither"] as const)(
+    "rejects a Desglose line with %s qualification branches before sending",
+    (kind) => {
+      const filing = buildAltaRecord(ALTA_INPUT);
+      filing.Desglose[0] = {
+        ...filing.Desglose[0]!,
+        ...(kind === "both"
+          ? { OperacionExenta: "E1" }
+          : { CalificacionOperacion: undefined, OperacionExenta: undefined }),
+      } as RegistroAlta["Desglose"][number];
+      expect(() => serializeEnvio(CABECERA, [{ RegistroAlta: filing }])).toThrow(
+        "RegistroAlta[0].Desglose[0] must contain exactly one of CalificacionOperacion or OperacionExenta",
+      );
+    },
+  );
 
   it.each([
     ["country code", "CodigoPais", "ZZ", "CodigoPais must be an AEAT CountryType2 code"],

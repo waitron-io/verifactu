@@ -209,6 +209,18 @@ describe("generated unsigned requests against AEAT XSDs", () => {
     ["alta", "TipoFactura", "Z"],
     ["alta", "TipoRectificativa", "Z"],
     ["alta", "EmitidaPorTerceroODestinatario", "Z"],
+    ["alta", "IDVersion", "Z"],
+    ["alta", "FacturaSimplificadaArt7273", "Z"],
+    ["alta", "FacturaSinIdentifDestinatarioArt61d", "Z"],
+    ["alta", "Macrodato", "Z"],
+    ["alta", "Cupon", "Z"],
+    ["alta", "TipoUsoPosibleSoloVerifactu", "Z"],
+    ["alta", "TipoUsoPosibleMultiOT", "Z"],
+    ["alta", "IndicadorMultiplesOT", "Z"],
+    ["alta", "TipoHuella", "Z"],
+    ["alta", "Impuesto", "04"],
+    ["alta", "ClaveRegimen", "99"],
+    ["alta", "CalificacionOperacion", "Z"],
     ["cancellation", "SinRegistroPrevio", "Z"],
     ["cancellation", "RechazoPrevio", "X"],
     ["cancellation", "GeneradoPor", "Z"],
@@ -220,6 +232,11 @@ describe("generated unsigned requests against AEAT XSDs", () => {
               ...ALTA_INPUT,
               Subsanacion: "S",
               RechazoPrevio: "X",
+              FacturaSimplificadaArt7273: "S",
+              FacturaSinIdentifDestinatarioArt61d: "N",
+              Macrodato: "N",
+              Cupon: "N",
+              Desglose: [{ ...ALTA_INPUT.Desglose[0]!, Impuesto: "01", ClaveRegimen: "01" }],
               ...(field === "TipoRectificativa"
                 ? { TipoFactura: "R1" as const, TipoRectificativa: "I" as const }
                 : {}),
@@ -255,6 +272,126 @@ describe("generated unsigned requests against AEAT XSDs", () => {
     leaf.textContent = invalid;
     const result = schemaResult(ENVIO_XSD, new XMLSerializer().serializeToString(document));
     expect(result.status, result.stderr).not.toBe(0);
+  });
+
+  it("counts Unicode code points for filing TextMax60Type", () => {
+    const alta = buildAltaRecord({ ...ALTA_INPUT, RefExterna: "😀".repeat(60) });
+    const body = soapBodyElement(serializeEnvio(CABECERA, [{ RegistroAlta: alta }]));
+    expect(schemaResult(ENVIO_XSD, body).status).toBe(0);
+    const document = new DOMParser().parseFromString(body, "text/xml");
+    const leaf = document.getElementsByTagNameNS(NS_SF, "RefExterna").item(0);
+    if (!leaf) throw new Error("Alta fixture has no RefExterna");
+    leaf.textContent = "😀".repeat(61);
+    const invalid = schemaResult(ENVIO_XSD, new XMLSerializer().serializeToString(document));
+    expect(invalid.status).not.toBe(0);
+    expect(invalid.stderr).toContain("RefExterna");
+  });
+
+  it("rejects a malformed filing dateTime", () => {
+    const body = soapBodyElement(
+      serializeEnvio(CABECERA, [{ RegistroAlta: buildAltaRecord(ALTA_INPUT) }]),
+    );
+    const document = new DOMParser().parseFromString(body, "text/xml");
+    const leaf = document.getElementsByTagNameNS(NS_SF, "FechaHoraHusoGenRegistro").item(0);
+    if (!leaf) throw new Error("Alta fixture has no FechaHoraHusoGenRegistro");
+    leaf.textContent = "not-a-dateTime";
+    const invalid = schemaResult(ENVIO_XSD, new XMLSerializer().serializeToString(document));
+    expect(invalid.status).not.toBe(0);
+    expect(invalid.stderr).toContain("FechaHoraHusoGenRegistro");
+  });
+
+  it.each([
+    "2024-02-29T24:00:00Z",
+    "2024-02-29T12:34:56.789Z",
+    "2024-02-29T12:34:56",
+    "2024-02-29T12:34:56+14:00",
+  ])("accepts the filing dateTime boundary %s", (timestamp) => {
+    const alta = buildAltaRecord(ALTA_INPUT);
+    alta.FechaHoraHusoGenRegistro = timestamp;
+    const body = soapBodyElement(serializeEnvio(CABECERA, [{ RegistroAlta: alta }]));
+    const result = schemaResult(ENVIO_XSD, body);
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it.each([
+    "2023-02-29T12:34:56Z",
+    "2024-02-29T24:00:01Z",
+    "2024-02-29T12:34:56+14:01",
+    "01234-02-28T12:34:56Z",
+  ])("rejects the filing dateTime boundary %s", (timestamp) => {
+    const body = soapBodyElement(
+      serializeEnvio(CABECERA, [{ RegistroAlta: buildAltaRecord(ALTA_INPUT) }]),
+    );
+    const document = new DOMParser().parseFromString(body, "text/xml");
+    const leaf = document.getElementsByTagNameNS(NS_SF, "FechaHoraHusoGenRegistro").item(0);
+    if (!leaf) throw new Error("Alta fixture has no FechaHoraHusoGenRegistro");
+    leaf.textContent = timestamp;
+    const result = schemaResult(ENVIO_XSD, new XMLSerializer().serializeToString(document));
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("FechaHoraHusoGenRegistro");
+  });
+
+  it.each([
+    ["IDEmisorFactura", "SHORT"],
+    ["FechaExpedicionFactura", "2024/01/01"],
+    ["CuotaTotal", "not-an-amount"],
+    ["TipoImpositivo", "1234.00"],
+  ] as const)("rejects an XSD-invalid filing %s shape", (field, value) => {
+    const body = soapBodyElement(
+      serializeEnvio(CABECERA, [{ RegistroAlta: buildAltaRecord(ALTA_INPUT) }]),
+    );
+    const document = new DOMParser().parseFromString(body, "text/xml");
+    const leaf = document.getElementsByTagNameNS(NS_SF, field).item(0);
+    if (!leaf) throw new Error(`Alta fixture has no ${field}`);
+    leaf.textContent = value;
+    const invalid = schemaResult(ENVIO_XSD, new XMLSerializer().serializeToString(document));
+    expect(invalid.status).not.toBe(0);
+    expect(invalid.stderr).toContain(field);
+  });
+
+  it("accepts 1000 recipients and rejects 1001", () => {
+    const alta = buildAltaRecord({
+      ...ALTA_INPUT,
+      Destinatarios: {
+        IDDestinatario: [{ NombreRazon: "Buyer", NIF: "B99999997" }],
+      },
+    });
+    const body = soapBodyElement(serializeEnvio(CABECERA, [{ RegistroAlta: alta }]));
+    const document = new DOMParser().parseFromString(body, "text/xml");
+    const recipients = document.getElementsByTagNameNS(NS_SF, "Destinatarios").item(0);
+    const recipient = document.getElementsByTagNameNS(NS_SF, "IDDestinatario").item(0);
+    if (!recipients || !recipient) throw new Error("Alta fixture has no recipient");
+    for (let index = 1; index < 1000; index += 1) recipients.appendChild(recipient.cloneNode(true));
+    const maximum = schemaResult(ENVIO_XSD, new XMLSerializer().serializeToString(document));
+    expect(maximum.status, maximum.stderr).toBe(0);
+    recipients.appendChild(recipient.cloneNode(true));
+    const invalid = schemaResult(ENVIO_XSD, new XMLSerializer().serializeToString(document));
+    expect(invalid.status).not.toBe(0);
+    expect(invalid.stderr).toContain("IDDestinatario");
+  });
+
+  it("rejects both Encadenamiento choice branches", () => {
+    const body = soapBodyElement(
+      serializeEnvio(CABECERA, [{ RegistroAlta: buildAltaRecord(ALTA_INPUT) }]),
+    );
+    const document = new DOMParser().parseFromString(body, "text/xml");
+    const chain = document.getElementsByTagNameNS(NS_SF, "Encadenamiento").item(0);
+    if (!chain) throw new Error("Alta fixture has no Encadenamiento");
+    const previous = document.createElementNS(NS_SF, "sf:RegistroAnterior");
+    for (const [name, value] of [
+      ["IDEmisorFactura", "89890001K"],
+      ["NumSerieFactura", "PREV"],
+      ["FechaExpedicionFactura", "01-01-2024"],
+      ["Huella", "A".repeat(64)],
+    ]) {
+      const leaf = document.createElementNS(NS_SF, `sf:${name}`);
+      leaf.textContent = value;
+      previous.appendChild(leaf);
+    }
+    chain.appendChild(previous);
+    const invalid = schemaResult(ENVIO_XSD, new XMLSerializer().serializeToString(document));
+    expect(invalid.status).not.toBe(0);
+    expect(invalid.stderr).toContain("RegistroAnterior");
   });
 
   it("accepts a 60-code-point alta invoice number under TextoIDFacturaType", () => {

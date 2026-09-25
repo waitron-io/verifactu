@@ -1203,10 +1203,10 @@ describe("fake AEAT — resubmit (error 3000) and consulta", () => {
     expect(raw).toContain("<sfRC:SistemaInformatico><sf:NombreRazon>Waitron SL</sf:NombreRazon>");
   });
 
-  it("escapes software flags in an expanded fake consulta response", async () => {
+  it("escapes software text in an expanded fake consulta response", async () => {
     const aeat = createFakeAeat();
     const record = altaFixture("A/1");
-    record.SistemaInformatico = { ...SISTEMA, TipoUsoPosibleSoloVerifactu: "S<&" as "S" };
+    record.SistemaInformatico = { ...SISTEMA, NombreSistemaInformatico: "Waitron <&" };
     await aeat.client().submit(cabecera, [{ RegistroAlta: record }]);
     const request = serializeConsulta(cabecera, {
       Ejercicio: "2026",
@@ -1215,7 +1215,7 @@ describe("fake AEAT — resubmit (error 3000) and consulta", () => {
     });
     const raw = await (await aeat.fetch("https://fake.aeat.test/soap", { body: request })).text();
     expect(raw).toContain(
-      "<sf:TipoUsoPosibleSoloVerifactu>S&lt;&amp;</sf:TipoUsoPosibleSoloVerifactu>",
+      "<sf:NombreSistemaInformatico>Waitron &lt;&amp;</sf:NombreSistemaInformatico>",
     );
   });
 

@@ -35,6 +35,9 @@ export type ValidationCode =
   | "IDOTRO_IDTYPE"
   | "IDOTRO_ID_SHAPE"
   | "XSD_ENUM_VALUE"
+  | "XSD_TEXT_LENGTH"
+  | "XSD_OCCURRENCE"
+  | "ENCADENAMIENTO_CHOICE"
   | "CONTROL_CHAR"
   | "HUELLA_ANTERIOR_FORMAT"
   | "HUELLA_ANTERIOR_EQUALS_CURRENT"
@@ -258,6 +261,26 @@ const IGIC_REGIME_CODES = new Set([
   "21",
 ]);
 const IPSI_REGIME_CODES = new Set(["01", "08", "11", "18", "19", "20"]);
+const XSD_REGIME_CODES = [
+  "01",
+  "02",
+  "03",
+  "04",
+  "05",
+  "06",
+  "07",
+  "08",
+  "09",
+  "10",
+  "11",
+  "14",
+  "15",
+  "17",
+  "18",
+  "19",
+  "20",
+  "21",
+] as const;
 
 function isWithin(date: number | undefined, first: number, last: number): boolean {
   return date === undefined || (date >= first && date <= last);
@@ -504,6 +527,32 @@ export function validate(
       add("XSD_ENUM_VALUE", field, `${field} must be ${description}`);
     }
   };
+  const checkXsdText = (field: string, value: unknown, max: number) => {
+    if (typeof value === "string" && xmlCharacterCount(value) > max) {
+      add("XSD_TEXT_LENGTH", field, `${field} must contain at most ${max} characters`);
+    }
+  };
+  const checkXsdOccurrence = (field: string, child: string, values: readonly unknown[]) => {
+    if (values.length > 1000) {
+      add("XSD_OCCURRENCE", field, `${field}.${child} may contain at most 1000 entries`);
+    }
+  };
+
+  checkXsdEnum("IDVersion", record.IDVersion, ["1.0"], "1.0", true);
+  checkXsdText("RefExterna", record.RefExterna, 60);
+
+  const hasFirstRecord = record.Encadenamiento?.PrimerRegistro !== undefined;
+  const hasPreviousRecord = record.Encadenamiento?.RegistroAnterior !== undefined;
+  if (
+    hasFirstRecord === hasPreviousRecord ||
+    (hasFirstRecord && record.Encadenamiento.PrimerRegistro !== "S")
+  ) {
+    add(
+      "ENCADENAMIENTO_CHOICE",
+      "Encadenamiento",
+      "Encadenamiento must contain exactly PrimerRegistro S or RegistroAnterior",
+    );
+  }
 
   const emisor = isAlta(record)
     ? record.IDFactura.IDEmisorFactura
@@ -588,7 +637,7 @@ export function validate(
   }
   const sistema = record.SistemaInformatico;
   const sistemaId = sistema.IdSistemaInformatico ?? "";
-  if (sistemaId.length !== 2) {
+  if (xmlCharacterCount(sistemaId) !== 2) {
     add(
       "ID_SISTEMA_LENGTH",
       "IdSistemaInformatico",
@@ -607,7 +656,7 @@ export function validate(
       "SistemaInformatico.NombreSistemaInformatico",
       "NombreSistemaInformatico must have content",
     );
-  } else if (sistema.NombreSistemaInformatico.length > 30) {
+  } else if (xmlCharacterCount(sistema.NombreSistemaInformatico) > 30) {
     add(
       "NOMBRE_SISTEMA_LENGTH",
       "SistemaInformatico.NombreSistemaInformatico",
@@ -628,6 +677,20 @@ export function validate(
       "TipoUsoPosibleMultiOT must have content",
     );
   }
+  checkXsdText("SistemaInformatico.NombreRazon", sistema.NombreRazon, 120);
+  checkXsdText("SistemaInformatico.Version", sistema.Version, 50);
+  checkXsdText("SistemaInformatico.NumeroInstalacion", sistema.NumeroInstalacion, 100);
+  for (const name of [
+    "TipoUsoPosibleSoloVerifactu",
+    "TipoUsoPosibleMultiOT",
+    "IndicadorMultiplesOT",
+  ] as const) {
+    const value = sistema[name];
+    if (name === "IndicadorMultiplesOT" || trimValue(value).length > 0) {
+      checkXsdEnum(`SistemaInformatico.${name}`, value, ["S", "N"], "S or N", true);
+    }
+  }
+  checkXsdEnum("TipoHuella", record.TipoHuella, ["01"], "01", true);
   const sistemaHasNif = sistema.NIF !== undefined;
   const sistemaHasIdOtro = sistema.IDOtro !== undefined;
   if (sistemaHasNif === sistemaHasIdOtro) {
@@ -729,6 +792,7 @@ export function validate(
       const generador = record.Generador;
       const hasNif = generador.NIF !== undefined;
       const hasIdOtro = generador.IDOtro !== undefined;
+      checkXsdText("Generador.NombreRazon", generador.NombreRazon, 120);
       checkNoControlChars("Generador.NombreRazon", generador.NombreRazon);
       checkNoControlChars("Generador.IDOtro.ID", generador.IDOtro?.ID);
       if (hasNif === hasIdOtro) {
@@ -801,6 +865,15 @@ export function validate(
     ["D", "T"],
     "D or T",
   );
+  for (const name of [
+    "FacturaSimplificadaArt7273",
+    "FacturaSinIdentifDestinatarioArt61d",
+    "Macrodato",
+    "Cupon",
+  ] as const) {
+    checkXsdEnum(name, record[name], ["S", "N"], "S or N");
+  }
+  checkXsdText("NombreRazonEmisor", record.NombreRazonEmisor, 120);
 
   if (record.FechaOperacion !== undefined && operacionOrdinal === undefined) {
     add("FECHA_FORMAT", "FechaOperacion", "Date must be DD-MM-YYYY");
@@ -922,6 +995,13 @@ export function validate(
       "FacturasRectificadas, when present, must carry at least one IDFacturaRectificada",
     );
   }
+  if (record.FacturasRectificadas !== undefined) {
+    checkXsdOccurrence(
+      "FacturasRectificadas",
+      "IDFacturaRectificada",
+      record.FacturasRectificadas.IDFacturaRectificada,
+    );
+  }
   record.FacturasRectificadas?.IDFacturaRectificada.forEach((invoice, index) => {
     const field = `FacturasRectificadas.IDFacturaRectificada[${index}]`;
     checkNif(`${field}.IDEmisorFactura`, invoice.IDEmisorFactura);
@@ -942,6 +1022,13 @@ export function validate(
       "FACTURAS_SUSTITUIDAS_EMPTY",
       "FacturasSustituidas",
       "FacturasSustituidas, when present, must carry at least one IDFacturaSustituida",
+    );
+  }
+  if (record.FacturasSustituidas !== undefined) {
+    checkXsdOccurrence(
+      "FacturasSustituidas",
+      "IDFacturaSustituida",
+      record.FacturasSustituidas.IDFacturaSustituida,
     );
   }
   record.FacturasSustituidas?.IDFacturaSustituida.forEach((invoice, index) => {
@@ -1054,6 +1141,7 @@ export function validate(
     const tercero = record.Tercero;
     const hasNif = tercero.NIF !== undefined;
     const hasIdOtro = tercero.IDOtro !== undefined;
+    checkXsdText("Tercero.NombreRazon", tercero.NombreRazon, 120);
     checkNoControlChars("Tercero.NombreRazon", tercero.NombreRazon);
     checkNoControlChars("Tercero.IDOtro.ID", tercero.IDOtro?.ID);
     if (hasNif === hasIdOtro) {
@@ -1125,6 +1213,9 @@ export function validate(
       "Destinatarios, when present, must carry at least one IDDestinatario",
     );
   }
+  if (record.Destinatarios !== undefined) {
+    checkXsdOccurrence("Destinatarios", "IDDestinatario", record.Destinatarios.IDDestinatario);
+  }
   // IDDestinatario is maxOccurs=1000, so every identity is validated and each
   // issue carries the recipient index. Free text is checked before XML output;
   // NIF uses the shared Spanish identifier checks, while the IDOtro branch
@@ -1133,6 +1224,7 @@ export function validate(
     const field = `Destinatarios.IDDestinatario[${index}]`;
     const hasNif = destinatario.NIF !== undefined;
     const hasIdOtro = destinatario.IDOtro !== undefined;
+    checkXsdText(`${field}.NombreRazon`, destinatario.NombreRazon, 120);
     checkNoControlChars(`${field}.NombreRazon`, destinatario.NombreRazon);
     if (destinatario.NIF !== undefined) checkNif(`${field}.NIF`, destinatario.NIF);
     checkNoControlChars(`${field}.IDOtro.ID`, destinatario.IDOtro?.ID);
@@ -1179,7 +1271,7 @@ export function validate(
     }
   });
 
-  if (record.DescripcionOperacion.length > 500) {
+  if (xmlCharacterCount(record.DescripcionOperacion) > 500) {
     add(
       "DESCRIPCION_LENGTH",
       "DescripcionOperacion",
@@ -1240,6 +1332,33 @@ export function validate(
   let hasRegime10 = false;
   let hasRegime14 = false;
   record.Desglose.forEach((detalle, index) => {
+    const field = `Desglose[${index}]`;
+    checkXsdEnum(
+      `${field}.Impuesto`,
+      detalle.Impuesto,
+      ["01", "02", "03", "05"],
+      "01, 02, 03 or 05",
+    );
+    if (detalle.ClaveRegimen !== "") {
+      checkXsdEnum(
+        `${field}.ClaveRegimen`,
+        detalle.ClaveRegimen,
+        XSD_REGIME_CODES,
+        "an AEAT regime code",
+      );
+    }
+    checkXsdEnum(
+      `${field}.CalificacionOperacion`,
+      detalle.CalificacionOperacion,
+      ["S1", "S2", "N1", "N2"],
+      "S1, S2, N1 or N2",
+    );
+    checkXsdEnum(
+      `${field}.OperacionExenta`,
+      detalle.OperacionExenta,
+      ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8"],
+      "E1 through E8",
+    );
     // AEAT validation §3.1.3.15.6 requires ClaveRegimen for IVA, IPSI and
     // IGIC (including omitted Impuesto, which means IVA) and forbids it otherwise.
     // IPSI remains an admissible warning through 2026, then becomes a rejection.
@@ -1333,7 +1452,6 @@ export function validate(
       }
     }
 
-    const field = `Desglose[${index}]`;
     const isIvaOrIgic = isIva || isIgic;
     // A line that carries both choice branches is already invalid. Do not
     // prescribe S1-only fields that the exemption branch simultaneously forbids.
