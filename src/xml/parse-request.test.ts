@@ -613,7 +613,7 @@ describe("parseConsulta full header and date choice", () => {
     for (const date of ["", "20/07/2026"]) {
       const xml = valid.replace(
         "<sf:FechaExpedicionFactura>20-07-2026</sf:FechaExpedicionFactura>",
-        date,
+        `<sf:FechaExpedicionFactura>${date}</sf:FechaExpedicionFactura>`,
       );
       expect(() => parseConsulta(xml)).toThrow(
         "Consulta ClavePaginacion.FechaExpedicionFactura must be DD-MM-YYYY",
@@ -629,6 +629,26 @@ describe("parseConsulta full header and date choice", () => {
     });
     const xml = valid.replace("20-07-2026", "٢٠-٠٧-٢٠٢٦");
     expect(parseConsulta(xml).filtro.FechaExpedicionFactura).toBe("٢٠-٠٧-٢٠٢٦");
+  });
+
+  it("accepts Unicode decimal digits in a parsed consultation year", () => {
+    const valid = serializeConsulta(cabecera, { Ejercicio: "2026", Periodo: "07" });
+    const xml = valid.replace(
+      "<sf:Ejercicio>2026</sf:Ejercicio>",
+      "<sf:Ejercicio>٢٠٢٦</sf:Ejercicio>",
+    );
+    expect(parseConsulta(xml).filtro.Ejercicio).toBe("٢٠٢٦");
+  });
+
+  it("reports a missing pagination invoice number before its missing date", () => {
+    const valid = serializeConsulta(cabecera, { Ejercicio: "2026", Periodo: "07" });
+    const xml = valid.replace(
+      "</sfLRC:FiltroConsulta>",
+      "<sfLRC:ClavePaginacion></sfLRC:ClavePaginacion></sfLRC:FiltroConsulta>",
+    );
+    expect(() => parseConsulta(xml)).toThrow(
+      "Consulta ClavePaginacion.NumSerieFactura must be present and contain 1 to 60 characters",
+    );
   });
 
   it("round-trips an issuer header with IndicadorRepresentante", () => {

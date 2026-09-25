@@ -388,17 +388,17 @@ export function parseConsulta(xml: string): { cabecera: CabeceraConsulta; filtro
   }
   if (
     f.ClavePaginacion !== undefined &&
-    !isValidConsultaFecha(f.ClavePaginacion.FechaExpedicionFactura)
-  ) {
-    throw new Error("Consulta ClavePaginacion.FechaExpedicionFactura must be DD-MM-YYYY");
-  }
-  if (
-    f.ClavePaginacion !== undefined &&
     !isValidConsultaNumSerieFactura(f.ClavePaginacion.NumSerieFactura)
   ) {
     throw new Error(
       "Consulta ClavePaginacion.NumSerieFactura must be present and contain 1 to 60 characters",
     );
+  }
+  if (
+    f.ClavePaginacion !== undefined &&
+    !isValidConsultaFecha(f.ClavePaginacion.FechaExpedicionFactura)
+  ) {
+    throw new Error("Consulta ClavePaginacion.FechaExpedicionFactura must be DD-MM-YYYY");
   }
   const filtro: ConsultaFiltro = {
     Ejercicio: f.PeriodoImputacion.Ejercicio,

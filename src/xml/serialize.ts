@@ -108,9 +108,9 @@ export function isValidConsultaPeriodo(value: unknown): value is string {
   return typeof value === "string" && /^(?:0[1-9]|1[0-2])$/.test(value);
 }
 
-/** sf:YearType requires four digits in a consultation's imputation period. */
+/** sf:YearType uses XML Schema \d, which includes Unicode decimal digits. */
 export function isValidConsultaEjercicio(value: unknown): value is string {
-  return typeof value === "string" && /^[0-9]{4}$/.test(value);
+  return typeof value === "string" && /^\p{Nd}{4}$/u.test(value);
 }
 
 /** sf:fecha fixes the shape; its \d includes Unicode decimal digits, not calendar validity. */
@@ -664,17 +664,17 @@ export function serializeConsulta(cabecera: CabeceraConsulta, filtro: ConsultaFi
   }
   if (
     filtro.ClavePaginacion !== undefined &&
-    !isValidConsultaFecha(filtro.ClavePaginacion.FechaExpedicionFactura)
-  ) {
-    throw new Error("Consulta ClavePaginacion.FechaExpedicionFactura must be DD-MM-YYYY");
-  }
-  if (
-    filtro.ClavePaginacion !== undefined &&
     !isValidConsultaNumSerieFactura(filtro.ClavePaginacion.NumSerieFactura)
   ) {
     throw new Error(
       "Consulta ClavePaginacion.NumSerieFactura must be present and contain 1 to 60 characters",
     );
+  }
+  if (
+    filtro.ClavePaginacion !== undefined &&
+    !isValidConsultaFecha(filtro.ClavePaginacion.FechaExpedicionFactura)
+  ) {
+    throw new Error("Consulta ClavePaginacion.FechaExpedicionFactura must be DD-MM-YYYY");
   }
   assertConsultaResponseOptions(cabecera, filtro);
   if (filtro.FechaExpedicionFactura !== undefined && filtro.RangoFechaExpedicion !== undefined) {

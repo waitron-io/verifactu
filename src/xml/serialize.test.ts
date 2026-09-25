@@ -1334,6 +1334,12 @@ describe("serializeConsulta", () => {
     );
   });
 
+  it("accepts Unicode decimal digits in a consultation year", () => {
+    expect(serializeConsulta(CABECERA, { Ejercicio: "٢٠٢٦", Periodo: "07" })).toContain(
+      "<sf:Ejercicio>٢٠٢٦</sf:Ejercicio>",
+    );
+  });
+
   it.each(["00", "1", "13", "AA"])("rejects consultation period %s outside 01–12", (periodo) => {
     expect(() => serializeConsulta(CABECERA, { Ejercicio: "2024", Periodo: periodo })).toThrow(
       "Consulta Periodo must be 01 through 12",
@@ -1490,6 +1496,18 @@ describe("serializeConsulta", () => {
         }),
       ).toThrow("Consulta ClavePaginacion.FechaExpedicionFactura must be DD-MM-YYYY");
     }
+  });
+
+  it("reports a missing pagination invoice number before its missing date", () => {
+    expect(() =>
+      serializeConsulta(CABECERA, {
+        Ejercicio: "2026",
+        Periodo: "07",
+        ClavePaginacion: {} as ConsultaFiltro["ClavePaginacion"],
+      }),
+    ).toThrow(
+      "Consulta ClavePaginacion.NumSerieFactura must be present and contain 1 to 60 characters",
+    );
   });
 
   it("accepts Unicode decimal digits allowed by the consultation date XSD", () => {
