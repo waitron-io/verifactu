@@ -5,8 +5,16 @@ import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
 import { describe, expect, it } from "vitest";
 import { CABECERA, ALTA_INPUT, SISTEMA } from "../test/fixtures.js";
 import { buildAltaRecord, buildAnulacionRecord } from "./records.js";
+import { createFakeAeat, keyOf } from "./testing/fake-aeat.js";
 import { AEAT_COUNTRY_TYPE2_CODES, isValidCountryType2 } from "./xml/country-type2.js";
-import { NS_LR, NS_LRC, NS_SF, serializeConsulta, serializeEnvio } from "./xml/serialize.js";
+import {
+  NS_LR,
+  NS_LRC,
+  NS_SF,
+  serializeConsulta,
+  serializeEnvio,
+  type Cabecera,
+} from "./xml/serialize.js";
 
 const SOAP_NS = "http://schemas.xmlsoap.org/soap/envelope/";
 const SIGNATURE_NS = "http://www.w3.org/2000/09/xmldsig#";
@@ -17,8 +25,13 @@ const ENVIO_XSD = fileURLToPath(new URL("../schemas/SuministroLR.xsd", import.me
 const RESPUESTA_CONSULTA_XSD = fileURLToPath(
   new URL("../schemas/RespuestaConsultaLR.xsd", import.meta.url),
 );
+const RESPUESTA_SUMINISTRO_XSD = fileURLToPath(
+  new URL("../schemas/RespuestaSuministro.xsd", import.meta.url),
+);
 const NS_RC =
   "https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/RespuestaConsultaLR.xsd";
+const NS_RS =
+  "https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/RespuestaSuministro.xsd";
 
 function soapBodyElement(xml: string): string {
   const document = new DOMParser().parseFromString(xml, "text/xml");
@@ -1198,5 +1211,326 @@ describe("consultation response identity fields against AEAT XSDs", () => {
       const result = schemaResult(RESPUESTA_CONSULTA_XSD, invalidResponse);
       expect(result.status, result.stderr).not.toBe(0);
     }
+  });
+});
+
+describe("filing response fields against AEAT XSDs", () => {
+  const line =
+    `<sfR:RespuestaLinea><sfR:IDFactura>` +
+    `<sf:IDEmisorFactura>89890001K</sf:IDEmisorFactura>` +
+    `<sf:NumSerieFactura>INV/42</sf:NumSerieFactura>` +
+    `<sf:FechaExpedicionFactura>20-07-2026</sf:FechaExpedicionFactura>` +
+    `</sfR:IDFactura><sfR:Operacion><sf:TipoOperacion>Alta</sf:TipoOperacion>` +
+    `<sf:Subsanacion>S</sf:Subsanacion><sf:RechazoPrevio>X</sf:RechazoPrevio>` +
+    `<sf:SinRegistroPrevio>N</sf:SinRegistroPrevio></sfR:Operacion>` +
+    `<sfR:RefExterna>${"R".repeat(60)}</sfR:RefExterna>` +
+    `<sfR:EstadoRegistro>AceptadoConErrores</sfR:EstadoRegistro>` +
+    `<sfR:CodigoErrorRegistro>2004</sfR:CodigoErrorRegistro>` +
+    `<sfR:DescripcionErrorRegistro>${"E".repeat(1500)}</sfR:DescripcionErrorRegistro>` +
+    `<sfR:RegistroDuplicado><sf:IdPeticionRegistroDuplicado>${"P".repeat(20)}</sf:IdPeticionRegistroDuplicado>` +
+    `<sf:EstadoRegistroDuplicado>AceptadaConErrores</sf:EstadoRegistroDuplicado>` +
+    `<sf:CodigoErrorRegistro>3000</sf:CodigoErrorRegistro>` +
+    `<sf:DescripcionErrorRegistro>${"D".repeat(500)}</sf:DescripcionErrorRegistro>` +
+    `</sfR:RegistroDuplicado></sfR:RespuestaLinea>`;
+  const response =
+    `<sfR:RespuestaRegFactuSistemaFacturacion xmlns:sfR="${NS_RS}" xmlns:sf="${NS_SF}">` +
+    `<sfR:CSV>CSV-42</sfR:CSV><sfR:DatosPresentacion>` +
+    `<sf:NIFPresentador>89890001K</sf:NIFPresentador>` +
+    `<sf:TimestampPresentacion>2026-07-21T09:00:00+02:00</sf:TimestampPresentacion>` +
+    `</sfR:DatosPresentacion><sfR:Cabecera>` +
+    `<sf:ObligadoEmision><sf:NombreRazon>Issuer</sf:NombreRazon><sf:NIF>89890001K</sf:NIF></sf:ObligadoEmision>` +
+    `<sf:Representante><sf:NombreRazon>Representative</sf:NombreRazon><sf:NIF>99999999R</sf:NIF></sf:Representante>` +
+    `<sf:RemisionVoluntaria><sf:FechaFinVeriFactu>31-12-2026</sf:FechaFinVeriFactu>` +
+    `<sf:Incidencia>S</sf:Incidencia></sf:RemisionVoluntaria></sfR:Cabecera>` +
+    `<sfR:TiempoEsperaEnvio>9999</sfR:TiempoEsperaEnvio>` +
+    `<sfR:EstadoEnvio>ParcialmenteCorrecto</sfR:EstadoEnvio>${line}` +
+    `</sfR:RespuestaRegFactuSistemaFacturacion>`;
+
+  it("accepts every filing-response field at its text boundary", () => {
+    const result = schemaResult(RESPUESTA_SUMINISTRO_XSD, response);
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it("keeps the fake AEAT filing response valid against the pinned response schema", async () => {
+    const fake = createFakeAeat();
+    const request = serializeEnvio(CABECERA, [{ RegistroAlta: buildAltaRecord(ALTA_INPUT) }]);
+    const response = await fake.fetch("https://fake.aeat.test/soap", {
+      method: "POST",
+      body: request,
+    });
+    const body = soapBodyElement(await response.text());
+    const result = schemaResult(RESPUESTA_SUMINISTRO_XSD, body);
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it("keeps accepted, rejected, and duplicate fake responses schema-valid", async () => {
+    const record = buildAltaRecord(ALTA_INPUT);
+
+    const accepted = createFakeAeat();
+    const acceptedRequest = serializeEnvio(CABECERA, [{ RegistroAlta: record }]);
+    const acceptedFirst = await accepted.fetch("https://fake.aeat.test/soap", {
+      method: "POST",
+      body: acceptedRequest,
+    });
+    const acceptedBody = soapBodyElement(await acceptedFirst.text());
+    expect(schemaResult(RESPUESTA_SUMINISTRO_XSD, acceptedBody).status).toBe(0);
+    const duplicate = await accepted.fetch("https://fake.aeat.test/soap", {
+      method: "POST",
+      body: acceptedRequest,
+    });
+    const duplicateBody = soapBodyElement(await duplicate.text());
+    const duplicateResult = schemaResult(RESPUESTA_SUMINISTRO_XSD, duplicateBody);
+    expect(duplicateResult.status, duplicateResult.stderr).toBe(0);
+
+    const rejected = createFakeAeat();
+    rejected.reject(keyOf(record), 1180, "Forced rejection");
+    const rejectedResponse = await rejected.fetch("https://fake.aeat.test/soap", {
+      method: "POST",
+      body: acceptedRequest,
+    });
+    const rejectedBody = soapBodyElement(await rejectedResponse.text());
+    const rejectedResult = schemaResult(RESPUESTA_SUMINISTRO_XSD, rejectedBody);
+    expect(rejectedResult.status, rejectedResult.stderr).toBe(0);
+  });
+
+  it.each([
+    [
+      "voluntary",
+      {
+        ObligadoEmision: { NombreRazon: "Issuer & Co", NIF: "89890001K" },
+        Representante: { NombreRazon: "Representative", NIF: "99999999R" },
+        RemisionVoluntaria: { FechaFinVeriFactu: "31-12-2026", Incidencia: "S" },
+      },
+      [
+        "<sf:NombreRazon>Issuer &amp; Co</sf:NombreRazon>",
+        "<sf:Representante>",
+        "<sf:FechaFinVeriFactu>31-12-2026</sf:FechaFinVeriFactu>",
+        "<sf:Incidencia>S</sf:Incidencia>",
+      ],
+    ],
+    [
+      "under-requirement",
+      {
+        ObligadoEmision: { NombreRazon: "Issuer", NIF: "89890001K" },
+        RemisionRequerimiento: { RefRequerimiento: "REQ-42", FinRequerimiento: "N" },
+      },
+      [
+        "<sf:RemisionRequerimiento>",
+        "<sf:RefRequerimiento>REQ-42</sf:RefRequerimiento>",
+        "<sf:FinRequerimiento>N</sf:FinRequerimiento>",
+      ],
+    ],
+  ] as const)(
+    "echoes a schema-valid %s header in the fake response",
+    async (_case, header, fields) => {
+      const fake = createFakeAeat();
+      const request = serializeEnvio(header as Cabecera, [
+        { RegistroAlta: buildAltaRecord(ALTA_INPUT) },
+      ]);
+      const raw = await (
+        await fake.fetch("https://fake.aeat.test/soap", { method: "POST", body: request })
+      ).text();
+      const body = soapBodyElement(raw);
+      const result = schemaResult(RESPUESTA_SUMINISTRO_XSD, body);
+      expect(result.status, result.stderr).toBe(0);
+      for (const field of fields) expect(raw).toContain(field);
+    },
+  );
+
+  it.each([
+    ["Cabecera", /<sfR:Cabecera>[\s\S]*?<\/sfR:Cabecera>/],
+    ["TiempoEsperaEnvio", /<sfR:TiempoEsperaEnvio>[^<]*<\/sfR:TiempoEsperaEnvio>/],
+    ["EstadoEnvio", /<sfR:EstadoEnvio>[^<]*<\/sfR:EstadoEnvio>/],
+  ] as const)("requires the response %s element", (name, pattern) => {
+    const invalid = response.replace(pattern, "");
+    const result = schemaResult(RESPUESTA_SUMINISTRO_XSD, invalid);
+    expect(result.status, result.stderr).not.toBe(0);
+    expect(result.stderr).toContain(name);
+  });
+
+  it("requires response base fields and lines in schema order", () => {
+    const invalid = response
+      .replace(/<sfR:TiempoEsperaEnvio>[\s\S]*?<\/sfR:TiempoEsperaEnvio>/, "")
+      .replace(
+        "<sfR:EstadoEnvio>ParcialmenteCorrecto</sfR:EstadoEnvio>",
+        "<sfR:EstadoEnvio>ParcialmenteCorrecto</sfR:EstadoEnvio><sfR:TiempoEsperaEnvio>9999</sfR:TiempoEsperaEnvio>",
+      );
+    const result = schemaResult(RESPUESTA_SUMINISTRO_XSD, invalid);
+    expect(result.status, result.stderr).not.toBe(0);
+    expect(result.stderr).toContain("TiempoEsperaEnvio");
+  });
+
+  it("requires optional response-base fields in schema order", () => {
+    const csv = `<sfR:CSV>CSV-42</sfR:CSV>`;
+    const presentation = response.match(
+      /<sfR:DatosPresentacion>[\s\S]*?<\/sfR:DatosPresentacion>/,
+    )?.[0];
+    if (!presentation) throw new Error("Response fixture lacks DatosPresentacion");
+    const result = schemaResult(
+      RESPUESTA_SUMINISTRO_XSD,
+      response.replace(csv + presentation, presentation + csv),
+    );
+    expect(result.status, result.stderr).not.toBe(0);
+    expect(result.stderr).toContain("CSV");
+  });
+
+  it.each([
+    ["CSV", /<sfR:CSV>[\s\S]*?<\/sfR:CSV>/],
+    ["DatosPresentacion", /<sfR:DatosPresentacion>[\s\S]*?<\/sfR:DatosPresentacion>/],
+  ] as const)("rejects a repeated optional %s block", (name, pattern) => {
+    const block = response.match(pattern)?.[0];
+    if (!block) throw new Error(`Response fixture lacks ${name}`);
+    const result = schemaResult(RESPUESTA_SUMINISTRO_XSD, response.replace(block, block + block));
+    expect(result.status, result.stderr).not.toBe(0);
+    expect(result.stderr).toContain(name);
+  });
+
+  it.each([
+    ["IDFactura", /<sfR:IDFactura>[\s\S]*?<\/sfR:IDFactura>/],
+    ["Operacion", /<sfR:Operacion>[\s\S]*?<\/sfR:Operacion>/],
+    ["EstadoRegistro", /<sfR:EstadoRegistro>[^<]*<\/sfR:EstadoRegistro>/],
+  ] as const)("requires RespuestaLinea.%s", (name, pattern) => {
+    const result = schemaResult(RESPUESTA_SUMINISTRO_XSD, response.replace(pattern, ""));
+    expect(result.status, result.stderr).not.toBe(0);
+    expect(result.stderr).toContain(name);
+  });
+
+  it("requires response-line fields in schema order", () => {
+    const operation = line.match(/<sfR:Operacion>[\s\S]*?<\/sfR:Operacion>/)?.[0];
+    const reference = line.match(/<sfR:RefExterna>[\s\S]*?<\/sfR:RefExterna>/)?.[0];
+    if (!operation || !reference) throw new Error("Response fixture lacks operation or reference");
+    const invalidLine = line.replace(operation + reference, reference + operation);
+    const result = schemaResult(RESPUESTA_SUMINISTRO_XSD, response.replace(line, invalidLine));
+    expect(result.status, result.stderr).not.toBe(0);
+    expect(result.stderr).toContain("Operacion");
+  });
+
+  it("accepts 1000 response lines and rejects the 1001st", () => {
+    const minimalLine =
+      `<sfR:RespuestaLinea><sfR:IDFactura>` +
+      `<sf:IDEmisorFactura>89890001K</sf:IDEmisorFactura>` +
+      `<sf:NumSerieFactura>INV/42</sf:NumSerieFactura>` +
+      `<sf:FechaExpedicionFactura>20-07-2026</sf:FechaExpedicionFactura>` +
+      `</sfR:IDFactura><sfR:Operacion><sf:TipoOperacion>Alta</sf:TipoOperacion></sfR:Operacion>` +
+      `<sfR:EstadoRegistro>Correcto</sfR:EstadoRegistro></sfR:RespuestaLinea>`;
+    const prefix = response.slice(0, response.indexOf(line));
+    const suffix = `</sfR:RespuestaRegFactuSistemaFacturacion>`;
+    const maximum = prefix + minimalLine.repeat(1000) + suffix;
+    const valid = schemaResult(RESPUESTA_SUMINISTRO_XSD, maximum);
+    expect(valid.status, valid.stderr).toBe(0);
+    const invalid = schemaResult(
+      RESPUESTA_SUMINISTRO_XSD,
+      prefix + minimalLine.repeat(1001) + suffix,
+    );
+    expect(invalid.status, invalid.stderr).not.toBe(0);
+    expect(invalid.stderr).toContain("RespuestaLinea");
+  });
+
+  it.each([
+    ["EstadoEnvio", "ParcialmenteCorrecto", "Other"],
+    ["EstadoRegistro", "AceptadoConErrores", "Anulado"],
+    ["TipoOperacion", "Alta", "Other"],
+    ["Subsanacion", "S", "X"],
+    ["RechazoPrevio", "X", "Other"],
+    ["SinRegistroPrevio", "N", "X"],
+    ["EstadoRegistroDuplicado", "AceptadaConErrores", "Correcto"],
+  ] as const)("rejects an unfamiliar %s enum", (field, valid, invalid) => {
+    const mutated = response
+      .replace(`<sf:${field}>${valid}</sf:${field}>`, `<sf:${field}>${invalid}</sf:${field}>`)
+      .replace(`<sfR:${field}>${valid}</sfR:${field}>`, `<sfR:${field}>${invalid}</sfR:${field}>`);
+    expect(mutated).not.toBe(response);
+    const result = schemaResult(RESPUESTA_SUMINISTRO_XSD, mutated);
+    expect(result.status, result.stderr).not.toBe(0);
+    expect(result.stderr).toContain(field);
+  });
+
+  it.each([
+    ["EstadoEnvio", "ParcialmenteCorrecto", ["Correcto", "ParcialmenteCorrecto", "Incorrecto"]],
+    ["EstadoRegistro", "AceptadoConErrores", ["Correcto", "AceptadoConErrores", "Incorrecto"]],
+    ["TipoOperacion", "Alta", ["Alta", "Anulacion"]],
+    ["Subsanacion", "S", ["S", "N"]],
+    ["RechazoPrevio", "X", ["S", "N", "X"]],
+    ["SinRegistroPrevio", "N", ["S", "N"]],
+    [
+      "EstadoRegistroDuplicado",
+      "AceptadaConErrores",
+      ["Correcta", "AceptadaConErrores", "Anulada"],
+    ],
+  ] as const)("accepts every published %s value", (field, current, values) => {
+    for (const value of values) {
+      const mutated = response
+        .replace(`<sf:${field}>${current}</sf:${field}>`, `<sf:${field}>${value}</sf:${field}>`)
+        .replace(
+          `<sfR:${field}>${current}</sfR:${field}>`,
+          `<sfR:${field}>${value}</sfR:${field}>`,
+        );
+      const result = schemaResult(RESPUESTA_SUMINISTRO_XSD, mutated);
+      expect(result.status, `${field}=${value}: ${result.stderr}`).toBe(0);
+    }
+  });
+
+  it.each([
+    ["NIFPresentador", "89890001K", "12345678"],
+    ["TimestampPresentacion", "2026-07-21T09:00:00+02:00", "21-07-2026 09:00:00"],
+    ["NumSerieFactura", "INV/42", "X".repeat(61)],
+    ["FechaExpedicionFactura", "20-07-2026", "2026/07/20"],
+    ["RefExterna", "R".repeat(60), "R".repeat(61)],
+    ["DescripcionErrorRegistro", "E".repeat(1500), "E".repeat(1501)],
+    ["IdPeticionRegistroDuplicado", "P".repeat(20), "P".repeat(21)],
+  ] as const)("rejects an XSD-invalid %s boundary", (field, valid, invalid) => {
+    const mutated = response.replace(valid, invalid);
+    expect(mutated).not.toBe(response);
+    const result = schemaResult(RESPUESTA_SUMINISTRO_XSD, mutated);
+    expect(result.status, result.stderr).not.toBe(0);
+    expect(result.stderr).toContain(field);
+  });
+
+  it("rejects an overlong duplicate description independently of the outer description", () => {
+    const mutated = response.replace("D".repeat(500), "D".repeat(501));
+    const result = schemaResult(RESPUESTA_SUMINISTRO_XSD, mutated);
+    expect(result.status, result.stderr).not.toBe(0);
+    expect(result.stderr).toContain("DescripcionErrorRegistro");
+  });
+
+  it.each([
+    ["TiempoEsperaEnvio", "9999", "10000"],
+    ["CodigoErrorRegistro", "2004", "2004.5"],
+  ] as const)("rejects an invalid numeric %s", (field, valid, invalid) => {
+    const mutated = response.replace(`>${valid}<`, `>${invalid}<`);
+    const result = schemaResult(RESPUESTA_SUMINISTRO_XSD, mutated);
+    expect(result.status, result.stderr).not.toBe(0);
+    expect(result.stderr).toContain(field);
+  });
+
+  it("rejects a fractional duplicate-detail error code", () => {
+    const result = schemaResult(RESPUESTA_SUMINISTRO_XSD, response.replace(">3000<", ">3000.5<"));
+    expect(result.status, result.stderr).not.toBe(0);
+    expect(result.stderr).toContain("CodigoErrorRegistro");
+  });
+
+  it.each([
+    [
+      "IdPeticionRegistroDuplicado",
+      `<sf:IdPeticionRegistroDuplicado>${"P".repeat(20)}</sf:IdPeticionRegistroDuplicado>`,
+    ],
+    [
+      "EstadoRegistroDuplicado",
+      `<sf:EstadoRegistroDuplicado>AceptadaConErrores</sf:EstadoRegistroDuplicado>`,
+    ],
+  ] as const)("requires RegistroDuplicado.%s", (name, element) => {
+    const result = schemaResult(RESPUESTA_SUMINISTRO_XSD, response.replace(element, ""));
+    expect(result.status, result.stderr).not.toBe(0);
+    expect(result.stderr).toContain(name);
+  });
+
+  it("requires duplicate-detail children in their declared order", () => {
+    const petition = `<sf:IdPeticionRegistroDuplicado>${"P".repeat(20)}</sf:IdPeticionRegistroDuplicado>`;
+    const state = `<sf:EstadoRegistroDuplicado>AceptadaConErrores</sf:EstadoRegistroDuplicado>`;
+    const result = schemaResult(
+      RESPUESTA_SUMINISTRO_XSD,
+      response.replace(petition + state, state + petition),
+    );
+    expect(result.status, result.stderr).not.toBe(0);
+    expect(result.stderr).toContain("IdPeticionRegistroDuplicado");
   });
 });

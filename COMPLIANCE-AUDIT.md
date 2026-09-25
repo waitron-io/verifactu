@@ -6,15 +6,15 @@ is accepted. The [source watch](sources/README.md) checks for publication change
 
 ## Sources checked through 25 September 2026
 
-| AEAT publication                                                                                                                                                   | Version                                    | Audit status                                                                                                               |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| [Validation rules and errors](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Validaciones_Errores_Veri-Factu.pdf)          | 1.2.2, 8 April 2026                        | In progress; §§3.1.1–3.1.5 substantially checked, §§4–6 partial                                                            |
-| [Web service description](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_Descripcion_SWeb.pdf)             | 1.0.3, 28 July 2025                        | In progress; section coverage map below                                                                                    |
-| [Hash specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_especificaciones_huella_hash_registros.pdf) | 0.1.2, 27 August 2024                      | §§2–7 checked for alta and cancellation; event records out of scope; decimal-variant comparison pending AEAT preproduction |
-| [QR specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf)               | 0.5.0, 10 December 2025                    | §§2–10 and 12 classified; verifiable QR URL rules checked; printed layout and lookup responses outside library scope       |
-| [Developer FAQ](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/FAQs-Desarrolladores.pdf)                              | 1.3, 4 December 2025                       | Pending entry-by-entry review                                                                                              |
-| [Public FAQ](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes.html)                                 | Pages listed by AEAT on 22 September 2026  | Pending entry-by-entry review                                                                                              |
-| [XSD and WSDL files](schemas/README.md)                                                                                                                            | Versions and checksums in the linked index | Filing record, `SuministroLR.xsd`, and `ConsultaLR.xsd` inventories complete; response and cross-schema review open        |
+| AEAT publication                                                                                                                                                   | Version                                    | Audit status                                                                                                                                                |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Validation rules and errors](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Validaciones_Errores_Veri-Factu.pdf)          | 1.2.2, 8 April 2026                        | In progress; §§3.1.1–3.1.5 substantially checked, §§4–6 partial                                                                                             |
+| [Web service description](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_Descripcion_SWeb.pdf)             | 1.0.3, 28 July 2025                        | In progress; section coverage map below                                                                                                                     |
+| [Hash specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_especificaciones_huella_hash_registros.pdf) | 0.1.2, 27 August 2024                      | §§2–7 checked for alta and cancellation; event records out of scope; decimal-variant comparison pending AEAT preproduction                                  |
+| [QR specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf)               | 0.5.0, 10 December 2025                    | §§2–10 and 12 classified; verifiable QR URL rules checked; printed layout and lookup responses outside library scope                                        |
+| [Developer FAQ](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/FAQs-Desarrolladores.pdf)                              | 1.3, 4 December 2025                       | Pending entry-by-entry review                                                                                                                               |
+| [Public FAQ](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes.html)                                 | Pages listed by AEAT on 22 September 2026  | Pending entry-by-entry review                                                                                                                               |
+| [XSD and WSDL files](schemas/README.md)                                                                                                                            | Versions and checksums in the linked index | Filing record, `SuministroLR.xsd`, `ConsultaLR.xsd`, and `RespuestaSuministro.xsd` inventories complete; consultation response and cross-schema review open |
 
 ## Web-service description coverage map
 
@@ -207,16 +207,19 @@ not endpoint selection, certificate authorization, requirement validity, or live
 of typing it as a string. It preserves unfamiliar code values so one line cannot discard the
 entire batch response. The fake AEAT emits the block for accepted, rejected, and duplicate records.
 Parser and fake-AEAT tests cover both operation kinds, correction indicators, unfamiliar codes,
-and wire element order. The parser continues to accept an omitted block for partial test
-fixtures; it is not a full XSD validator and cannot establish that AEAT returned a schema-valid
-response. The fake's duplicate-detail block now uses the XSD's child-namespace qualification and order, with
+and wire element order. The parser continues to accept an omitted block so a malformed or future
+line cannot hide the batch's one-time CSV; it is not a full XSD validator and cannot establish
+that AEAT returned a schema-valid response. The fake's duplicate-detail block uses the XSD's
+child-namespace qualification and order, with
 a stable synthetic petition ID for the previously stored record. When a test deliberately hides
 the duplicate state, the fake omits the optional block rather than emitting an empty block with
 missing required children. `src/testing/fake-aeat.test.ts` checks the raw XML and both parsed
 paths. A submitted cancellation replaces the stored record and its petition ID; the fake's
-state-only `annul` hook keeps the original alta and petition ID. This does not establish
-whole-response schema validity: the fake still uses placeholder
-namespace URIs and does not emit every required envelope field, including `Cabecera`.
+state-only `annul` hook keeps the original alta and petition ID. The fake now emits the published
+response namespaces, echoes the submitted `Cabecera`, and places the wait, status, and lines in
+schema order. Offline tests validate accepted, rejected, duplicate, voluntary, and
+under-requirement fake responses against the pinned response XSD. That proves the tested fake XML,
+not live AEAT behavior.
 
 ### Global submission status — service description §§3, 6.5.2
 
@@ -245,6 +248,39 @@ unusable for scheduling. Focused parser and client tests cover missing, empty, n
 fractional, overlong, repeated, and nested values without returning `NaN`. The parser
 does not reconcile global and per-line values or validate the entire response XSD; the fake
 remains a transport test double, not proof of a schema-valid AEAT response.
+
+### Filing response fields — service description §6.4.4 and `RespuestaSuministro.xsd`
+
+The response schema orders optional `CSV` and `DatosPresentacion` before required `Cabecera`,
+`TiempoEsperaEnvio`, and `EstadoEnvio`, followed by zero to 1,000 response lines. A maximal fixture
+containing every optional field passes offline validation against the pinned schema and imports.
+Mutation probes independently reject missing or reordered required fields, a 1,001st line,
+unfamiliar enum values, fractional integer codes, and every published text boundary. Separate
+positive probes cover every value of `EstadoEnvio`, `EstadoRegistro`, `TipoOperacion`,
+`Subsanacion`, `RechazoPrevio`, `SinRegistroPrevio`, and `EstadoRegistroDuplicado`.
+
+| Published field             | Parser/fake behavior                                                                                                                                                                                     | Evidence and limit                                                                                                                                                                                        |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CSV`                       | Returns the literal when present; the fake omits it only for a wholly rejected batch                                                                                                                     | Parser/fake tests and response-XSD fixture; the XSD gives this string no length bound, and consulta cannot recover it                                                                                     |
+| `DatosPresentacion`         | Returns `NIFPresentador` and the literal `TimestampPresentacion`; rejects a repeated block, repeated/missing children, and an NIF whose length is not nine                                               | Parser and XSD tests; the parser requires a nonblank timestamp but leaves the full XML Schema `dateTime` lexical check to the XSD                                                                         |
+| `Cabecera`                  | The fake echoes every submitted issuer, representative, voluntary, or requirement field in schema order; the parser deliberately does not expose the echo because the caller already supplied the header | Raw fake-response assertions and offline XSD validation; capture the raw response if the echo is needed for diagnostics                                                                                   |
+| `TiempoEsperaEnvio`         | Returns a usable one-to-four-ASCII-digit value as seconds and preserves the raw parsed shape separately                                                                                                  | Parser tests cover usable and malformed shapes; the XSD itself permits an empty zero-to-four-digit string, which cannot schedule work                                                                     |
+| `EstadoEnvio`               | Preserves a trimmed raw string or `undefined`; the fake emits the three published values according to its batch model                                                                                    | Parser/fake tests plus all-enum XSD probes; unfamiliar/missing values remain visible so they cannot hide a CSV                                                                                            |
+| `RespuestaLinea` occurrence | Normalizes zero, one, or several lines to an array; the fake returns one line per submitted record                                                                                                       | Offline XSD probes accept 1,000 and reject 1,001; the parser does not discard an otherwise inspectable response solely because a server exceeded the schema maximum                                       |
+| `IDFactura`                 | Returns all three identity fields and rejects an absent, repeated, incomplete, or XSD-invalid NIF length, invoice-number length, or date shape                                                           | Parser and XSD tests; calendar validity and NIF control remain separate, and one malformed identity aborts the parsed response                                                                            |
+| `Operacion`                 | Returns the four operation fields, trimming their codes; the fake emits the block for every line in schema order                                                                                         | Parser/fake tests plus all-enum and order probes; the parser preserves unfamiliar values and tolerates an omitted block to retain other line results and the CSV                                          |
+| `RefExterna`                | Returns the literal when present and the fake echoes it                                                                                                                                                  | XSD probes cover the 60-character maximum; the parser preserves overlong diagnostic input rather than discarding the response                                                                             |
+| `EstadoRegistro`            | Preserves a trimmed raw string or `undefined`; `resolveEstadoEfectivo` recognizes the three published values                                                                                             | Parser/fake tests plus all-enum probes; an unfamiliar value resolves to `status_unknown`                                                                                                                  |
+| line error detail           | Converts `CodigoErrorRegistro` only when its lexical form is an integer representable safely by JavaScript and preserves `DescripcionErrorRegistro`                                                      | Parser tests reject fractional, nonnumeric, and unsafe values; XSD probes cover integer syntax and the 1,500-character description maximum                                                                |
+| `RegistroDuplicado`         | Returns petition ID, stored-record state, and optional nested error detail; `resolveEstadoEfectivo` handles all three stored states                                                                      | Parser/fake tests and XSD probes cover required order, the 20-character petition ID, integer code, and 500-character description; malformed/future status text remains diagnosable as `duplicate_unknown` |
+
+This parser is a loss-aware projection, not a replacement for XSD validation. In particular, it
+does not enforce XML element order, the response-line maximum, or diagnostic text maxima after
+parsing, because rejecting those shapes would also hide valid line outcomes and an unrecoverable
+CSV. It does enforce invoice identity, presentation identity, and numeric type promises before
+returning them through the public TypeScript API. If a malformed identity or numeric code throws,
+the high-level client cannot return the other fields; integrations that need forensic access must
+retain the raw HTTP response at their transport boundary.
 
 ### SOAP faults and voluntary flow control — service description §§5.1, 6.4.4.1
 
@@ -641,7 +677,7 @@ check those flows against AEAT preproduction rather than treating the fake as an
 
 ## Remaining work
 
-Review every numbered validation rule, every service and hash/QR requirement, the remaining
+Review every numbered validation rule, every service and hash/QR requirement, the consultation
 response XSD and cross-schema WSDL constraints, and every developer and public FAQ entry. For each rule, add a
 row with the exact source section, implementation, behavioural test, and any intentional scope
 limit. Check the English and Spanish guides against each finding. The audit remains open until

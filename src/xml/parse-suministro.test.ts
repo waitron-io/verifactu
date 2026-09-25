@@ -12,7 +12,7 @@ const envelope = (body: string) =>
 const ACCEPTED = envelope(`
   <CSV>ABC123CSV</CSV>
   <DatosPresentacion><NIFPresentador>89890001K</NIFPresentador>
-    <TimestampPresentacion>01-01-2024 19:20:30</TimestampPresentacion></DatosPresentacion>
+    <TimestampPresentacion>2024-01-01T19:20:30+01:00</TimestampPresentacion></DatosPresentacion>
   <EstadoEnvio>Correcto</EstadoEnvio>
   <TiempoEsperaEnvio>60</TiempoEsperaEnvio>
   <RespuestaLinea>
@@ -218,6 +218,81 @@ describe("parseRespuestaSuministro", () => {
     expect(linea?.EstadoRegistro).toBe("Correcto");
   });
 
+  it.each([
+    ["IDEmisorFactura", "89890001K", "12345678"],
+    ["NumSerieFactura", "12345678/G33", "X".repeat(61)],
+    ["FechaExpedicionFactura", "01-01-2024", "2024/01/01"],
+  ])("rejects an XSD-invalid response invoice identity %s", (field, valid, invalid) => {
+    const xml = ACCEPTED.replace(
+      `<${field}>${valid}</${field}>`,
+      `<${field}>${invalid}</${field}>`,
+    );
+    expect(xml).not.toBe(ACCEPTED);
+    expect(() => parseRespuestaSuministro(xml)).toThrow(`IDFactura.${field}`);
+  });
+
+  it("rejects a repeated response invoice identity instead of returning an array as IDFactura", () => {
+    const block = ACCEPTED.match(/<IDFactura>[\s\S]*?<\/IDFactura>/)?.[0];
+    expect(block).toBeDefined();
+    expect(() => parseRespuestaSuministro(ACCEPTED.replace(block!, block! + block!))).toThrow(
+      "IDFactura must appear once",
+    );
+  });
+
+  it("rejects a response line with no invoice identity", () => {
+    const xml = ACCEPTED.replace(/<IDFactura>[\s\S]*?<\/IDFactura>/, "");
+    expect(() => parseRespuestaSuministro(xml)).toThrow(
+      "IDFactura must contain one invoice identity",
+    );
+  });
+
+  it("returns the optional presentation fields", () => {
+    expect(parseRespuestaSuministro(ACCEPTED).DatosPresentacion).toEqual({
+      NIFPresentador: "89890001K",
+      TimestampPresentacion: "2024-01-01T19:20:30+01:00",
+    });
+  });
+
+  it("rejects an XSD-invalid presentation NIF", () => {
+    const xml = ACCEPTED.replace(
+      "<NIFPresentador>89890001K</NIFPresentador>",
+      "<NIFPresentador>12345678</NIFPresentador>",
+    );
+    expect(() => parseRespuestaSuministro(xml)).toThrow(
+      "DatosPresentacion.NIFPresentador must contain exactly 9 characters",
+    );
+  });
+
+  it.each([
+    ["NIFPresentador", "89890001K"],
+    ["TimestampPresentacion", "2024-01-01T19:20:30+01:00"],
+  ])("rejects repeated DatosPresentacion.%s", (field, value) => {
+    const leaf = `<${field}>${value}</${field}>`;
+    expect(() => parseRespuestaSuministro(ACCEPTED.replace(leaf, leaf + leaf))).toThrow(
+      `DatosPresentacion.${field} must appear once`,
+    );
+  });
+
+  it.each([
+    ["NIFPresentador", "<NIFPresentador>89890001K</NIFPresentador>"],
+    [
+      "TimestampPresentacion",
+      "<TimestampPresentacion>2024-01-01T19:20:30+01:00</TimestampPresentacion>",
+    ],
+  ])("requires DatosPresentacion.%s when the block is present", (field, element) => {
+    expect(() => parseRespuestaSuministro(ACCEPTED.replace(element, ""))).toThrow(
+      `DatosPresentacion.${field}`,
+    );
+  });
+
+  it("rejects a repeated DatosPresentacion block", () => {
+    const block = ACCEPTED.match(/<DatosPresentacion>[\s\S]*?<\/DatosPresentacion>/)?.[0];
+    expect(block).toBeDefined();
+    expect(() => parseRespuestaSuministro(ACCEPTED.replace(block!, block! + block!))).toThrow(
+      "DatosPresentacion must appear once",
+    );
+  });
+
   it("preserves AEAT's structured operation and its optional correction flags", () => {
     const xml = ACCEPTED.replace(
       "<EstadoRegistro>Correcto</EstadoRegistro>",
@@ -309,6 +384,36 @@ describe("parseRespuestaSuministro", () => {
     );
   });
 
+  it("rejects a fractional RespuestaLinea.CodigoErrorRegistro under the integer XSD type", () => {
+    const xml = MULTI_LINE.replace("<CodigoErrorRegistro>1180<", "<CodigoErrorRegistro>1180.5<");
+    expect(() => parseRespuestaSuministro(xml)).toThrow(
+      /RespuestaLinea\.CodigoErrorRegistro.*integer.*1180\.5/,
+    );
+  });
+
+  it.each([
+    ["+1180", 1180],
+    ["-1", -1],
+    ["001180", 1180],
+  ])("parses the XSD integer error code %s", (literal, expected) => {
+    const xml = MULTI_LINE.replace(
+      "<CodigoErrorRegistro>1180<",
+      `<CodigoErrorRegistro>${literal}<`,
+    );
+    expect(parseRespuestaSuministro(xml).RespuestaLinea[1]?.CodigoErrorRegistro).toBe(expected);
+  });
+
+  it("rejects an integer outside JavaScript's safe numeric range", () => {
+    const literal = "9007199254740992";
+    const xml = MULTI_LINE.replace(
+      "<CodigoErrorRegistro>1180<",
+      `<CodigoErrorRegistro>${literal}<`,
+    );
+    expect(() => parseRespuestaSuministro(xml)).toThrow(
+      /RespuestaLinea\.CodigoErrorRegistro.*safe integer.*9007199254740992/,
+    );
+  });
+
   it("throws a well-formed error for a non-numeric RegistroDuplicado.CodigoErrorRegistro", () => {
     const xml = DUPLICATE_BUT_ACCEPTED.replace(
       /<RegistroDuplicado>[\s\S]*<\/RegistroDuplicado>/,
@@ -317,6 +422,16 @@ describe("parseRespuestaSuministro", () => {
     );
     expect(() => parseRespuestaSuministro(xml)).toThrow(
       /RegistroDuplicado\.CodigoErrorRegistro.*bogus/,
+    );
+  });
+
+  it("rejects a fractional RegistroDuplicado.CodigoErrorRegistro under the integer XSD type", () => {
+    const xml = DUPLICATE_BUT_ACCEPTED.replace(
+      "</EstadoRegistroDuplicado>",
+      "</EstadoRegistroDuplicado><CodigoErrorRegistro>3000.5</CodigoErrorRegistro>",
+    );
+    expect(() => parseRespuestaSuministro(xml)).toThrow(
+      /RegistroDuplicado\.CodigoErrorRegistro.*integer.*3000\.5/,
     );
   });
 

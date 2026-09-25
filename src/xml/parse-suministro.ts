@@ -1,4 +1,9 @@
-import { asArray, asNumber, parser } from "./parse-common.js";
+import { asArray, parser } from "./parse-common.js";
+import {
+  assertConsultaNif,
+  isValidConsultaFecha,
+  isValidConsultaNumSerieFactura,
+} from "./serialize.js";
 import type { IDFactura } from "../types.js";
 
 export type EstadoEnvio = "Correcto" | "ParcialmenteCorrecto" | "Incorrecto";
@@ -21,6 +26,11 @@ export interface OperacionRespuesta {
   SinRegistroPrevio?: string;
 }
 
+export interface DatosPresentacionSuministro {
+  NIFPresentador: string;
+  TimestampPresentacion: string;
+}
+
 export interface RespuestaLinea {
   IDFactura: IDFactura;
   Operacion?: OperacionRespuesta;
@@ -39,6 +49,7 @@ export interface RespuestaSuministro {
    * or lose it permanently.
    */
   CSV?: string;
+  DatosPresentacion?: DatosPresentacionSuministro;
   /** Raw AEAT status; inspect unfamiliar values before acting on the batch. */
   EstadoEnvio: string | undefined;
   /** Undefined when the response has no usable wait; never schedule another envio from that value. */
@@ -75,7 +86,7 @@ interface RawRegistroDuplicado {
 }
 
 interface RawRespuestaLinea {
-  IDFactura: IDFactura;
+  IDFactura: unknown;
   Operacion?: {
     TipoOperacion?: string;
     Subsanacion?: string;
@@ -91,6 +102,7 @@ interface RawRespuestaLinea {
 
 interface RawRespuestaSuministro {
   CSV?: string;
+  DatosPresentacion?: unknown;
   EstadoEnvio: string;
   TiempoEsperaEnvio?: unknown;
   RespuestaLinea?: RawRespuestaLinea | RawRespuestaLinea[];
@@ -111,8 +123,73 @@ function parseRegistroDuplicado(
   return {
     IdPeticionRegistroDuplicado: raw.IdPeticionRegistroDuplicado,
     EstadoRegistroDuplicado: statusText(raw.EstadoRegistroDuplicado),
-    CodigoErrorRegistro: asNumber(raw.CodigoErrorRegistro, "RegistroDuplicado.CodigoErrorRegistro"),
+    CodigoErrorRegistro: integerNumber(
+      raw.CodigoErrorRegistro,
+      "RegistroDuplicado.CodigoErrorRegistro",
+    ),
     DescripcionErrorRegistro: raw.DescripcionErrorRegistro,
+  };
+}
+
+function integerNumber(value: string | undefined, field: string): number | undefined {
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  if (!/^[+-]?\d+$/.test(trimmed)) {
+    throw new Error(`${field} must be an integer, received ${JSON.stringify(value)}`);
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new Error(`${field} must be a safe integer, received ${JSON.stringify(value)}`);
+  }
+  return parsed;
+}
+
+function invoiceIdentityOf(raw: unknown): IDFactura {
+  if (Array.isArray(raw)) throw new Error("IDFactura must appear once");
+  if (!raw || typeof raw !== "object") {
+    throw new Error("IDFactura must contain one invoice identity");
+  }
+  const identity = raw as Partial<IDFactura>;
+  if (
+    typeof identity.IDEmisorFactura !== "string" ||
+    typeof identity.NumSerieFactura !== "string" ||
+    typeof identity.FechaExpedicionFactura !== "string"
+  ) {
+    throw new Error("IDFactura must contain one invoice identity");
+  }
+  assertConsultaNif("IDFactura.IDEmisorFactura", identity.IDEmisorFactura, "");
+  if (!isValidConsultaNumSerieFactura(identity.NumSerieFactura)) {
+    throw new Error("IDFactura.NumSerieFactura must contain 1 to 60 characters");
+  }
+  if (!isValidConsultaFecha(identity.FechaExpedicionFactura)) {
+    throw new Error("IDFactura.FechaExpedicionFactura must be DD-MM-YYYY");
+  }
+  return {
+    IDEmisorFactura: identity.IDEmisorFactura,
+    NumSerieFactura: identity.NumSerieFactura,
+    FechaExpedicionFactura: identity.FechaExpedicionFactura,
+  };
+}
+
+function datosPresentacionOf(raw: unknown): DatosPresentacionSuministro | undefined {
+  if (raw === undefined) return undefined;
+  if (Array.isArray(raw)) throw new Error("DatosPresentacion must appear once");
+  if (!raw || typeof raw !== "object") {
+    throw new Error("DatosPresentacion must contain its two fields");
+  }
+  const block = raw as Record<string, unknown>;
+  for (const field of ["NIFPresentador", "TimestampPresentacion"] as const) {
+    if (Array.isArray(block[field])) {
+      throw new Error(`DatosPresentacion.${field} must appear once`);
+    }
+  }
+  assertConsultaNif("DatosPresentacion.NIFPresentador", block.NIFPresentador, "");
+  if (typeof block.TimestampPresentacion !== "string" || !block.TimestampPresentacion.trim()) {
+    throw new Error("DatosPresentacion.TimestampPresentacion is required");
+  }
+  return {
+    NIFPresentador: block.NIFPresentador,
+    TimestampPresentacion: block.TimestampPresentacion,
   };
 }
 
@@ -130,15 +207,14 @@ function parseOperacion(raw: RawRespuestaLinea["Operacion"]): OperacionRespuesta
 
 function parseRespuestaLinea(raw: RawRespuestaLinea): RespuestaLinea {
   return {
-    IDFactura: {
-      IDEmisorFactura: raw.IDFactura.IDEmisorFactura,
-      NumSerieFactura: raw.IDFactura.NumSerieFactura,
-      FechaExpedicionFactura: raw.IDFactura.FechaExpedicionFactura,
-    },
+    IDFactura: invoiceIdentityOf(raw.IDFactura),
     Operacion: parseOperacion(raw.Operacion),
     RefExterna: raw.RefExterna,
     EstadoRegistro: statusText(raw.EstadoRegistro),
-    CodigoErrorRegistro: asNumber(raw.CodigoErrorRegistro, "RespuestaLinea.CodigoErrorRegistro"),
+    CodigoErrorRegistro: integerNumber(
+      raw.CodigoErrorRegistro,
+      "RespuestaLinea.CodigoErrorRegistro",
+    ),
     DescripcionErrorRegistro: raw.DescripcionErrorRegistro,
     RegistroDuplicado: parseRegistroDuplicado(raw.RegistroDuplicado),
   };
@@ -160,6 +236,7 @@ export function parseRespuestaSuministro(xml: string): RespuestaSuministro {
   }
   return {
     CSV: body.CSV,
+    DatosPresentacion: datosPresentacionOf(body.DatosPresentacion),
     EstadoEnvio: statusText(body.EstadoEnvio),
     // Preserve the one-time CSV even when the wait cannot safely drive a schedule.
     TiempoEsperaEnvio: waitSeconds(body.TiempoEsperaEnvio),

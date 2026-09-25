@@ -8,6 +8,7 @@ import type {
   EstadoRegistroSuministro,
 } from "../xml/parse-suministro.js";
 import type {
+  Cabecera,
   ConsultaFiltro,
   EnvioRegistro,
   SistemaInformaticoConsulta,
@@ -324,6 +325,7 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
           ? "ParcialmenteCorrecto"
           : "Correcto";
     return suministroEnvelope(
+      cabecera,
       estadoEnvio === "Incorrecto" ? undefined : csv,
       estadoEnvio,
       tiempoParaEsteEnvio,
@@ -502,6 +504,7 @@ function lineaXml(
 }
 
 function suministroEnvelope(
+  cabecera: Cabecera,
   csv: string | undefined,
   estadoEnvio: EstadoEnvio,
   tiempo: number,
@@ -509,14 +512,53 @@ function suministroEnvelope(
 ): string {
   return (
     `<?xml version="1.0" encoding="UTF-8"?>` +
-    `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sf="sf" xmlns:sfR="sfR"><soapenv:Body>` +
+    `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" ` +
+    `xmlns:sf="https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/SuministroInformacion.xsd" ` +
+    `xmlns:sfR="https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/RespuestaSuministro.xsd"><soapenv:Body>` +
     "<sfR:RespuestaRegFactuSistemaFacturacion>" +
     (csv === undefined ? "" : `<sfR:CSV>${escapeXml(csv)}</sfR:CSV>`) +
-    `<sfR:EstadoEnvio>${estadoEnvio}</sfR:EstadoEnvio>` +
+    responseCabeceraXml(cabecera) +
     `<sfR:TiempoEsperaEnvio>${tiempo}</sfR:TiempoEsperaEnvio>` +
+    `<sfR:EstadoEnvio>${estadoEnvio}</sfR:EstadoEnvio>` +
     lineas.join("") +
     "</sfR:RespuestaRegFactuSistemaFacturacion>" +
     "</soapenv:Body></soapenv:Envelope>"
+  );
+}
+
+function personaEsXml(name: string, person: { NombreRazon: string; NIF: string }): string {
+  return (
+    `<sf:${name}>` +
+    `<sf:NombreRazon>${escapeXml(person.NombreRazon)}</sf:NombreRazon>` +
+    `<sf:NIF>${escapeXml(person.NIF)}</sf:NIF>` +
+    `</sf:${name}>`
+  );
+}
+
+function responseCabeceraXml(cabecera: Cabecera): string {
+  return (
+    "<sfR:Cabecera>" +
+    personaEsXml("ObligadoEmision", cabecera.ObligadoEmision) +
+    (cabecera.Representante ? personaEsXml("Representante", cabecera.Representante) : "") +
+    (cabecera.RemisionVoluntaria
+      ? "<sf:RemisionVoluntaria>" +
+        (cabecera.RemisionVoluntaria.FechaFinVeriFactu === undefined
+          ? ""
+          : `<sf:FechaFinVeriFactu>${escapeXml(cabecera.RemisionVoluntaria.FechaFinVeriFactu)}</sf:FechaFinVeriFactu>`) +
+        (cabecera.RemisionVoluntaria.Incidencia === undefined
+          ? ""
+          : `<sf:Incidencia>${cabecera.RemisionVoluntaria.Incidencia}</sf:Incidencia>`) +
+        "</sf:RemisionVoluntaria>"
+      : "") +
+    (cabecera.RemisionRequerimiento
+      ? "<sf:RemisionRequerimiento>" +
+        `<sf:RefRequerimiento>${escapeXml(cabecera.RemisionRequerimiento.RefRequerimiento)}</sf:RefRequerimiento>` +
+        (cabecera.RemisionRequerimiento.FinRequerimiento === undefined
+          ? ""
+          : `<sf:FinRequerimiento>${cabecera.RemisionRequerimiento.FinRequerimiento}</sf:FinRequerimiento>`) +
+        "</sf:RemisionRequerimiento>"
+      : "") +
+    "</sfR:Cabecera>"
   );
 }
 
