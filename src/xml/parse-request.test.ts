@@ -583,6 +583,55 @@ describe("parseConsulta full header and date choice", () => {
 });
 
 describe("parseConsulta", () => {
+  it("rejects duplicate response-options blocks instead of dropping their values", () => {
+    const firstBlock =
+      "<sfLRC:DatosAdicionalesRespuesta>" +
+      "<sfLRC:MostrarNombreRazonEmisor>S</sfLRC:MostrarNombreRazonEmisor>" +
+      "</sfLRC:DatosAdicionalesRespuesta>";
+    const secondBlock =
+      "<sfLRC:DatosAdicionalesRespuesta>" +
+      "<sfLRC:MostrarNombreRazonEmisor>X</sfLRC:MostrarNombreRazonEmisor>" +
+      "</sfLRC:DatosAdicionalesRespuesta>";
+    const xml = serializeConsulta(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      DatosAdicionalesRespuesta: { MostrarNombreRazonEmisor: "S" },
+    }).replace(firstBlock, firstBlock + secondBlock);
+
+    expect(() => parseConsulta(xml)).toThrow(
+      "Consulta DatosAdicionalesRespuesta must occur at most once",
+    );
+  });
+
+  it("rejects duplicate response-options blocks for a recipient consulta", () => {
+    const recipient = { Destinatario: { NombreRazon: "Cliente Uno", NIF: "11111111H" } } as const;
+    const block =
+      "<sfLRC:DatosAdicionalesRespuesta>" +
+      "<sfLRC:MostrarSistemaInformatico>N</sfLRC:MostrarSistemaInformatico>" +
+      "</sfLRC:DatosAdicionalesRespuesta>";
+    const xml = serializeConsulta(recipient, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      DatosAdicionalesRespuesta: { MostrarSistemaInformatico: "N" },
+    }).replace(block, block + block);
+
+    expect(() => parseConsulta(xml)).toThrow(
+      "Consulta DatosAdicionalesRespuesta must occur at most once",
+    );
+  });
+
+  it.each(["MostrarNombreRazonEmisor", "MostrarSistemaInformatico"] as const)(
+    "rejects an invalid %s value in raw issuer XML",
+    (field) => {
+      const xml = serializeConsulta(cabecera, {
+        Ejercicio: "2026",
+        Periodo: "07",
+        DatosAdicionalesRespuesta: { [field]: "S" },
+      }).replace(`<sfLRC:${field}>S</sfLRC:${field}>`, `<sfLRC:${field}>X</sfLRC:${field}>`);
+      expect(() => parseConsulta(xml)).toThrow(`Consulta ${field} must be S or N`);
+    },
+  );
+
   it.each(["S", "X"])(
     "rejects recipient consulta software-details value %s in raw XML",
     (value) => {

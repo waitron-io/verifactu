@@ -63,9 +63,9 @@ use flags are optional.
 
 Request `DatosAdicionalesRespuesta` only when you need the issuer's name or software details in
 each result. AEAT's `ConsultaLR.xsd` says these fields can slow its response. The same schema
-requires recipient queries to omit `MostrarSistemaInformatico` or set it to `"N"`. The client
-rejects `"S"` for a recipient before sending and places valid options after `FiltroConsulta` in
-the XML request.
+requires recipient queries to omit `MostrarSistemaInformatico` or set it to `"N"`; its imported
+`SuministroInformacion.xsd` restricts both options to `"S"` or `"N"`. The client rejects other
+values before sending and places valid options after `FiltroConsulta` in the XML request.
 
 A recipient uses a different consulta header and identifies the issuer as the counterparty, as the
 `received` query above demonstrates.

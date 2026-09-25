@@ -112,12 +112,19 @@ export function assertConsultaResponseOptions(
   cabecera: CabeceraConsulta,
   filtro: ConsultaFiltro,
 ): void {
+  const options = filtro.DatosAdicionalesRespuesta;
   if (
     cabecera.Destinatario !== undefined &&
-    filtro.DatosAdicionalesRespuesta?.MostrarSistemaInformatico !== undefined &&
-    filtro.DatosAdicionalesRespuesta.MostrarSistemaInformatico !== "N"
+    options?.MostrarSistemaInformatico !== undefined &&
+    options.MostrarSistemaInformatico !== "N"
   ) {
     throw new Error("Consulta MostrarSistemaInformatico must be N or omitted for Destinatario");
+  }
+  for (const field of ["MostrarNombreRazonEmisor", "MostrarSistemaInformatico"] as const) {
+    const value = options?.[field];
+    if (value !== undefined && value !== "S" && value !== "N") {
+      throw new Error(`Consulta ${field} must be S or N`);
+    }
   }
 }
 

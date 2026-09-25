@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "./client.js";
 import { buildAltaRecord } from "./records.js";
 import { ALTA_INPUT, CABECERA } from "../test/fixtures.js";
-import type { EnvioRegistro } from "./xml/serialize.js";
+import type { ConsultaFiltro, EnvioRegistro } from "./xml/serialize.js";
 
 // serializeEnvio throws on an empty batch (a deliberate check pinned by its
 // own tests), so the transport tests below exercise submit() with a single
@@ -184,6 +184,24 @@ describe("createClient", () => {
     ).rejects.toThrow("Consulta MostrarSistemaInformatico must be N or omitted for Destinatario");
     expect(fetch).not.toHaveBeenCalled();
   });
+
+  it.each(["MostrarNombreRazonEmisor", "MostrarSistemaInformatico"] as const)(
+    "does not send an invalid issuer consulta %s value",
+    async (field) => {
+      const fetch = fakeFetch(CONSULTA_OK);
+      const client = createClient({ endpoint: "https://example.test/soap", fetch });
+      const filtro = {
+        Ejercicio: "2024",
+        Periodo: "01",
+        DatosAdicionalesRespuesta: { [field]: "X" },
+      } as unknown as ConsultaFiltro;
+
+      await expect(client.consultar(CABECERA, filtro)).rejects.toThrow(
+        `Consulta ${field} must be S or N`,
+      );
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
 
   it("reports a SOAP fault returned with HTTP 200", async () => {
     const client = createClient({
