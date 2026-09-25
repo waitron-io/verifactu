@@ -125,6 +125,31 @@ describe("parseEnvio", () => {
     );
   });
 
+  it.each([
+    ["FechaOperacion", "2024/10/28", "RegistroAlta[0].FechaOperacion must be DD-MM-YYYY"],
+    ["CuotaTotal", "invalid", "RegistroAlta[0].CuotaTotal must match ImporteSgn12.2Type"],
+    [
+      "TipoImpositivo",
+      "1234.00",
+      "RegistroAlta[0].Desglose[0].TipoImpositivo must match Tipo2.2Type",
+    ],
+  ] as const)("rejects an XSD-invalid parsed %s shape", (field, invalid, message) => {
+    const original =
+      field === "FechaOperacion" ? undefined : field === "CuotaTotal" ? alta.CuotaTotal : "21";
+    let xml = serializeEnvio(cabecera, [{ RegistroAlta: alta }]);
+    xml =
+      original === undefined
+        ? xml.replace(
+            "<sf:DescripcionOperacion>",
+            `<sf:${field}>${invalid}</sf:${field}><sf:DescripcionOperacion>`,
+          )
+        : xml.replace(
+            `<sf:${field}>${original}</sf:${field}>`,
+            `<sf:${field}>${invalid}</sf:${field}>`,
+          );
+    expect(() => parseEnvio(xml)).toThrow(message);
+  });
+
   it("counts Unicode code points in parsed filing text limits", () => {
     const boundary = serializeEnvio(cabecera, [{ RegistroAlta: alta }]).replace(
       alta.RefExterna!,

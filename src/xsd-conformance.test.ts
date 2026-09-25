@@ -300,6 +300,24 @@ describe("generated unsigned requests against AEAT XSDs", () => {
     expect(invalid.stderr).toContain("FechaHoraHusoGenRegistro");
   });
 
+  it.each([
+    ["IDEmisorFactura", "SHORT"],
+    ["FechaExpedicionFactura", "2024/01/01"],
+    ["CuotaTotal", "not-an-amount"],
+    ["TipoImpositivo", "1234.00"],
+  ] as const)("rejects an XSD-invalid filing %s shape", (field, value) => {
+    const body = soapBodyElement(
+      serializeEnvio(CABECERA, [{ RegistroAlta: buildAltaRecord(ALTA_INPUT) }]),
+    );
+    const document = new DOMParser().parseFromString(body, "text/xml");
+    const leaf = document.getElementsByTagNameNS(NS_SF, field).item(0);
+    if (!leaf) throw new Error(`Alta fixture has no ${field}`);
+    leaf.textContent = value;
+    const invalid = schemaResult(ENVIO_XSD, new XMLSerializer().serializeToString(document));
+    expect(invalid.status).not.toBe(0);
+    expect(invalid.stderr).toContain(field);
+  });
+
   it("accepts 1000 recipients and rejects 1001", () => {
     const alta = buildAltaRecord({
       ...ALTA_INPUT,

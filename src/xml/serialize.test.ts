@@ -61,6 +61,54 @@ describe("serializeEnvio", () => {
   );
 
   it.each([
+    [
+      "person NIF length",
+      "RegistroAlta[0].Tercero.NIF must contain exactly 9 characters",
+      (filing: RegistroAlta) => {
+        filing.EmitidaPorTerceroODestinatario = "T";
+        filing.Tercero = { NombreRazon: "Issuer", NIF: "SHORT" };
+      },
+    ],
+    [
+      "date shape",
+      "RegistroAlta[0].FechaOperacion must be DD-MM-YYYY",
+      (filing: RegistroAlta): void => {
+        filing.FechaOperacion = "2024/10/28";
+      },
+    ],
+    [
+      "signed amount shape",
+      "RegistroAlta[0].CuotaTotal must match ImporteSgn12.2Type",
+      (filing: RegistroAlta): void => {
+        filing.CuotaTotal = "not-an-amount";
+      },
+    ],
+    [
+      "tax-rate shape",
+      "RegistroAlta[0].Desglose[0].TipoImpositivo must match Tipo2.2Type",
+      (filing: RegistroAlta): void => {
+        filing.Desglose[0]!.TipoImpositivo = "1234.00";
+      },
+    ],
+    [
+      "rectification amount shape",
+      "RegistroAlta[0].ImporteRectificacion.BaseRectificada must match ImporteSgn12.2Type",
+      (filing: RegistroAlta) => {
+        filing.TipoFactura = "R1";
+        filing.TipoRectificativa = "S";
+        filing.ImporteRectificacion = {
+          BaseRectificada: "invalid",
+          CuotaRectificada: "0.00",
+        };
+      },
+    ],
+  ] as const)("rejects an XSD-invalid filing %s before sending", (_name, message, mutate) => {
+    const filing = buildAltaRecord(ALTA_INPUT);
+    mutate(filing);
+    expect(() => serializeEnvio(CABECERA, [{ RegistroAlta: filing }])).toThrow(message);
+  });
+
+  it.each([
     ["CodigoPais", "ZZ", "CodigoPais must be an AEAT CountryType2 code"],
     ["IDType", "01", "IDType must be 02 through 07"],
     ["ID", "😀".repeat(21), "ID must be present and contain at most 20 characters"],

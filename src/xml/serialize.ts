@@ -571,6 +571,39 @@ function assertFilingText(field: string, value: unknown, max: number, optional =
   }
 }
 
+function assertFilingNif(field: string, value: unknown): void {
+  if (typeof value !== "string" || Array.from(value).length !== 9) {
+    throw new Error(`${field} must contain exactly 9 characters`);
+  }
+}
+
+function assertFilingDate(field: string, value: unknown, optional = false): void {
+  if (value === undefined && optional) return;
+  if (typeof value !== "string" || !/^\p{Nd}{2}-\p{Nd}{2}-\p{Nd}{4}$/u.test(value)) {
+    throw new Error(`${field} must be DD-MM-YYYY`);
+  }
+}
+
+function assertFilingAmount(field: string, value: unknown, optional = false): void {
+  if (value === undefined && optional) return;
+  if (typeof value !== "string" || !/^[+-]?\p{Nd}{1,12}(?:\.\p{Nd}{0,2})?$/u.test(value)) {
+    throw new Error(`${field} must match ImporteSgn12.2Type`);
+  }
+}
+
+function assertFilingRate(field: string, value: unknown, optional = false): void {
+  if (value === undefined && optional) return;
+  if (typeof value !== "string" || !/^\p{Nd}{1,3}(?:\.\p{Nd}{0,2})?$/u.test(value)) {
+    throw new Error(`${field} must match Tipo2.2Type`);
+  }
+}
+
+function assertFilingInvoiceReference(field: string, value: IDFacturaAR): void {
+  assertFilingNif(`${field}.IDEmisorFactura`, value.IDEmisorFactura);
+  assertInvoiceNumberXsd(`${field}.NumSerieFactura`, value.NumSerieFactura);
+  assertFilingDate(`${field}.FechaExpedicionFactura`, value.FechaExpedicionFactura);
+}
+
 function assertFilingLiteral(
   field: string,
   value: unknown,
@@ -603,6 +636,7 @@ function assertFilingPersona(field: string, value: PersonaFisicaJuridica): void 
     throw new Error(`${field} must contain exactly one of NIF or IDOtro`);
   }
   assertFilingText(`${field}.NombreRazon`, value.NombreRazon, 120);
+  if (value.NIF !== undefined) assertFilingNif(`${field}.NIF`, value.NIF);
   assertFilingIdOtroShape(field, value.IDOtro);
 }
 
@@ -696,9 +730,22 @@ export function assertFilingRecordXsd(
     );
   }
   if (chain?.RegistroAnterior !== undefined) {
+    assertFilingNif(
+      `${field}.Encadenamiento.RegistroAnterior.IDEmisorFactura`,
+      chain.RegistroAnterior.IDEmisorFactura,
+    );
     assertPreviousInvoiceNumberXsd(
       `${field}.Encadenamiento.RegistroAnterior.NumSerieFactura`,
       chain.RegistroAnterior.NumSerieFactura,
+    );
+    assertFilingDate(
+      `${field}.Encadenamiento.RegistroAnterior.FechaExpedicionFactura`,
+      chain.RegistroAnterior.FechaExpedicionFactura,
+    );
+    assertFilingText(
+      `${field}.Encadenamiento.RegistroAnterior.Huella`,
+      chain.RegistroAnterior.Huella,
+      64,
     );
   }
 
@@ -728,9 +775,17 @@ export function assertFilingRecordXsd(
   assertFilingDateTime(`${field}.FechaHoraHusoGenRegistro`, record.FechaHoraHusoGenRegistro);
 
   if (!("TipoFactura" in record)) {
+    assertFilingNif(
+      `${field}.IDFactura.IDEmisorFacturaAnulada`,
+      record.IDFactura.IDEmisorFacturaAnulada,
+    );
     assertInvoiceNumberXsd(
       `${field}.IDFactura.NumSerieFacturaAnulada`,
       record.IDFactura.NumSerieFacturaAnulada,
+    );
+    assertFilingDate(
+      `${field}.IDFactura.FechaExpedicionFacturaAnulada`,
+      record.IDFactura.FechaExpedicionFacturaAnulada,
     );
     assertFilingLiteral(
       `${field}.SinRegistroPrevio`,
@@ -751,7 +806,12 @@ export function assertFilingRecordXsd(
     return;
   }
 
+  assertFilingNif(`${field}.IDFactura.IDEmisorFactura`, record.IDFactura.IDEmisorFactura);
   assertInvoiceNumberXsd(`${field}.IDFactura.NumSerieFactura`, record.IDFactura.NumSerieFactura);
+  assertFilingDate(
+    `${field}.IDFactura.FechaExpedicionFactura`,
+    record.IDFactura.FechaExpedicionFactura,
+  );
   assertFilingLiteral(`${field}.Subsanacion`, record.Subsanacion, ["S", "N"], "S or N", true);
   assertFilingLiteral(
     `${field}.RechazoPrevio`,
@@ -781,6 +841,7 @@ export function assertFilingRecordXsd(
     true,
   );
   assertFilingText(`${field}.NombreRazonEmisor`, record.NombreRazonEmisor, 120);
+  assertFilingDate(`${field}.FechaOperacion`, record.FechaOperacion, true);
   assertFilingText(`${field}.DescripcionOperacion`, record.DescripcionOperacion, 500);
   for (const name of [
     "FacturaSimplificadaArt7273",
@@ -810,10 +871,7 @@ export function assertFilingRecordXsd(
       record.FacturasRectificadas.IDFacturaRectificada,
     );
     record.FacturasRectificadas.IDFacturaRectificada.forEach((reference, index) =>
-      assertInvoiceNumberXsd(
-        `${field}.FacturasRectificadas[${index}].NumSerieFactura`,
-        reference.NumSerieFactura,
-      ),
+      assertFilingInvoiceReference(`${field}.FacturasRectificadas[${index}]`, reference),
     );
   }
   if (record.FacturasSustituidas !== undefined) {
@@ -823,10 +881,22 @@ export function assertFilingRecordXsd(
       record.FacturasSustituidas.IDFacturaSustituida,
     );
     record.FacturasSustituidas.IDFacturaSustituida.forEach((reference, index) =>
-      assertInvoiceNumberXsd(
-        `${field}.FacturasSustituidas[${index}].NumSerieFactura`,
-        reference.NumSerieFactura,
-      ),
+      assertFilingInvoiceReference(`${field}.FacturasSustituidas[${index}]`, reference),
+    );
+  }
+  if (record.ImporteRectificacion !== undefined) {
+    assertFilingAmount(
+      `${field}.ImporteRectificacion.BaseRectificada`,
+      record.ImporteRectificacion.BaseRectificada,
+    );
+    assertFilingAmount(
+      `${field}.ImporteRectificacion.CuotaRectificada`,
+      record.ImporteRectificacion.CuotaRectificada,
+    );
+    assertFilingAmount(
+      `${field}.ImporteRectificacion.CuotaRecargoRectificado`,
+      record.ImporteRectificacion.CuotaRecargoRectificado,
+      true,
     );
   }
   if (record.Tercero !== undefined) assertFilingPersona(`${field}.Tercero`, record.Tercero);
@@ -880,7 +950,26 @@ export function assertFilingRecordXsd(
       "E1 through E8",
       true,
     );
+    assertFilingRate(`${detailField}.TipoImpositivo`, detail.TipoImpositivo, true);
+    assertFilingAmount(
+      `${detailField}.BaseImponibleOimporteNoSujeto`,
+      detail.BaseImponibleOimporteNoSujeto,
+    );
+    assertFilingAmount(`${detailField}.BaseImponibleACoste`, detail.BaseImponibleACoste, true);
+    assertFilingAmount(`${detailField}.CuotaRepercutida`, detail.CuotaRepercutida, true);
+    assertFilingRate(
+      `${detailField}.TipoRecargoEquivalencia`,
+      detail.TipoRecargoEquivalencia,
+      true,
+    );
+    assertFilingAmount(
+      `${detailField}.CuotaRecargoEquivalencia`,
+      detail.CuotaRecargoEquivalencia,
+      true,
+    );
   });
+  assertFilingAmount(`${field}.CuotaTotal`, record.CuotaTotal);
+  assertFilingAmount(`${field}.ImporteTotal`, record.ImporteTotal);
 }
 
 /**
