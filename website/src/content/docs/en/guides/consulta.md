@@ -81,11 +81,11 @@ requires recipient queries to omit `MostrarSistemaInformatico` or set it to `"N"
 values before sending and places valid options after `FiltroConsulta` in the XML request.
 
 A recipient uses a different consulta header. Include the issuer as `Contraparte` when you want
-to target it, as the `received` query above demonstrates. The official sources disagree about
-whether that block is mandatory: the `ConsultaLR.xsd` annotation says it is, but the element is
-optional and service description §11.1.2.1 shows a recipient pagination request without it. The
-library therefore leaves `Contraparte` optional. Do not treat an omitted block as proven acceptable
-to AEAT until a controlled preproduction query or clarification resolves the conflict.
+to target it, as the `received` query above demonstrates. In the schema annotation, `Obligado` and
+`Destinatario` name the party whose identity belongs in this block; they do not make the block
+mandatory. The XSD leaves `Contraparte` optional, and so does the library. This establishes the XML
+shape, not which broad recipient queries AEAT authorizes. Check that behavior in preproduction
+before relying on an omitted counterparty.
 
 Set `IndicadorRepresentante: "S"` alongside `ObligadoEmision` when the certificate holder queries
 as that issuer's representative. `"N"` is not a valid consultation value; omit the flag when the

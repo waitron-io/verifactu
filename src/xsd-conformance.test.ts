@@ -64,7 +64,7 @@ describe("generated unsigned requests against AEAT XSDs", () => {
           RangoFechaExpedicion: { Desde: "01-07-2026", Hasta: "31-07-2026" },
           SistemaInformatico: {
             NombreRazon: SISTEMA.NombreRazon,
-            NIF: SISTEMA.NIF,
+            IDOtro: { CodigoPais: "FR", IDType: "02", ID: "FR12345678901" },
             NombreSistemaInformatico: SISTEMA.NombreSistemaInformatico,
             IdSistemaInformatico: SISTEMA.IdSistemaInformatico,
             Version: SISTEMA.Version,
@@ -121,12 +121,12 @@ describe("generated unsigned requests against AEAT XSDs", () => {
   });
 
   it.each([
-    "repeated header",
-    "repeated filter",
-    "repeated response options",
-    "header after filter",
-    "filter field out of order",
-  ] as const)("rejects a consultation with %s under the request sequence", (invalid) => {
+    ["repeated header", "Cabecera"],
+    ["repeated filter", "FiltroConsulta"],
+    ["repeated response options", "DatosAdicionalesRespuesta"],
+    ["header after filter", "FiltroConsulta"],
+    ["filter field out of order", "Contraparte"],
+  ] as const)("rejects a consultation with %s under the request sequence", (invalid, element) => {
     const body = soapBodyElement(
       serializeConsulta(CABECERA, {
         Ejercicio: "2026",
@@ -152,6 +152,8 @@ describe("generated unsigned requests against AEAT XSDs", () => {
     if (!root || !header || !filter || !options || !counterpart || !reference) {
       throw new Error("Consultation fixture is incomplete");
     }
+    const control = schemaResult(CONSULTA_XSD, new XMLSerializer().serializeToString(document));
+    expect(control.status, control.stderr).toBe(0);
     if (invalid === "repeated header") root.insertBefore(header.cloneNode(true), filter);
     else if (invalid === "repeated filter") root.insertBefore(filter.cloneNode(true), options);
     else if (invalid === "repeated response options") root.appendChild(options.cloneNode(true));
@@ -159,6 +161,7 @@ describe("generated unsigned requests against AEAT XSDs", () => {
     else filter.insertBefore(counterpart, reference.nextSibling);
     const result = schemaResult(CONSULTA_XSD, new XMLSerializer().serializeToString(document));
     expect(result.status, result.stderr).not.toBe(0);
+    expect(result.stderr).toContain(element);
   });
 
   it.each(["both date alternatives", "repeated date wrapper"] as const)(

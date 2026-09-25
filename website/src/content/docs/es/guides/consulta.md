@@ -84,12 +84,11 @@ ambos indicadores a `"S"` o `"N"`. El cliente rechaza los demás valores antes d
 las opciones válidas después de `FiltroConsulta` en el XML.
 
 El destinatario usa otra cabecera de consulta. Incluye al emisor como `Contraparte` cuando quieras
-acotar la búsqueda, como muestra la consulta `recibidas`. Las fuentes oficiales no coinciden sobre
-si este bloque es obligatorio: la anotación de `ConsultaLR.xsd` dice que lo es, pero el elemento es
-opcional y el apartado 11.1.2.1 de la descripción del servicio muestra una consulta paginada del
-destinatario sin él. Por eso la biblioteca deja `Contraparte` como opcional. No des por probado que
-la AEAT acepta su omisión hasta que una consulta controlada en preproducción o una aclaración
-resuelva el conflicto.
+acotar la búsqueda, como muestra la consulta `recibidas`. En la anotación del esquema, `Obligado` y
+`Destinatario` nombran a la parte cuya identidad corresponde a este bloque; no hacen que el bloque
+sea obligatorio. El XSD deja `Contraparte` como opcional, y la biblioteca también. Esto demuestra
+la forma del XML, no qué consultas amplias autoriza la AEAT al destinatario. Comprueba ese
+comportamiento en preproducción antes de depender de una consulta sin contraparte.
 
 Indica `IndicadorRepresentante: "S"` junto a `ObligadoEmision` cuando el titular del certificado
 consulta como representante del emisor. `"N"` no es válido en una consulta; omite el indicador
