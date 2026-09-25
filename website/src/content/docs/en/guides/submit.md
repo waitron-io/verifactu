@@ -206,9 +206,15 @@ and queue operations. Persist `CSV` **as soon as it arrives**, before further pr
 absent when AEAT rejects a submission outright, and consulta cannot retrieve it later.
 
 Read every line through `resolveEstadoEfectivo`. Its result is `accepted`,
-`accepted_with_errors`, `rejected`, `duplicate_annulled`, or `duplicate_unknown`. AEAT error 3000
-(duplicate) can say `EstadoRegistro: "Incorrecto"` while the already stored record is actually
-accepted. The resolved state reads the duplicate detail. `duplicate_annulled` needs investigation;
+`accepted_with_errors`, `rejected`, `status_unknown`, `duplicate_annulled`, or `duplicate_unknown`.
+If a line has a missing or unfamiliar `EstadoRegistro`, `status_unknown` keeps you from treating
+it as rejected. Persist the CSV, inspect the raw status, and reconcile the record with AEAT before
+deciding what to send next. The parser also preserves a missing or unfamiliar global `EstadoEnvio`
+instead of discarding the CSV. Do not infer a batch outcome from that value.
+
+AEAT error 3000 (duplicate) can say `EstadoRegistro: "Incorrecto"` while the already stored
+record is actually accepted. The resolved state reads the duplicate detail.
+`duplicate_annulled` needs investigation;
 `duplicate_unknown` means AEAT did not say what it holds, so query and compare huellas before you
 decide what to do. `TiempoEsperaEnvio` is AEAT's wait in **seconds** before the next submission;
 the example above waits for that full interval. For voluntary Veri*Factu, AEAT also allows the

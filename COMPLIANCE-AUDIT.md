@@ -166,11 +166,15 @@ future-dated `AceptadoConErrores` line, a mixed batch, an all-rejected two-line 
 and a duplicate-only retry, including CSV presence or absence. The duplicate test also
 checks the raw XML omits `CSV` and that `resolveEstadoEfectivo` finds the previously
 accepted record despite the rejected retry. The real response parser exposes AEAT's global
-and per-line values only when each required status belongs to the response XSD's published
-code list. Missing and unfamiliar values throw instead of becoming a typed value or a false
-rejection; `src/xml/parse-suministro.test.ts` covers both boundaries for both fields. The
-parser does not reconcile global and per-line values or validate the entire response XSD;
-the fake remains a transport test double, not proof of a schema-valid AEAT response.
+and per-line status strings without assuming the response is schema-valid. It preserves the
+CSV and recognized lines when either status is missing or unfamiliar, and trims whitespace
+around status strings. `resolveEstadoEfectivo` returns `status_unknown` for a missing or
+unfamiliar line status rather than falsely calling it rejected; focused tests cover those
+boundaries and a mixed batch. The exported known-code types still describe AEAT's XSD enums,
+while the parsed status properties are wider because malformed or future responses must not
+hide an unretrievable CSV. The parser does not reconcile global and per-line values or validate
+the entire response XSD; the fake remains a transport test double, not proof of a schema-valid
+AEAT response.
 
 ### SOAP faults and voluntary flow control — service description §§5.1, 6.4.4.1
 

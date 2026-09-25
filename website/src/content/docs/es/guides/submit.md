@@ -208,9 +208,15 @@ y tu cola de tareas. Conserva el `CSV` **en cuanto llegue**, antes de seguir pro
 cuando la AEAT rechaza el envío entero y una consulta posterior no puede recuperarlo.
 
 Interpreta cada línea con `resolveEstadoEfectivo`. Devuelve `accepted`, `accepted_with_errors`,
-`rejected`, `duplicate_annulled` o `duplicate_unknown`. En el error 3000 (duplicado),
-`EstadoRegistro` puede decir `Incorrecto` aunque el registro ya guardado esté aceptado. La
-función consulta el detalle del duplicado. `duplicate_annulled` exige investigar;
+`rejected`, `status_unknown`, `duplicate_annulled` o `duplicate_unknown`. Si falta
+`EstadoRegistro` o tiene un valor desconocido, `status_unknown` evita dar el registro por
+rechazado. Conserva el CSV, examina el estado recibido y contrasta el registro con la AEAT
+antes de decidir qué enviar después. El analizador también conserva un `EstadoEnvio` global
+ausente o desconocido sin descartar el CSV. No deduzcas de ese valor el resultado del lote.
+
+En el error 3000 (duplicado), `EstadoRegistro` puede decir `Incorrecto` aunque el registro ya
+guardado esté aceptado. La función consulta el detalle del duplicado. `duplicate_annulled`
+exige investigar;
 `duplicate_unknown` indica que la AEAT no aclaró lo que guarda: consulta y compara las huellas
 antes de decidir. `TiempoEsperaEnvio` son los **segundos** que exige esperar antes del siguiente
 envío; el ejemplo espera todo ese intervalo. En VERI*FACTU voluntario, la AEAT también permite

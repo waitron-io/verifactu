@@ -25,7 +25,8 @@ export interface RespuestaLinea {
   IDFactura: IDFactura;
   Operacion?: OperacionRespuesta;
   RefExterna?: string;
-  EstadoRegistro: EstadoRegistroSuministro;
+  /** Raw AEAT status; an unfamiliar or missing value must not hide the batch CSV. */
+  EstadoRegistro: string | undefined;
   CodigoErrorRegistro?: number;
   DescripcionErrorRegistro?: string;
   RegistroDuplicado?: RegistroDuplicado;
@@ -38,29 +39,25 @@ export interface RespuestaSuministro {
    * or lose it permanently.
    */
   CSV?: string;
-  EstadoEnvio: EstadoEnvio;
+  /** Raw AEAT status; inspect unfamiliar values before acting on the batch. */
+  EstadoEnvio: string | undefined;
   TiempoEsperaEnvio: number;
   RespuestaLinea: RespuestaLinea[];
 }
 
 /** What the caller should actually record, after resolving the 3000 inversion. */
 export type EstadoEfectivo =
-  "accepted" | "accepted_with_errors" | "rejected" | "duplicate_annulled" | "duplicate_unknown";
+  | "accepted"
+  | "accepted_with_errors"
+  | "rejected"
+  | "status_unknown"
+  | "duplicate_annulled"
+  | "duplicate_unknown";
 
 export const ERROR_DUPLICADO = 3000;
 
-function estadoEnvioOf(value: unknown): EstadoEnvio {
-  if (value === "Correcto" || value === "ParcialmenteCorrecto" || value === "Incorrecto") {
-    return value;
-  }
-  throw new Error(`Unexpected EstadoEnvio: ${JSON.stringify(value)}`);
-}
-
-function estadoRegistroOf(value: unknown): EstadoRegistroSuministro {
-  if (value === "Correcto" || value === "AceptadoConErrores" || value === "Incorrecto") {
-    return value;
-  }
-  throw new Error(`Unexpected EstadoRegistro: ${JSON.stringify(value)}`);
+function statusText(value: unknown): string | undefined {
+  return typeof value === "string" ? value.trim() : undefined;
 }
 
 // The raw shape fast-xml-parser hands back. Leaf values stay strings — parseTagValue is off — so
@@ -136,7 +133,7 @@ function parseRespuestaLinea(raw: RawRespuestaLinea): RespuestaLinea {
     },
     Operacion: parseOperacion(raw.Operacion),
     RefExterna: raw.RefExterna,
-    EstadoRegistro: estadoRegistroOf(raw.EstadoRegistro),
+    EstadoRegistro: statusText(raw.EstadoRegistro),
     CodigoErrorRegistro: asNumber(raw.CodigoErrorRegistro, "RespuestaLinea.CodigoErrorRegistro"),
     DescripcionErrorRegistro: raw.DescripcionErrorRegistro,
     RegistroDuplicado: parseRegistroDuplicado(raw.RegistroDuplicado),
@@ -152,7 +149,7 @@ export function parseRespuestaSuministro(xml: string): RespuestaSuministro {
   }
   return {
     CSV: body.CSV,
-    EstadoEnvio: estadoEnvioOf(body.EstadoEnvio),
+    EstadoEnvio: statusText(body.EstadoEnvio),
     // \d{0,4} in the schema, so up to 9999 seconds — never narrow this to 8 bits.
     // This value drives the caller's next-submission scheduling, so a
     // malformed or absent element must throw here rather than silently
@@ -170,6 +167,8 @@ export function parseRespuestaSuministro(xml: string): RespuestaSuministro {
  * Reading the outer status as authoritative would mark an accepted record
  * rejected and halt a healthy chain — the opposite of the truth.
  *
+ * `status_unknown` means AEAT's line status is missing or unrecognized; the
+ * caller must keep the CSV and investigate instead of assuming rejection.
  * `duplicate_unknown` means AEAT holds something under this identity but did
  * not say what; the caller must resolve it with a consulta and compare the
  * stored huella. `duplicate_annulled` means AEAT holds an annulled record
@@ -193,7 +192,9 @@ export function resolveEstadoEfectivo(linea: RespuestaLinea): EstadoEfectivo {
       return "accepted";
     case "AceptadoConErrores":
       return "accepted_with_errors";
-    default:
+    case "Incorrecto":
       return "rejected";
+    default:
+      return "status_unknown";
   }
 }
