@@ -4,7 +4,7 @@ import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
 import { describe, expect, it } from "vitest";
 import { CABECERA, ALTA_INPUT, SISTEMA } from "../test/fixtures.js";
 import { buildAltaRecord, buildAnulacionRecord } from "./records.js";
-import { NS_SF, serializeConsulta, serializeEnvio } from "./xml/serialize.js";
+import { NS_LRC, NS_SF, serializeConsulta, serializeEnvio } from "./xml/serialize.js";
 
 const SOAP_NS = "http://schemas.xmlsoap.org/soap/envelope/";
 const SIGNATURE_NS = "http://www.w3.org/2000/09/xmldsig#";
@@ -110,4 +110,76 @@ describe("generated unsigned requests against AEAT XSDs", () => {
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("Ejercicio");
   });
+
+  it("accepts 60 Unicode code points in consultation invoice and external-reference filters", () => {
+    const body = soapBodyElement(
+      serializeConsulta(CABECERA, {
+        Ejercicio: "2026",
+        Periodo: "07",
+        NumSerieFactura: "😀".repeat(60),
+        RefExterna: "😀".repeat(60),
+        ClavePaginacion: {
+          IDEmisorFactura: CABECERA.ObligadoEmision.NIF,
+          NumSerieFactura: "😀".repeat(60),
+          FechaExpedicionFactura: "20-07-2026",
+        },
+      }),
+    );
+    const result = schemaResult(CONSULTA_XSD, body);
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it("accepts an empty external-reference filter under TextMax60Type", () => {
+    const body = soapBodyElement(
+      serializeConsulta(CABECERA, { Ejercicio: "2026", Periodo: "07", RefExterna: "" }),
+    );
+    const result = schemaResult(CONSULTA_XSD, body);
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it.each([
+    ["NumSerieFactura", ""],
+    ["NumSerieFactura", "A".repeat(61)],
+    ["RefExterna", "R".repeat(61)],
+  ])("rejects an XSD-invalid %s consultation filter", (field, invalid) => {
+    const body = soapBodyElement(
+      serializeConsulta(CABECERA, {
+        Ejercicio: "2026",
+        Periodo: "07",
+        NumSerieFactura: "INV/42",
+        RefExterna: "REF-42",
+      }),
+    );
+    const document = new DOMParser().parseFromString(body, "text/xml");
+    const leaf = document.getElementsByTagNameNS(NS_LRC, field).item(0);
+    if (!leaf) throw new Error(`Consulta fixture has no ${field}`);
+    leaf.textContent = invalid;
+    const result = schemaResult(CONSULTA_XSD, new XMLSerializer().serializeToString(document));
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain(field);
+  });
+
+  it.each(["", "A".repeat(61)])(
+    "rejects an XSD-invalid pagination invoice number of length %s",
+    (invalid) => {
+      const body = soapBodyElement(
+        serializeConsulta(CABECERA, {
+          Ejercicio: "2026",
+          Periodo: "07",
+          ClavePaginacion: {
+            IDEmisorFactura: CABECERA.ObligadoEmision.NIF,
+            NumSerieFactura: "INV/41",
+            FechaExpedicionFactura: "20-07-2026",
+          },
+        }),
+      );
+      const document = new DOMParser().parseFromString(body, "text/xml");
+      const leaf = document.getElementsByTagNameNS(NS_SF, "NumSerieFactura").item(0);
+      if (!leaf) throw new Error("Consulta fixture has no pagination invoice number");
+      leaf.textContent = invalid;
+      const result = schemaResult(CONSULTA_XSD, new XMLSerializer().serializeToString(document));
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("NumSerieFactura");
+    },
+  );
 });

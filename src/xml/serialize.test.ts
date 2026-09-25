@@ -4,6 +4,7 @@ import { serializeConsulta, serializeEnvio } from "./serialize.js";
 import type {
   Cabecera,
   CabeceraConsulta,
+  ConsultaFiltro,
   DatosAdicionalesRespuesta,
   EnvioRegistro,
 } from "./serialize.js";
@@ -1162,6 +1163,58 @@ describe("exact document output — pins the complete serialised string, not fra
 });
 
 describe("serializeConsulta", () => {
+  it.each([
+    [{ NumSerieFactura: "" }, "Consulta NumSerieFactura must contain 1 to 60 characters"],
+    [
+      { NumSerieFactura: "A".repeat(61) },
+      "Consulta NumSerieFactura must contain 1 to 60 characters",
+    ],
+    [{ RefExterna: "R".repeat(61) }, "Consulta RefExterna must contain at most 60 characters"],
+    [
+      {
+        ClavePaginacion: {
+          IDEmisorFactura: CABECERA.ObligadoEmision.NIF,
+          NumSerieFactura: "",
+          FechaExpedicionFactura: "20-07-2026",
+        },
+      },
+      "Consulta ClavePaginacion.NumSerieFactura must be present and contain 1 to 60 characters",
+    ],
+    [
+      {
+        ClavePaginacion: {
+          IDEmisorFactura: CABECERA.ObligadoEmision.NIF,
+          FechaExpedicionFactura: "20-07-2026",
+        } as ConsultaFiltro["ClavePaginacion"],
+      },
+      "Consulta ClavePaginacion.NumSerieFactura must be present and contain 1 to 60 characters",
+    ],
+  ])("rejects an XSD-invalid consultation identifier filter %#", (fields, message) => {
+    expect(() =>
+      serializeConsulta(CABECERA, { Ejercicio: "2026", Periodo: "07", ...fields }),
+    ).toThrow(message);
+  });
+
+  it("counts Unicode code points, not UTF-16 units, at consultation filter boundaries", () => {
+    const xml = serializeConsulta(CABECERA, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      NumSerieFactura: "😀".repeat(60),
+      RefExterna: "😀".repeat(60),
+    });
+    expect(xml).toContain(`<sfLRC:NumSerieFactura>${"😀".repeat(60)}</sfLRC:NumSerieFactura>`);
+    expect(xml).toContain(`<sfLRC:RefExterna>${"😀".repeat(60)}</sfLRC:RefExterna>`);
+  });
+
+  it("permits an empty external-reference filter under TextMax60Type", () => {
+    const xml = serializeConsulta(CABECERA, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      RefExterna: "",
+    });
+    expect(xml).toContain("<sfLRC:RefExterna></sfLRC:RefExterna>");
+  });
+
   it.each(["202", "20A4", " 2024", "2024 ", ""])(
     "rejects consultation year %s outside the four-digit YearType",
     (ejercicio) => {

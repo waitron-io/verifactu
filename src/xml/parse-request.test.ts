@@ -490,6 +490,72 @@ describe("parseEnvio", () => {
 });
 
 describe("parseConsulta full header and date choice", () => {
+  it.each([
+    ["NumSerieFactura", "INV/42", "", "Consulta NumSerieFactura must contain 1 to 60 characters"],
+    [
+      "NumSerieFactura",
+      "INV/42",
+      "A".repeat(61),
+      "Consulta NumSerieFactura must contain 1 to 60 characters",
+    ],
+    [
+      "RefExterna",
+      "REF-42",
+      "R".repeat(61),
+      "Consulta RefExterna must contain at most 60 characters",
+    ],
+  ])("rejects an XSD-invalid parsed %s filter", (field, original, replacement, message) => {
+    const valid = serializeConsulta(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      NumSerieFactura: "INV/42",
+      RefExterna: "REF-42",
+    });
+    const xml = valid.replace(
+      `<sfLRC:${field}>${original}</sfLRC:${field}>`,
+      `<sfLRC:${field}>${replacement}</sfLRC:${field}>`,
+    );
+    expect(xml).not.toBe(valid);
+    expect(() => parseConsulta(xml)).toThrow(message);
+  });
+
+  it("rejects an XSD-invalid invoice number in a parsed pagination key", () => {
+    const valid = serializeConsulta(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      ClavePaginacion: {
+        IDEmisorFactura: cabecera.ObligadoEmision.NIF,
+        NumSerieFactura: "INV/41",
+        FechaExpedicionFactura: "20-07-2026",
+      },
+    });
+    const xml = valid.replace(
+      "<sf:NumSerieFactura>INV/41</sf:NumSerieFactura>",
+      `<sf:NumSerieFactura>${"A".repeat(61)}</sf:NumSerieFactura>`,
+    );
+    expect(xml).not.toBe(valid);
+    expect(() => parseConsulta(xml)).toThrow(
+      "Consulta ClavePaginacion.NumSerieFactura must be present and contain 1 to 60 characters",
+    );
+  });
+
+  it("rejects a parsed pagination key with no invoice number", () => {
+    const valid = serializeConsulta(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      ClavePaginacion: {
+        IDEmisorFactura: cabecera.ObligadoEmision.NIF,
+        NumSerieFactura: "INV/41",
+        FechaExpedicionFactura: "20-07-2026",
+      },
+    });
+    const xml = valid.replace("<sf:NumSerieFactura>INV/41</sf:NumSerieFactura>", "");
+    expect(xml).not.toBe(valid);
+    expect(() => parseConsulta(xml)).toThrow(
+      "Consulta ClavePaginacion.NumSerieFactura must be present and contain 1 to 60 characters",
+    );
+  });
+
   it("round-trips a recipient header and date range", () => {
     const consultaCabecera = {
       Destinatario: { NombreRazon: "Cliente Uno", NIF: "11111111H" },

@@ -54,10 +54,15 @@ un formato incorrecto antes de enviar el XML a la AEAT. Si calculas el mes a par
 rellénalo con un cero en lugar de enviar `"7"`.
 
 `NumSerieFactura` y `FechaExpedicionFactura` acotan la consulta; omítelos para recorrer el
-periodo. Usa `RangoFechaExpedicion` con `Desde` y `Hasta` para acotar un intervalo de fechas. Es
+periodo.
+Usa `RangoFechaExpedicion` con `Desde` y `Hasta` para acotar un intervalo de fechas. Es
 una alternativa a `FechaExpedicionFactura`; el serializador rechaza una solicitud que envíe ambos.
-Usa `RefExterna` si guardaste una referencia propia en el registro. Usa `Contraparte`
-con `NombreRazon` y el `NIF` o `IDOtro` del cliente para buscar sus facturas.
+Usa entre 1 y 60 caracteres para `NumSerieFactura`. Usa `RefExterna` si guardaste una referencia
+propia en el registro; puede estar vacío, pero no superar los 60 caracteres. El cliente comprueba
+estos límites, incluido el número de factura de `ClavePaginacion`, antes del envío porque el
+esquema de AEAT rechaza valores más largos.
+
+Usa `Contraparte` con `NombreRazon` y el `NIF` o `IDOtro` del cliente para buscar sus facturas.
 `SistemaInformatico` limita el resultado a una instalación. Indica `NombreRazon`, `NIF` o
 `IDOtro`, `IdSistemaInformatico` y `NumeroInstalacion`. El nombre del software, la versión y los
 indicadores de uso son opcionales.

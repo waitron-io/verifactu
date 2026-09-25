@@ -113,6 +113,18 @@ export function isValidConsultaEjercicio(value: unknown): value is string {
   return typeof value === "string" && /^[0-9]{4}$/.test(value);
 }
 
+/** XML Schema string lengths count Unicode code points. */
+export function isValidConsultaNumSerieFactura(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const length = Array.from(value).length;
+  return length >= 1 && length <= 60;
+}
+
+/** sf:TextMax60Type allows an empty external reference but no more than 60 code points. */
+export function isValidConsultaRefExterna(value: unknown): value is string {
+  return typeof value === "string" && Array.from(value).length <= 60;
+}
+
 export function assertConsultaResponseOptions(
   cabecera: CabeceraConsulta,
   filtro: ConsultaFiltro,
@@ -573,6 +585,23 @@ export function serializeConsulta(cabecera: CabeceraConsulta, filtro: ConsultaFi
   }
   if (!isValidConsultaPeriodo(filtro.Periodo)) {
     throw new Error("Consulta Periodo must be 01 through 12");
+  }
+  if (
+    filtro.NumSerieFactura !== undefined &&
+    !isValidConsultaNumSerieFactura(filtro.NumSerieFactura)
+  ) {
+    throw new Error("Consulta NumSerieFactura must contain 1 to 60 characters");
+  }
+  if (filtro.RefExterna !== undefined && !isValidConsultaRefExterna(filtro.RefExterna)) {
+    throw new Error("Consulta RefExterna must contain at most 60 characters");
+  }
+  if (
+    filtro.ClavePaginacion !== undefined &&
+    !isValidConsultaNumSerieFactura(filtro.ClavePaginacion.NumSerieFactura)
+  ) {
+    throw new Error(
+      "Consulta ClavePaginacion.NumSerieFactura must be present and contain 1 to 60 characters",
+    );
   }
   assertConsultaResponseOptions(cabecera, filtro);
   if (filtro.FechaExpedicionFactura !== undefined && filtro.RangoFechaExpedicion !== undefined) {
