@@ -440,7 +440,9 @@ describe("fake AEAT — submit", () => {
     const aeat = createFakeAeat();
     const first = await aeat.client().submit(cabecera, [{ RegistroAlta: altaFixture("A/1") }]);
     const second = await aeat.client().submit(cabecera, [{ RegistroAlta: altaFixture("A/2") }]);
-    expect(second.TiempoEsperaEnvio).toBeLessThan(first.TiempoEsperaEnvio);
+    expect(first.TiempoEsperaEnvio).toBeDefined();
+    expect(second.TiempoEsperaEnvio).toBeDefined();
+    expect(second.TiempoEsperaEnvio!).toBeLessThan(first.TiempoEsperaEnvio!);
   });
 
   // --- beyond the brief's four cases: closing gaps found in self-review ---

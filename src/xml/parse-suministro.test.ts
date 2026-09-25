@@ -158,21 +158,48 @@ describe("parseRespuestaSuministro", () => {
     expect(parseRespuestaSuministro(xml).TiempoEsperaEnvio).toBe(9999);
   });
 
-  it("throws a well-formed error instead of returning NaN for a non-numeric TiempoEsperaEnvio", () => {
-    // Number("not-a-number") is NaN, which silently satisfies the `number`
-    // type. This value drives the caller's next-submission scheduling, so a
-    // malformed element must fail loudly here rather than propagate a
-    // poisoned NaN into that schedule.
-    const xml = ACCEPTED.replace("<TiempoEsperaEnvio>60<", "<TiempoEsperaEnvio>not-a-number<");
-    expect(() => parseRespuestaSuministro(xml)).toThrow(/TiempoEsperaEnvio.*not-a-number/);
+  it.each([
+    ["0", 0],
+    ["0001", 1],
+    ["9999", 9999],
+    [" 60 ", 60],
+    ["\n  60\n", 60],
+  ])("accepts a usable wait of %s seconds", (literal, seconds) => {
+    const xml = ACCEPTED.replace("<TiempoEsperaEnvio>60<", `<TiempoEsperaEnvio>${literal}<`);
+    const response = parseRespuestaSuministro(xml);
+    expect(response.TiempoEsperaEnvio).toBe(seconds);
+    expect(response.TiempoEsperaEnvioRaw).toBe(literal);
   });
 
-  it("throws a well-formed error instead of returning NaN when TiempoEsperaEnvio is absent", () => {
-    // fast-xml-parser simply omits the key when the element is missing, so
-    // `Number(undefined)` (NaN) would otherwise slip through the same way a
-    // malformed literal would.
-    const xml = ACCEPTED.replace("<TiempoEsperaEnvio>60</TiempoEsperaEnvio>", "");
-    expect(() => parseRespuestaSuministro(xml)).toThrow(/TiempoEsperaEnvio/);
+  it.each([
+    [
+      "duplicate",
+      "<TiempoEsperaEnvio>60</TiempoEsperaEnvio><TiempoEsperaEnvio>61</TiempoEsperaEnvio>",
+      ["60", "61"],
+    ],
+    ["nested", "<TiempoEsperaEnvio><Value>60</Value></TiempoEsperaEnvio>", { Value: "60" }],
+  ])("keeps the parsed %s wait shape for diagnosis", (_case, wait, raw) => {
+    const xml = ACCEPTED.replace("<TiempoEsperaEnvio>60</TiempoEsperaEnvio>", wait);
+    const response = parseRespuestaSuministro(xml);
+    expect(response.CSV).toBe("ABC123CSV");
+    expect(response.TiempoEsperaEnvio).toBeUndefined();
+    expect(response.TiempoEsperaEnvioRaw).toEqual(raw);
+  });
+
+  it.each([
+    ["missing", "", undefined],
+    ["non-numeric", "<TiempoEsperaEnvio>not-a-number</TiempoEsperaEnvio>", "not-a-number"],
+    ["empty", "<TiempoEsperaEnvio></TiempoEsperaEnvio>", ""],
+    ["too long", "<TiempoEsperaEnvio>10000</TiempoEsperaEnvio>", "10000"],
+    ["signed", "<TiempoEsperaEnvio>-1</TiempoEsperaEnvio>", "-1"],
+    ["fractional", "<TiempoEsperaEnvio>1.5</TiempoEsperaEnvio>", "1.5"],
+  ])("preserves the irreplaceable CSV and line state with a %s wait", (_case, wait, raw) => {
+    const xml = ACCEPTED.replace("<TiempoEsperaEnvio>60</TiempoEsperaEnvio>", wait);
+    const response = parseRespuestaSuministro(xml);
+    expect(response.CSV).toBe("ABC123CSV");
+    expect(response.RespuestaLinea[0]?.EstadoRegistro).toBe("Correcto");
+    expect(response.TiempoEsperaEnvio).toBeUndefined();
+    expect(response.TiempoEsperaEnvioRaw).toBe(raw);
   });
 
   it("extracts the CSV when the envio was accepted", () => {

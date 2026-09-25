@@ -60,19 +60,3 @@ export function asNumber(value: string | undefined, field: string): number | und
   }
   return parsed;
 }
-
-/**
- * Like asNumber, but for a field the schema requires to be present. Reuses
- * asNumber's "present but malformed" check, then additionally rejects the
- * absent case: fast-xml-parser simply omits the key for a missing element at
- * runtime regardless of what the raw interface's `string` annotation claims,
- * so an absent required field must be caught here rather than silently
- * converting `undefined` to `NaN` via `Number(undefined)`.
- */
-export function asRequiredNumber(value: string | undefined, field: string): number {
-  const parsed = asNumber(value, field);
-  if (parsed === undefined) {
-    throw new Error(`${field} must be a valid number, received ${JSON.stringify(value)}`);
-  }
-  return parsed;
-}

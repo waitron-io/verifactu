@@ -200,6 +200,9 @@ for (const line of response.RespuestaLinea) {
   await storeLineResult(line.IDFactura, effectiveState, line.CodigoErrorRegistro);
 }
 
+if (response.TiempoEsperaEnvio === undefined) {
+  throw new Error(`Espera AEAT no válida: ${JSON.stringify(response.TiempoEsperaEnvioRaw)}`);
+}
 await scheduleNextSubmissionAfter(response.TiempoEsperaEnvio * 1000);
 ```
 
@@ -222,6 +225,10 @@ antes de decidir. `TiempoEsperaEnvio` son los **segundos** que exige esperar ant
 envío; el ejemplo espera todo ese intervalo. En VERI*FACTU voluntario, la AEAT también permite
 el siguiente envío si antes se acumula el máximo de 1.000 registros. Programa el envío cuando
 ocurra primero una de esas dos condiciones. Un lote menor debe esperar a que venza el intervalo.
+
+Una espera ausente o no utilizable ya no oculta el CSV irrepetible ni los resultados por línea.
+Guárdalos primero; después detén la cola de envíos y examina `TiempoEsperaEnvioRaw`. No trates una
+espera desconocida como cero segundos ni adivines cuándo puedes volver a enviar.
 
 Si necesitas distinguir un alta de una anulación, consulta `line.Operacion?.TipoOperacion`.
 `Operacion` es un objeto con varios campos, no la cadena `"Alta"` ni `"Anulacion"`. El analizador

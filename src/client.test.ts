@@ -103,6 +103,18 @@ describe("createClient", () => {
     expect(response.TiempoEsperaEnvio).toBe(60);
   });
 
+  it("returns a CSV with an unknown wait instead of losing the response", async () => {
+    const body = OK.replace(
+      "<TiempoEsperaEnvio>60</TiempoEsperaEnvio>",
+      "<CSV>ONE-TIME-CSV</CSV><TiempoEsperaEnvio>invalid</TiempoEsperaEnvio>",
+    );
+    const client = createClient({ endpoint: "https://example.test/soap", fetch: fakeFetch(body) });
+    const response = await client.submit(CABECERA, REGISTROS);
+    expect(response.CSV).toBe("ONE-TIME-CSV");
+    expect(response.TiempoEsperaEnvio).toBeUndefined();
+    expect(response.TiempoEsperaEnvioRaw).toBe("invalid");
+  });
+
   it("throws with the status code and a slice of the response body on a transport failure", async () => {
     const client = createClient({
       endpoint: "https://example.test/soap",

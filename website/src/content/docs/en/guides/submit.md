@@ -198,6 +198,9 @@ for (const line of response.RespuestaLinea) {
   await storeLineResult(line.IDFactura, effectiveState, line.CodigoErrorRegistro);
 }
 
+if (response.TiempoEsperaEnvio === undefined) {
+  throw new Error(`AEAT wait is unusable: ${JSON.stringify(response.TiempoEsperaEnvioRaw)}`);
+}
 await scheduleNextSubmissionAfter(response.TiempoEsperaEnvio * 1000);
 ```
 
@@ -220,6 +223,10 @@ decide what to do. `TiempoEsperaEnvio` is AEAT's wait in **seconds** before the 
 the example above waits for that full interval. For voluntary Veri*Factu, AEAT also allows the
 next submission when your queue reaches the maximum 1,000 records before the interval ends.
 Schedule whichever happens first. A smaller pending batch must wait for the interval.
+
+An absent or unusable wait no longer hides the response's one-time CSV or line results. Save those
+first, then stop your submission queue and inspect `TiempoEsperaEnvioRaw`. Do not treat an unknown
+wait as zero seconds or guess when another send is allowed.
 
 If you need to distinguish an alta from a cancellation, read `line.Operacion?.TipoOperacion`.
 `Operacion` is a structured object, not the string `"Alta"` or `"Anulacion"`. The parser
