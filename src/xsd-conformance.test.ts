@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { CABECERA, ALTA_INPUT, SISTEMA } from "../test/fixtures.js";
 import { buildAltaRecord, buildAnulacionRecord } from "./records.js";
 import { AEAT_COUNTRY_TYPE2_CODES, isValidCountryType2 } from "./xml/country-type2.js";
-import { NS_LRC, NS_SF, serializeConsulta, serializeEnvio } from "./xml/serialize.js";
+import { NS_LR, NS_LRC, NS_SF, serializeConsulta, serializeEnvio } from "./xml/serialize.js";
 
 const SOAP_NS = "http://schemas.xmlsoap.org/soap/envelope/";
 const SIGNATURE_NS = "http://www.w3.org/2000/09/xmldsig#";
@@ -201,6 +201,127 @@ describe("generated unsigned requests against AEAT XSDs", () => {
     const body = soapBodyElement(serializeEnvio(CABECERA, [{ RegistroAnulacion: cancellation }]));
     const result = schemaResult(ENVIO_XSD, body);
     expect(result.status, result.stderr).toBe(0);
+  });
+
+  it.each([
+    {
+      mode: "voluntary",
+      cabecera: {
+        ...CABECERA,
+        Representante: { NombreRazon: "Asesoría", NIF: "11111111H" },
+        RemisionVoluntaria: { FechaFinVeriFactu: "31-12-2026", Incidencia: "S" as const },
+      },
+    },
+    {
+      mode: "under requirement",
+      cabecera: {
+        ...CABECERA,
+        Representante: { NombreRazon: "Asesoría", NIF: "11111111H" },
+        RemisionRequerimiento: { RefRequerimiento: "R".repeat(18), FinRequerimiento: "N" as const },
+      },
+    },
+  ])("validates a maximal $mode submission header", ({ cabecera }) => {
+    const body = soapBodyElement(
+      serializeEnvio(cabecera, [{ RegistroAlta: buildAltaRecord(ALTA_INPUT) }]),
+    );
+    const result = schemaResult(ENVIO_XSD, body);
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it("accepts exactly 1000 filing wrappers and rejects 1001", () => {
+    const body = soapBodyElement(
+      serializeEnvio(CABECERA, [{ RegistroAlta: buildAltaRecord(ALTA_INPUT) }]),
+    );
+    const document = new DOMParser().parseFromString(body, "text/xml");
+    const root = document.documentElement;
+    const wrapper = document.getElementsByTagNameNS(NS_LR, "RegistroFactura").item(0);
+    if (!root || !wrapper) throw new Error("Submission fixture has no root or record wrapper");
+    for (let index = 1; index < 1000; index += 1) root.appendChild(wrapper.cloneNode(true));
+    const maximum = schemaResult(ENVIO_XSD, new XMLSerializer().serializeToString(document));
+    expect(maximum.status, maximum.stderr).toBe(0);
+    root.appendChild(wrapper.cloneNode(true));
+    const tooMany = schemaResult(ENVIO_XSD, new XMLSerializer().serializeToString(document));
+    expect(tooMany.status).not.toBe(0);
+    expect(tooMany.stderr).toContain("RegistroFactura");
+  });
+
+  it.each(["missing", "both"] as const)(
+    "rejects a RegistroFactura with %s record alternatives",
+    (caseName) => {
+      const body = soapBodyElement(
+        serializeEnvio(CABECERA, [{ RegistroAlta: buildAltaRecord(ALTA_INPUT) }]),
+      );
+      const document = new DOMParser().parseFromString(body, "text/xml");
+      const wrapper = document.getElementsByTagNameNS(NS_LR, "RegistroFactura").item(0);
+      const alta = document.getElementsByTagNameNS(NS_SF, "RegistroAlta").item(0);
+      if (!wrapper || !alta) throw new Error("Submission fixture has no alta wrapper");
+      if (caseName === "missing") wrapper.removeChild(alta);
+      else {
+        const cancellation = document.createElementNS(NS_SF, "sf:RegistroAnulacion");
+        wrapper.appendChild(cancellation);
+      }
+      const result = schemaResult(ENVIO_XSD, new XMLSerializer().serializeToString(document));
+      expect(result.status).not.toBe(0);
+    },
+  );
+
+  it("rejects a Cabecera placed after RegistroFactura", () => {
+    const body = soapBodyElement(
+      serializeEnvio(CABECERA, [{ RegistroAlta: buildAltaRecord(ALTA_INPUT) }]),
+    );
+    const document = new DOMParser().parseFromString(body, "text/xml");
+    const root = document.documentElement;
+    const header = document.getElementsByTagNameNS(NS_LR, "Cabecera").item(0);
+    if (!root || !header) throw new Error("Submission fixture has no root or Cabecera");
+    root.appendChild(header);
+    const result = schemaResult(ENVIO_XSD, new XMLSerializer().serializeToString(document));
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("Cabecera");
+  });
+
+  it("proves the XSD permits both remittance blocks while the library selects one mode", () => {
+    const body = soapBodyElement(
+      serializeEnvio({ ...CABECERA, RemisionVoluntaria: { Incidencia: "N" } }, [
+        { RegistroAlta: buildAltaRecord(ALTA_INPUT) },
+      ]),
+    );
+    const document = new DOMParser().parseFromString(body, "text/xml");
+    const header = document.getElementsByTagNameNS(NS_LR, "Cabecera").item(0);
+    if (!header) throw new Error("Submission fixture has no Cabecera");
+    const requirement = document.createElementNS(NS_SF, "sf:RemisionRequerimiento");
+    const reference = document.createElementNS(NS_SF, "sf:RefRequerimiento");
+    reference.textContent = "REQ-123";
+    requirement.appendChild(reference);
+    header.appendChild(requirement);
+    const result = schemaResult(ENVIO_XSD, new XMLSerializer().serializeToString(document));
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it("probes submission-header text limits at exact Unicode boundaries", () => {
+    const body = soapBodyElement(
+      serializeEnvio(
+        {
+          ...CABECERA,
+          ObligadoEmision: { ...CABECERA.ObligadoEmision, NombreRazon: "😀".repeat(120) },
+          RemisionRequerimiento: { RefRequerimiento: "😀".repeat(18) },
+        },
+        [{ RegistroAlta: buildAltaRecord(ALTA_INPUT) }],
+      ),
+    );
+    expect(schemaResult(ENVIO_XSD, body).status).toBe(0);
+    const document = new DOMParser().parseFromString(body, "text/xml");
+    const name = document.getElementsByTagNameNS(NS_SF, "NombreRazon").item(0);
+    const reference = document.getElementsByTagNameNS(NS_SF, "RefRequerimiento").item(0);
+    if (!name || !reference) throw new Error("Submission fixture lacks header text fields");
+    name.textContent = "😀".repeat(121);
+    let invalid = schemaResult(ENVIO_XSD, new XMLSerializer().serializeToString(document));
+    expect(invalid.status).not.toBe(0);
+    expect(invalid.stderr).toContain("NombreRazon");
+    name.textContent = "😀".repeat(120);
+    reference.textContent = "😀".repeat(19);
+    invalid = schemaResult(ENVIO_XSD, new XMLSerializer().serializeToString(document));
+    expect(invalid.status).not.toBe(0);
+    expect(invalid.stderr).toContain("RefRequerimiento");
   });
 
   it.each([

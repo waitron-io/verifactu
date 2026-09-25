@@ -626,6 +626,33 @@ describe("serializeEnvio", () => {
     );
   });
 
+  it.each(["ObligadoEmision", "Representante"] as const)(
+    "rejects an overlong Cabecera.%s.NombreRazon at the XSD boundary",
+    (field) => {
+      const persona = { NombreRazon: "😀".repeat(121), NIF: "11111111H" };
+      const cabecera = {
+        ...CABECERA,
+        ...(field === "ObligadoEmision"
+          ? { ObligadoEmision: { ...persona, NIF: CABECERA.ObligadoEmision.NIF } }
+          : { Representante: persona }),
+      };
+
+      expect(() => serializeEnvio(cabecera, [{ RegistroAlta: record }])).toThrow(
+        `Cabecera.${field}.NombreRazon must contain at most 120 characters`,
+      );
+    },
+  );
+
+  it("counts Unicode code points at the Cabecera name boundary", () => {
+    const cabecera: Cabecera = {
+      ...CABECERA,
+      ObligadoEmision: { ...CABECERA.ObligadoEmision, NombreRazon: "😀".repeat(120) },
+      Representante: { NombreRazon: "😀".repeat(120), NIF: "11111111H" },
+    };
+
+    expect(serializeEnvio(cabecera, [{ RegistroAlta: record }])).toContain("😀".repeat(120));
+  });
+
   it("writes the under-requirement header block in XSD order", () => {
     const cabecera = {
       ...CABECERA,
