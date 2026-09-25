@@ -130,6 +130,79 @@ export function isValidConsultaRefExterna(value: unknown): value is string {
   return typeof value === "string" && Array.from(value).length <= 60;
 }
 
+function assertConsultaText(field: string, value: unknown, max: number, required: boolean): void {
+  if (value === undefined && !required) return;
+  if (typeof value !== "string" || Array.from(value).length > max) {
+    throw new Error(`Consulta ${field} must be a string of at most ${max} characters`);
+  }
+}
+
+function assertConsultaNif(field: string, value: unknown): void {
+  if (typeof value !== "string" || Array.from(value).length !== 9) {
+    throw new Error(`Consulta ${field} must contain exactly 9 characters`);
+  }
+}
+
+export function assertConsultaHeaderPersona(
+  field: "ObligadoEmision" | "Destinatario",
+  value: unknown,
+): void {
+  const raw =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  assertConsultaText(`${field}.NombreRazon`, raw.NombreRazon, 120, true);
+  assertConsultaNif(`${field}.NIF`, raw.NIF);
+}
+
+export function assertConsultaPersona(
+  field: "Contraparte" | "SistemaInformatico",
+  value: unknown,
+): void {
+  const raw =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  const hasNif = "NIF" in raw && raw.NIF !== undefined;
+  const hasOther = "IDOtro" in raw && raw.IDOtro !== undefined;
+  if (hasNif === hasOther) {
+    throw new Error(`Consulta ${field} must contain exactly one of NIF or IDOtro`);
+  }
+  assertConsultaText(`${field}.NombreRazon`, raw.NombreRazon, 120, true);
+  if (hasNif) {
+    assertConsultaNif(`${field}.NIF`, raw.NIF);
+  } else {
+    const other =
+      raw.IDOtro && typeof raw.IDOtro === "object" && !Array.isArray(raw.IDOtro)
+        ? (raw.IDOtro as Record<string, unknown>)
+        : {};
+    if (typeof other.IDType !== "string" || !/^0[2-7]$/.test(other.IDType)) {
+      throw new Error(`Consulta ${field}.IDOtro.IDType must be 02 through 07`);
+    }
+    assertConsultaText(`${field}.IDOtro.ID`, other.ID, 20, true);
+  }
+  if (field === "SistemaInformatico") {
+    for (const [name, max, required] of [
+      ["NombreSistemaInformatico", 30, false],
+      ["IdSistemaInformatico", 2, true],
+      ["Version", 50, false],
+      ["NumeroInstalacion", 100, true],
+    ] as const) {
+      assertConsultaText(`${field}.${name}`, raw[name], max, required);
+    }
+    for (const name of [
+      "TipoUsoPosibleSoloVerifactu",
+      "TipoUsoPosibleMultiOT",
+      "IndicadorMultiplesOT",
+    ] as const) {
+      const flag = raw[name];
+      if (flag !== undefined && flag !== "S" && flag !== "N") {
+        throw new Error(`Consulta ${field}.${name} must be S or N`);
+      }
+    }
+  }
+}
+
 export function assertConsultaResponseOptions(
   cabecera: CabeceraConsulta,
   filtro: ConsultaFiltro,
@@ -640,6 +713,14 @@ export function serializeConsulta(cabecera: CabeceraConsulta, filtro: ConsultaFi
   }
   if (!isValidConsultaPeriodo(filtro.Periodo)) {
     throw new Error("Consulta Periodo must be 01 through 12");
+  }
+  if (cabecera.ObligadoEmision !== undefined) {
+    assertConsultaHeaderPersona("ObligadoEmision", cabecera.ObligadoEmision);
+  } else if (cabecera.Destinatario !== undefined) {
+    assertConsultaHeaderPersona("Destinatario", cabecera.Destinatario);
+  }
+  for (const field of ["Contraparte", "SistemaInformatico"] as const) {
+    if (filtro[field] !== undefined) assertConsultaPersona(field, filtro[field]);
   }
   if (
     filtro.NumSerieFactura !== undefined &&

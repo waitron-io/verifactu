@@ -1617,6 +1617,148 @@ describe("serializeConsulta", () => {
     );
   });
 
+  it.each(["Contraparte", "SistemaInformatico"] as const)(
+    "rejects an untyped %s without exactly one identity branch",
+    (field) => {
+      const base = {
+        NombreRazon: "Buyer",
+        ...(field === "SistemaInformatico"
+          ? { IdSistemaInformatico: "SX", NumeroInstalacion: "1" }
+          : {}),
+      };
+      const other = { CodigoPais: "FR", IDType: "02", ID: "FR12345678901" };
+      for (const identity of [{}, { NIF: "11111111H", IDOtro: other }]) {
+        const filtro = {
+          Ejercicio: "2026",
+          Periodo: "07",
+          [field]: { ...base, ...identity },
+        } as ConsultaFiltro;
+        expect(() => serializeConsulta(CABECERA, filtro)).toThrow(
+          `Consulta ${field} must contain exactly one of NIF or IDOtro`,
+        );
+      }
+    },
+  );
+
+  it.each([
+    [
+      "counterpart name",
+      { Contraparte: { NombreRazon: "A".repeat(121), NIF: "11111111H" } },
+      "Contraparte.NombreRazon",
+    ],
+    [
+      "counterpart NIF",
+      { Contraparte: { NombreRazon: "Buyer", NIF: "12345678" } },
+      "Contraparte.NIF",
+    ],
+    [
+      "other ID",
+      { Contraparte: { NombreRazon: "Buyer", IDOtro: { IDType: "03", ID: "X".repeat(21) } } },
+      "Contraparte.IDOtro.ID",
+    ],
+    [
+      "other ID type",
+      { Contraparte: { NombreRazon: "Buyer", IDOtro: { IDType: "01", ID: "X" } } },
+      "Contraparte.IDOtro.IDType",
+    ],
+    [
+      "software system ID",
+      {
+        SistemaInformatico: {
+          NombreRazon: "Software",
+          NIF: "89890001K",
+          IdSistemaInformatico: "ABC",
+          NumeroInstalacion: "1",
+        },
+      },
+      "SistemaInformatico.IdSistemaInformatico",
+    ],
+    [
+      "software installation",
+      {
+        SistemaInformatico: {
+          NombreRazon: "Software",
+          NIF: "89890001K",
+          IdSistemaInformatico: "AB",
+          NumeroInstalacion: "X".repeat(101),
+        },
+      },
+      "SistemaInformatico.NumeroInstalacion",
+    ],
+    [
+      "software name",
+      {
+        SistemaInformatico: {
+          NombreRazon: "Software",
+          NIF: "89890001K",
+          IdSistemaInformatico: "AB",
+          NumeroInstalacion: "1",
+          NombreSistemaInformatico: "X".repeat(31),
+        },
+      },
+      "SistemaInformatico.NombreSistemaInformatico",
+    ],
+    [
+      "software version",
+      {
+        SistemaInformatico: {
+          NombreRazon: "Software",
+          NIF: "89890001K",
+          IdSistemaInformatico: "AB",
+          NumeroInstalacion: "1",
+          Version: "X".repeat(51),
+        },
+      },
+      "SistemaInformatico.Version",
+    ],
+  ] as const)("rejects an XSD-invalid %s filter field", (_case, override, field) => {
+    expect(() =>
+      serializeConsulta(CABECERA, {
+        Ejercicio: "2026",
+        Periodo: "07",
+        ...override,
+      } as ConsultaFiltro),
+    ).toThrow(`Consulta ${field}`);
+  });
+
+  it("rejects missing required software-filter fields and invalid flags", () => {
+    const base = {
+      NombreRazon: "Software",
+      NIF: "89890001K",
+      IdSistemaInformatico: "AB",
+      NumeroInstalacion: "1",
+    };
+    for (const field of ["IdSistemaInformatico", "NumeroInstalacion"] as const) {
+      const invalid = { ...base, [field]: undefined };
+      expect(() =>
+        serializeConsulta(CABECERA, {
+          Ejercicio: "2026",
+          Periodo: "07",
+          SistemaInformatico: invalid as unknown as ConsultaFiltro["SistemaInformatico"],
+        }),
+      ).toThrow(`Consulta SistemaInformatico.${field}`);
+    }
+    expect(() =>
+      serializeConsulta(CABECERA, {
+        Ejercicio: "2026",
+        Periodo: "07",
+        SistemaInformatico: { ...base, TipoUsoPosibleMultiOT: "X" as "S" },
+      }),
+    ).toThrow("Consulta SistemaInformatico.TipoUsoPosibleMultiOT");
+  });
+
+  it("checks consultation header name and NIF XSD lengths", () => {
+    for (const [field, invalid] of [
+      ["NombreRazon", "A".repeat(121)],
+      ["NIF", "12345678"],
+    ] as const) {
+      const header = { ObligadoEmision: { ...CABECERA.ObligadoEmision, [field]: invalid } };
+      expect(() => serializeConsulta(header, { Ejercicio: "2026", Periodo: "07" })).toThrow(
+        `Consulta ObligadoEmision.${field}`,
+      );
+    }
+  });
+
   it("emits the mandatory PeriodoImputacion, qualified with sf: (declared locally in SI.xsd)", () => {
     // PeriodoImputacionType's Ejercicio and Periodo children are declared locally inside
     // SuministroInformacion.xsd, so — unlike the sfLRC:-owned wrapper elements around them —

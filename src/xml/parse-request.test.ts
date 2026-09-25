@@ -947,6 +947,114 @@ describe("parseConsulta", () => {
     expect(parseConsulta(serializeConsulta(cabecera, filtro))).toStrictEqual({ cabecera, filtro });
   });
 
+  it.each(["Contraparte", "SistemaInformatico"] as const)(
+    "rejects a parsed %s without exactly one identity branch",
+    (field) => {
+      const person = { NombreRazon: "Buyer", NIF: "11111111H" };
+      const filtro: ConsultaFiltro = {
+        Ejercicio: "2026",
+        Periodo: "07",
+        ...(field === "Contraparte"
+          ? { Contraparte: person }
+          : {
+              SistemaInformatico: {
+                ...person,
+                IdSistemaInformatico: "SX",
+                NumeroInstalacion: "1",
+              },
+            }),
+      };
+      const valid = serializeConsulta(cabecera, filtro);
+      const marker =
+        `<sfLRC:${field}><sf:NombreRazon>Buyer</sf:NombreRazon>` + "<sf:NIF>11111111H</sf:NIF>";
+      for (const replacement of [
+        `<sfLRC:${field}><sf:NombreRazon>Buyer</sf:NombreRazon>`,
+        marker + "<sf:IDOtro><sf:IDType>02</sf:IDType><sf:ID>FR123</sf:ID></sf:IDOtro>",
+      ]) {
+        const xml = valid.replace(marker, replacement);
+        expect(xml).not.toBe(valid);
+        expect(() => parseConsulta(xml)).toThrow(
+          `Consulta ${field} must contain exactly one of NIF or IDOtro`,
+        );
+      }
+    },
+  );
+
+  it.each([
+    [
+      "header name",
+      "<sf:NombreRazon>Waitron SL</sf:NombreRazon>",
+      `<sf:NombreRazon>${"X".repeat(121)}</sf:NombreRazon>`,
+      "ObligadoEmision.NombreRazon",
+    ],
+    [
+      "header NIF",
+      "<sf:NIF>89890001K</sf:NIF>",
+      "<sf:NIF>12345678</sf:NIF>",
+      "ObligadoEmision.NIF",
+    ],
+    [
+      "counterpart name",
+      "<sf:NombreRazon>Buyer</sf:NombreRazon>",
+      `<sf:NombreRazon>${"X".repeat(121)}</sf:NombreRazon>`,
+      "Contraparte.NombreRazon",
+    ],
+    [
+      "counterpart NIF",
+      "<sf:NIF>11111111H</sf:NIF>",
+      "<sf:NIF>12345678</sf:NIF>",
+      "Contraparte.NIF",
+    ],
+    [
+      "software ID",
+      "<sf:IdSistemaInformatico>AB</sf:IdSistemaInformatico>",
+      "<sf:IdSistemaInformatico>ABC</sf:IdSistemaInformatico>",
+      "SistemaInformatico.IdSistemaInformatico",
+    ],
+    [
+      "software installation",
+      "<sf:NumeroInstalacion>1</sf:NumeroInstalacion>",
+      "",
+      "SistemaInformatico.NumeroInstalacion",
+    ],
+    [
+      "software flag",
+      "<sf:TipoUsoPosibleMultiOT>S</sf:TipoUsoPosibleMultiOT>",
+      "<sf:TipoUsoPosibleMultiOT>X</sf:TipoUsoPosibleMultiOT>",
+      "SistemaInformatico.TipoUsoPosibleMultiOT",
+    ],
+  ] as const)("rejects a parsed XSD-invalid %s", (_case, source, replacement, field) => {
+    const valid = serializeConsulta(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      Contraparte: { NombreRazon: "Buyer", NIF: "11111111H" },
+      SistemaInformatico: {
+        NombreRazon: "Software",
+        NIF: "89890001K",
+        IdSistemaInformatico: "AB",
+        NumeroInstalacion: "1",
+        TipoUsoPosibleMultiOT: "S",
+      },
+    });
+    const xml = valid.replace(source, replacement);
+    expect(xml).not.toBe(valid);
+    expect(() => parseConsulta(xml)).toThrow(`Consulta ${field}`);
+  });
+
+  it.each([
+    ["IDType", "<sf:IDType>02</sf:IDType>", "<sf:IDType>01</sf:IDType>"],
+    ["ID", "<sf:ID>FR123</sf:ID>", `<sf:ID>${"X".repeat(21)}</sf:ID>`],
+  ] as const)("rejects a parsed XSD-invalid other %s", (field, source, replacement) => {
+    const valid = serializeConsulta(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      Contraparte: { NombreRazon: "Buyer", IDOtro: { IDType: "02", ID: "FR123" } },
+    });
+    const xml = valid.replace(source, replacement);
+    expect(xml).not.toBe(valid);
+    expect(() => parseConsulta(xml)).toThrow(`Consulta Contraparte.IDOtro.${field}`);
+  });
+
   it("drops unknown fields inside a consulta counterpart's IDOtro", () => {
     const identity = {
       NombreRazon: "Société X",
