@@ -104,14 +104,56 @@ describe("generated unsigned requests against AEAT XSDs", () => {
     },
   );
 
-  it("accepts an empty consultation date-choice wrapper", () => {
-    const body = soapBodyElement(serializeConsulta(CABECERA, { Ejercicio: "2026", Periodo: "07" }));
+  it.each(["", "\n  \t"])(
+    "accepts an empty consultation date-choice wrapper with %j text",
+    (text) => {
+      const body = soapBodyElement(
+        serializeConsulta(CABECERA, { Ejercicio: "2026", Periodo: "07" }),
+      );
+      const document = new DOMParser().parseFromString(body, "text/xml");
+      const filter = document.getElementsByTagNameNS(NS_LRC, "FiltroConsulta").item(0);
+      if (!filter) throw new Error("Consultation fixture has no filter");
+      const wrapper = document.createElementNS(NS_LRC, "sfLRC:FechaExpedicionFactura");
+      wrapper.textContent = text;
+      filter.appendChild(wrapper);
+      const result = schemaResult(CONSULTA_XSD, new XMLSerializer().serializeToString(document));
+      expect(result.status, result.stderr).toBe(0);
+    },
+  );
+
+  it.each([
+    "repeated exact dates",
+    "repeated date ranges",
+    "text beside a date",
+    "non-XML whitespace",
+  ] as const)("rejects %s in a consultation date wrapper", (invalid) => {
+    const body = soapBodyElement(
+      serializeConsulta(CABECERA, {
+        Ejercicio: "2026",
+        Periodo: "07",
+        FechaExpedicionFactura: "20-07-2026",
+      }),
+    );
     const document = new DOMParser().parseFromString(body, "text/xml");
-    const filter = document.getElementsByTagNameNS(NS_LRC, "FiltroConsulta").item(0);
-    if (!filter) throw new Error("Consultation fixture has no filter");
-    filter.appendChild(document.createElementNS(NS_LRC, "sfLRC:FechaExpedicionFactura"));
+    const wrapper = document.getElementsByTagNameNS(NS_LRC, "FechaExpedicionFactura").item(0);
+    if (!wrapper) throw new Error("Consultation fixture has no date wrapper");
+    if (invalid === "repeated exact dates") {
+      wrapper.appendChild(wrapper.firstChild!.cloneNode(true));
+    } else if (invalid === "repeated date ranges") {
+      const range = document.createElementNS(NS_SF, "sf:RangoFechaExpedicion");
+      const from = document.createElementNS(NS_SF, "sf:Desde");
+      from.textContent = "01-07-2026";
+      range.appendChild(from);
+      wrapper.textContent = "";
+      wrapper.appendChild(range);
+      wrapper.appendChild(range.cloneNode(true));
+    } else if (invalid === "text beside a date") {
+      wrapper.insertBefore(document.createTextNode("junk"), wrapper.firstChild);
+    } else {
+      wrapper.textContent = "\u00a0";
+    }
     const result = schemaResult(CONSULTA_XSD, new XMLSerializer().serializeToString(document));
-    expect(result.status, result.stderr).toBe(0);
+    expect(result.status, result.stderr).not.toBe(0);
   });
 
   it("rejects text without a child date alternative", () => {

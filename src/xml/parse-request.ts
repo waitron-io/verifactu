@@ -378,8 +378,14 @@ export function parseConsulta(xml: string): { cabecera: CabeceraConsulta; filtro
   if (Array.isArray(dateFilter)) {
     throw new Error("Consulta FechaExpedicionFactura must occur at most once");
   }
-  if (typeof dateFilter === "string" && dateFilter !== "") {
-    throw new Error("Consulta FechaExpedicionFactura must contain one date alternative");
+  const dateText =
+    typeof dateFilter === "string"
+      ? dateFilter
+      : (dateFilter as { "#text"?: unknown } | undefined)?.["#text"];
+  if (typeof dateText === "string" && /[^\t\n\r ]/.test(dateText)) {
+    throw new Error(
+      "Consulta FechaExpedicionFactura must contain only date elements or XML whitespace",
+    );
   }
   if (
     dateFilter?.FechaExpedicionFactura !== undefined &&
@@ -393,7 +399,7 @@ export function parseConsulta(xml: string): { cabecera: CabeceraConsulta; filtro
     Array.isArray(dateFilter?.FechaExpedicionFactura) ||
     Array.isArray(dateFilter?.RangoFechaExpedicion)
   ) {
-    throw new Error("Consulta FechaExpedicionFactura must contain one date alternative");
+    throw new Error("Consulta FechaExpedicionFactura must contain at most one date alternative");
   }
   if (
     f.FechaExpedicionFactura?.FechaExpedicionFactura !== undefined &&
