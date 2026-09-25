@@ -157,8 +157,11 @@ confirm that the supplied ID exists.
 
 Keep `IDEmisorFactura` equal to `Cabecera.ObligadoEmision.NIF`. `serializeEnvio` rejects the batch
 when those values differ, before it creates XML. AEAT permits a wider printable-ASCII alphabet in
-`NumSerieFactura`, but this library accepts only letters, digits, `/`, `_`, `.`, and `-`. That
-narrower alphabet keeps the invoice number unambiguous when it becomes a QR query parameter.
+`NumSerieFactura`, but `validate` accepts only letters, digits, `/`, `_`, `.`, and `-`. That narrower
+alphabet keeps the invoice number unambiguous when it becomes a QR query parameter.
+`serializeEnvio` also rejects an invoice number with fewer than 1 or more than 60 Unicode characters
+in an alta, a cancellation, or a referenced invoice before sending XML. This XSD length check does
+not replace `validate`'s other invoice-number and business-rule checks.
 
 For a nine character Spanish taxpayer ID, `NIF_CONTROL` reports a wrong check character or an
 unknown format. It covers DNI, X/Y/Z NIE, company IDs, and numeric K/L/M IDs. The newer K/L/M form

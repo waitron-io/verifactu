@@ -58,6 +58,17 @@ describe("createClient", () => {
     expect(fetch.mock.calls[0]?.[0]).toBe("https://example.test/soap");
   });
 
+  it("does not send a submitted record with an XSD-invalid invoice number", async () => {
+    const fetch = fakeFetch(OK);
+    const client = createClient({ endpoint: "https://example.test/soap", fetch });
+    const invalid = buildAltaRecord(ALTA_INPUT);
+    invalid.IDFactura.NumSerieFactura = "A".repeat(61);
+    await expect(client.submit(CABECERA, [{ RegistroAlta: invalid }])).rejects.toThrow(
+      "RegistroAlta[0].IDFactura.NumSerieFactura must contain 1 to 60 characters",
+    );
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("sends an empty SOAPAction header", async () => {
     // The WSDL declares soapAction="" for every operation; dispatch is by
     // message body. Sending an operation name here is a guess, not a contract.

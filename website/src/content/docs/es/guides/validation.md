@@ -167,9 +167,12 @@ AEAT confirme la existencia del identificador indicado.
 
 Mantén `IDEmisorFactura` igual a `Cabecera.ObligadoEmision.NIF`. `serializeEnvio` rechaza el lote
 si ambos valores difieren, antes de crear el XML. La AEAT permite un conjunto más amplio de
-caracteres ASCII imprimibles en `NumSerieFactura`, pero esta biblioteca solo acepta letras,
-dígitos, `/`, `_`, `.` y `-`. Este alfabeto más reducido evita ambigüedades cuando el número de
-factura pasa a ser un parámetro de la consulta QR.
+caracteres ASCII imprimibles en `NumSerieFactura`, pero `validate` solo acepta letras, dígitos,
+`/`, `_`, `.` y `-`. Este alfabeto más reducido evita ambigüedades cuando el número de factura pasa
+a ser un parámetro de la consulta QR. `serializeEnvio` también rechaza un número de factura de menos
+de 1 o más de 60 caracteres Unicode en un alta, una anulación o una factura referenciada antes de
+enviar XML. Esta comprobación de longitud del XSD no sustituye a las demás comprobaciones de
+`validate` sobre el número de factura y las reglas fiscales.
 
 Para un identificador fiscal español de nueve caracteres, `NIF_CONTROL` señala un carácter de
 control incorrecto o un formato desconocido. Comprueba el DNI, el NIE X/Y/Z, los NIF de entidades y

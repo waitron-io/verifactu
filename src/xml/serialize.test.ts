@@ -31,6 +31,50 @@ describe("escapeXml", () => {
 });
 
 describe("serializeEnvio", () => {
+  it.each(["", "A".repeat(61)])("rejects an XSD-invalid alta invoice number", (number) => {
+    const invalid = buildAltaRecord(ALTA_INPUT);
+    invalid.IDFactura.NumSerieFactura = number;
+    expect(() =>
+      serializeEnvio(CABECERA, [{ RegistroAlta: record }, { RegistroAlta: invalid }]),
+    ).toThrow("RegistroAlta[1].IDFactura.NumSerieFactura must contain 1 to 60 characters");
+  });
+
+  it.each(["", "A".repeat(61)])("rejects an XSD-invalid cancellation invoice number", (number) => {
+    const invalid = buildAnulacionRecord({
+      IDEmisorFacturaAnulada: CABECERA.ObligadoEmision.NIF,
+      NumSerieFacturaAnulada: "CANCEL-1",
+      FechaExpedicionFacturaAnulada: new Date("2024-10-28T00:00:00+01:00"),
+      Encadenamiento: { PrimerRegistro: "S" },
+      SistemaInformatico: SISTEMA,
+      generadoEn: new Date("2024-10-28T19:20:30+01:00"),
+      offsetMinutes: 60,
+    });
+    invalid.IDFactura.NumSerieFacturaAnulada = number;
+    expect(() => serializeEnvio(CABECERA, [{ RegistroAnulacion: invalid }])).toThrow(
+      "RegistroAnulacion[0].IDFactura.NumSerieFacturaAnulada must contain 1 to 60 characters",
+    );
+  });
+
+  it.each(["FacturasRectificadas", "FacturasSustituidas"] as const)(
+    "rejects an XSD-invalid referenced invoice number in %s",
+    (field) => {
+      const referenced = {
+        IDEmisorFactura: CABECERA.ObligadoEmision.NIF,
+        NumSerieFactura: "A".repeat(61),
+        FechaExpedicionFactura: "28-10-2024",
+      };
+      const invalid = {
+        ...record,
+        ...(field === "FacturasRectificadas"
+          ? { FacturasRectificadas: { IDFacturaRectificada: [referenced] } }
+          : { FacturasSustituidas: { IDFacturaSustituida: [referenced] } }),
+      };
+      expect(() => serializeEnvio(CABECERA, [{ RegistroAlta: invalid }])).toThrow(
+        `RegistroAlta[0].${field}[0].NumSerieFactura must contain 1 to 60 characters`,
+      );
+    },
+  );
+
   it.each([{ RegistroAlta: record, RegistroAnulacion: record }, {}])(
     "§3.1.2 rejects a wrapper without exactly one record kind",
     (entry) => {

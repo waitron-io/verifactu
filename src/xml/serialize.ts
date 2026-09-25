@@ -453,6 +453,17 @@ function envelope(body: string, extraNs: string): string {
   );
 }
 
+/** TextoIDFacturaType counts Unicode code points, not JavaScript UTF-16 units. */
+function assertInvoiceNumberXsd(field: string, value: unknown): void {
+  if (typeof value !== "string") {
+    throw new Error(`${field} must contain 1 to 60 characters`);
+  }
+  const length = Array.from(value).length;
+  if (length < 1 || length > 60) {
+    throw new Error(`${field} must contain 1 to 60 characters`);
+  }
+}
+
 /**
  * Serialises a submission. One Cabecera names the obligado tributario; each
  * record carries its own SistemaInformatico, so a single envio may cover
@@ -558,6 +569,30 @@ export function serializeEnvio(
     ) {
       throw new Error(
         `RegistroAnulacion[${index}].IDFactura.IDEmisorFacturaAnulada must match Cabecera.ObligadoEmision.NIF`,
+      );
+    }
+    if ("RegistroAlta" in entry) {
+      const alta = entry.RegistroAlta;
+      assertInvoiceNumberXsd(
+        `RegistroAlta[${index}].IDFactura.NumSerieFactura`,
+        alta.IDFactura.NumSerieFactura,
+      );
+      alta.FacturasRectificadas?.IDFacturaRectificada.forEach((reference, referenceIndex) =>
+        assertInvoiceNumberXsd(
+          `RegistroAlta[${index}].FacturasRectificadas[${referenceIndex}].NumSerieFactura`,
+          reference.NumSerieFactura,
+        ),
+      );
+      alta.FacturasSustituidas?.IDFacturaSustituida.forEach((reference, referenceIndex) =>
+        assertInvoiceNumberXsd(
+          `RegistroAlta[${index}].FacturasSustituidas[${referenceIndex}].NumSerieFactura`,
+          reference.NumSerieFactura,
+        ),
+      );
+    } else if ("RegistroAnulacion" in entry) {
+      assertInvoiceNumberXsd(
+        `RegistroAnulacion[${index}].IDFactura.NumSerieFacturaAnulada`,
+        entry.RegistroAnulacion.IDFactura.NumSerieFacturaAnulada,
       );
     }
   });
