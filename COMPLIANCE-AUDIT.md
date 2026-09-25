@@ -242,13 +242,16 @@ XSD validity.
 ### Consultation response flags and cursor — service description §§6.4.2–6.4.3
 
 `RespuestaConsultaLR.xsd` restricts `ResultadoConsulta` to `ConDatos`/`SinDatos` and
-`IndicadorPaginacion` to `S`/`N`. Service description §6.4.3 requires the response's
-`ClavePaginacion` only when the indicator is `S`, so callers can echo that last-record identity
-in the next query. `parseRespuestaConsulta` now checks the literal enum values, rejects absent
-or duplicated flag elements, and requires one complete invoice identity exactly for an `S`
-response. Focused tests cover the valid final and continuing pages, malformed flag values,
-missing or repeated elements, and unusable cursor fields. This is a response-boundary check,
-not whole-response XSD validation; AEAT preproduction remains the source of actual responses.
+`IndicadorPaginacion` to `S`/`N`. Service description §6.4.3 says AEAT fills
+`ClavePaginacion` for a continuing `S` page, so callers can echo that last-record identity in
+the next query. `parseRespuestaConsulta` checks the literal enum values, rejects absent or
+duplicated flag elements, and requires a single cursor with three nonblank identity fields for
+`S`. The XSD makes the cursor block optional without a conditional constraint; an unexpected
+cursor on a final `N` page is ignored rather than discarding the page's records. The parser also
+rejects incomplete invoice identities inside returned records. Focused tests cover valid final
+and continuing pages, malformed flags, missing or repeated elements, and blank identity fields.
+This is a response-boundary check, not whole-response XSD validation; AEAT preproduction remains
+the source of actual responses.
 
 ### Own-record hash validation
 

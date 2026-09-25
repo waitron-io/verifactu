@@ -77,7 +77,8 @@ si no consultas como representante. No lo incluyas en una consulta como destinat
 
 Cuando `IndicadorPaginacion` sea `"S"`, envía la `ClavePaginacion` recibida en la
 siguiente consulta. El analizador comprueba que `ResultadoConsulta` sea `ConDatos` o `SinDatos`,
-que `IndicadorPaginacion` sea `S` o `N`, y que `S` vaya acompañado de una única clave utilizable,
-mientras que `N` no lleve ninguna. Si los datos de paginación no son válidos, lanza un error para
-que no repitas la primera página ni te detengas antes de tiempo. El CSV del envío no se puede
+que `IndicadorPaginacion` sea `S` o `N`, y que una página `S` lleve una clave con sus tres campos
+de identidad de factura no vacíos. Si falta esa clave o está incompleta, lanza un error para que
+no repitas la primera página. Una página final `N` no necesita clave; si la respuesta la incluye,
+el analizador la ignora y conserva los registros de esa página. El CSV del envío no se puede
 recuperar aquí: la consulta no lo devuelve.

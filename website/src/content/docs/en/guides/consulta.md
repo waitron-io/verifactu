@@ -76,7 +76,8 @@ query is not on behalf of a representative. Do not include it in a recipient que
 
 When `IndicadorPaginacion` is `"S"`, send `ClavePaginacion` from the response in your next query.
 The response parser checks that `ResultadoConsulta` is `ConDatos` or `SinDatos`, that
-`IndicadorPaginacion` is `S` or `N`, and that exactly one usable cursor accompanies `S` but not
-`N`. It throws on malformed pagination data instead of letting you repeat the first page or
-silently stop early.
+`IndicadorPaginacion` is `S` or `N`, and that a continuing `S` page has one cursor with all three
+invoice-identity fields nonblank. It throws if that cursor is missing or incomplete, so you do not
+repeat the first page. A final `N` page needs no cursor; if the response includes one anyway, the
+parser ignores it and keeps the page's records.
 Do not try to recover a submission's CSV here: consulta does not return it.

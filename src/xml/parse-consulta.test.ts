@@ -289,22 +289,27 @@ describe("parseRespuestaConsulta", () => {
     expect(response.registros[0]?.IDFactura.NumSerieFactura).toBe("12345678/G33");
   });
 
-  it("requires one usable ClavePaginacion exactly when IndicadorPaginacion is S", () => {
+  it("requires a cursor for S and ignores an extra cursor on a final N page", () => {
     const cursor = PAGINATED.match(/<ClavePaginacion>[\s\S]*?<\/ClavePaginacion>/)?.[0];
     expect(cursor).toBeDefined();
     expect(() => parseRespuestaConsulta(PAGINATED.replace(cursor!, ""))).toThrow(
       "ClavePaginacion is required when IndicadorPaginacion is S",
     );
-    expect(() =>
-      parseRespuestaConsulta(
-        PAGINATED.replace(
-          "<IndicadorPaginacion>S</IndicadorPaginacion>",
-          "<IndicadorPaginacion>N</IndicadorPaginacion>",
-        ),
-      ),
-    ).toThrow("ClavePaginacion is forbidden when IndicadorPaginacion is N");
+    const finalPage = PAGINATED.replace(
+      "<IndicadorPaginacion>S</IndicadorPaginacion>",
+      "<IndicadorPaginacion>N</IndicadorPaginacion>",
+    );
+    expect(parseRespuestaConsulta(finalPage)).toMatchObject({
+      IndicadorPaginacion: "N",
+      ClavePaginacion: undefined,
+    });
+    expect(parseRespuestaConsulta(finalPage).registros).toHaveLength(1);
+    expect(parseRespuestaConsulta(finalPage.replace(cursor!, "<ClavePaginacion/>"))).toMatchObject({
+      IndicadorPaginacion: "N",
+      ClavePaginacion: undefined,
+    });
     expect(() => parseRespuestaConsulta(PAGINATED.replace(cursor!, cursor! + cursor!))).toThrow(
-      "ClavePaginacion must contain one invoice identity",
+      "ClavePaginacion must appear once",
     );
   });
 
@@ -315,6 +320,26 @@ describe("parseRespuestaConsulta", () => {
   ])("rejects a pagination key missing %s", (field) => {
     expect(() => parseRespuestaConsulta(PAGINATED.replace(field, ""))).toThrow(
       "ClavePaginacion must contain one invoice identity",
+    );
+  });
+
+  it.each([
+    ["<IDEmisorFactura>99999999R</IDEmisorFactura>", "<IDEmisorFactura>   </IDEmisorFactura>"],
+    ["<NumSerieFactura>LAST/G99</NumSerieFactura>", "<NumSerieFactura></NumSerieFactura>"],
+    [
+      "<FechaExpedicionFactura>31-12-2024</FechaExpedicionFactura>",
+      "<FechaExpedicionFactura> </FechaExpedicionFactura>",
+    ],
+  ])("rejects a blank pagination-key field %s", (original, blank) => {
+    expect(() => parseRespuestaConsulta(PAGINATED.replace(original, blank))).toThrow(
+      "ClavePaginacion must contain one invoice identity",
+    );
+  });
+
+  it("rejects a stored record whose invoice identity is incomplete", () => {
+    const xml = RESPONSE.replace("<NumSerieFactura>12345678/G33</NumSerieFactura>", "");
+    expect(() => parseRespuestaConsulta(xml)).toThrow(
+      "IDFactura must contain one invoice identity",
     );
   });
 
