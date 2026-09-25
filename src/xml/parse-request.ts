@@ -156,6 +156,11 @@ function cabeceraOf(raw: RawCabecera): Cabecera {
 }
 
 function cabeceraConsultaOf(raw: RawCabecera): CabeceraConsulta {
+  if (raw.ObligadoEmision !== undefined && raw.Destinatario !== undefined) {
+    throw new Error(
+      "Consulta Cabecera must contain exactly one of ObligadoEmision or Destinatario",
+    );
+  }
   if (raw.ObligadoEmision) {
     assertConsultaHeaderPersona("ObligadoEmision", raw.ObligadoEmision);
     if (raw.IndicadorRepresentante !== undefined && raw.IndicadorRepresentante !== "S") {

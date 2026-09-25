@@ -718,6 +718,11 @@ export function serializeConsulta(cabecera: CabeceraConsulta, filtro: ConsultaFi
   if (!isValidConsultaPeriodo(filtro.Periodo)) {
     throw new Error("Consulta Periodo must be 01 through 12");
   }
+  if (cabecera.ObligadoEmision !== undefined && cabecera.Destinatario !== undefined) {
+    throw new Error(
+      "Consulta Cabecera must contain exactly one of ObligadoEmision or Destinatario",
+    );
+  }
   if (cabecera.ObligadoEmision !== undefined) {
     assertConsultaHeaderPersona("ObligadoEmision", cabecera.ObligadoEmision);
   } else if (cabecera.Destinatario !== undefined) {

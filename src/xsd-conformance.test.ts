@@ -526,6 +526,23 @@ describe("generated unsigned requests against AEAT XSDs", () => {
     expect(result.status, result.stderr).toBe(0);
   });
 
+  it("rejects both consultation header identities in the XSD", () => {
+    const body = soapBodyElement(serializeConsulta(CABECERA, { Ejercicio: "2026", Periodo: "07" }));
+    const document = new DOMParser().parseFromString(body, "text/xml");
+    const header = document.getElementsByTagNameNS(NS_LRC, "Cabecera").item(0);
+    if (!header) throw new Error("Consulta fixture has no Cabecera");
+    const recipient = document.createElementNS(NS_SF, "sf:Destinatario");
+    const name = document.createElementNS(NS_SF, "sf:NombreRazon");
+    const nif = document.createElementNS(NS_SF, "sf:NIF");
+    name.textContent = "Buyer";
+    nif.textContent = "11111111H";
+    recipient.appendChild(name);
+    recipient.appendChild(nif);
+    header.appendChild(recipient);
+    const result = schemaResult(CONSULTA_XSD, new XMLSerializer().serializeToString(document));
+    expect(result.status, result.stderr).not.toBe(0);
+  });
+
   it("keeps the consultation country-code guard equal to AEAT CountryType2", () => {
     const schema = new DOMParser().parseFromString(readFileSync(INFO_XSD, "utf8"), "text/xml");
     const namespace = "http://www.w3.org/2001/XMLSchema";

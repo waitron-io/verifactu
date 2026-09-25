@@ -70,6 +70,9 @@ Usa `Contraparte` con `NombreRazon` y el `NIF` o `IDOtro` del cliente para busca
 `SistemaInformatico` limita el resultado a una instalación. Indica `NombreRazon`, `NIF` o
 `IDOtro`, `IdSistemaInformatico` y `NumeroInstalacion`. El nombre del software, la versión y los
 indicadores de uso son opcionales.
+El cliente comprueba estas identidades y los límites de texto del esquema antes del envío. Para
+`IDOtro`, usa un código de país admitido por la AEAT y un tipo de identificación entre `02` y
+`07`. Indica emisor o destinatario en la cabecera de consulta, nunca ambos.
 
 Pide `DatosAdicionalesRespuesta` solo cuando necesites el nombre del emisor o los datos del
 software en cada resultado. `ConsultaLR.xsd` de la AEAT indica que estos campos pueden ralentizar

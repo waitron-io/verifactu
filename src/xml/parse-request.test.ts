@@ -856,6 +856,16 @@ describe("parseConsulta full header and date choice", () => {
       "Consulta Cabecera does not identify an issuer or recipient",
     );
   });
+
+  it("rejects a consulta header with both issuer and recipient", () => {
+    const xml = serializeConsulta(cabecera, { Ejercicio: "2026", Periodo: "07" }).replace(
+      "</sf:ObligadoEmision>",
+      "</sf:ObligadoEmision><sf:Destinatario><sf:NombreRazon>Buyer</sf:NombreRazon><sf:NIF>11111111H</sf:NIF></sf:Destinatario>",
+    );
+    expect(() => parseConsulta(xml)).toThrow(
+      "Consulta Cabecera must contain exactly one of ObligadoEmision or Destinatario",
+    );
+  });
 });
 
 describe("parseConsulta", () => {

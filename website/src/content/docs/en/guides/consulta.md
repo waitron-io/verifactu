@@ -68,6 +68,9 @@ that customer's records.
 `SistemaInformatico` narrows the result to one software installation. Supply `NombreRazon`, either
 `NIF` or `IDOtro`, `IdSistemaInformatico`, and `NumeroInstalacion`. The software name, version, and
 use flags are optional.
+The client checks these identities and the schema's text lengths before sending. For `IDOtro`,
+use an AEAT country code and an identifier type from `02` to `07`. Supply either issuer or
+recipient in the consultation header, never both.
 
 Request `DatosAdicionalesRespuesta` only when you need the issuer's name or software details in
 each result. AEAT's `ConsultaLR.xsd` says these fields can slow its response. The same schema

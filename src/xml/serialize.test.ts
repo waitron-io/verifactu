@@ -1640,6 +1640,16 @@ describe("serializeConsulta", () => {
     },
   );
 
+  it("rejects an untyped consultation header with both issuer and recipient", () => {
+    const header = {
+      ObligadoEmision: CABECERA.ObligadoEmision,
+      Destinatario: { NombreRazon: "Buyer", NIF: "11111111H" },
+    } as unknown as CabeceraConsulta;
+    expect(() => serializeConsulta(header, { Ejercicio: "2026", Periodo: "07" })).toThrow(
+      "Consulta Cabecera must contain exactly one of ObligadoEmision or Destinatario",
+    );
+  });
+
   it.each([
     [
       "counterpart name",

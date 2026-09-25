@@ -315,13 +315,12 @@ serializer, so invalid values fail before transport. The guard checks the year�
 not whether a calendar period is plausible for a particular taxpayer or date. XML Schema's `\d`
 also allows Unicode decimal digits in the year; the guards accept these but do not normalize them.
 
-The rest of the §6.4.1 filter table remains a separate audit surface. Existing tests pin the
-header/version, optional filter order, issuer/recipient choice, date-choice wrapper, counterpart
-identity, software-system block, external reference, pagination key, and response options. They
-do not establish that every optional field’s runtime value satisfies its imported XSD type, nor
-that a complete request passes offline XSD validation. In particular, consulta header NIF parity,
-identity-less untyped counterpart/software filters, and other optional text limits remain open in
-the backlog rather than being treated as verified.
+The rest of the §6.4.1 filter table remains a separate audit surface. Tests pin the header/version,
+optional filter order, issuer/recipient choice, date-choice wrapper, counterpart identity,
+software-system block, external reference, pagination key, and response options. They do not
+establish that every optional field’s runtime value satisfies its imported XSD type. In
+particular, consultation header NIF control and a complete-request XSD pass remain open in the
+backlog rather than being treated as verified.
 
 `ConsultaLR.xsd` gives the top-level `NumSerieFactura` filter and the pagination key's
 `NumSerieFactura` the shared `TextoIDFacturaType` limit of 1–60 Unicode code points. Its
@@ -329,7 +328,7 @@ the backlog rather than being treated as verified.
 Both `serializeConsulta` and `parseConsulta` reject values outside these bounds. Focused
 serializer/parser tests cover missing-length and overlong cases, and offline XSD probes confirm
 the 60-code-point boundary and rejection of the invalid values. The other consultation filter
-fields and nested identity/text types are not covered by this length check.
+fields and nested identity/text types have separate checks below.
 The consulta response parser still accepts an overlong returned pagination number; echoing that
 cursor in a later request now fails locally. The same asymmetry applies to a returned cursor date
 with a malformed shape. `RespuestaConsultaLR.xsd` declares the returned
@@ -355,6 +354,22 @@ accepts an empty wrapper, including one containing only XML whitespace, which th
 Parser tests and offline XSD probes cover these boundaries.
 This targeted check does not turn the raw parser into a complete XSD validator; other unexpected
 children and XML ordering remain separate audit surfaces.
+
+### Consultation identities and software filter — service description §6.4.1 and `SuministroInformacion.xsd`
+
+The consultation header accepts an issuer or recipient, not both. The counterpart and software
+filters each require `NombreRazon` and exactly one of `NIF` or `IDOtro`. The serializer and raw
+request parser now reject missing or double identity branches, malformed nine-character NIF
+lengths, overlong names, invalid `IDOtro` types and IDs, and country codes outside AEAT's
+`CountryType2` list. The software filter also checks its required ID and installation fields,
+optional text limits, and `S`/`N` usage flags. These checks run before an untyped request can
+produce malformed XML or a parsed request can silently lose an identity branch. They count
+Unicode code points for XSD length limits and retain XSD-valid empty values in required
+max-length text fields. Serializer, raw-parser, and offline XSD tests cover those boundaries; the
+country-code parity test compares all two-letter ASCII combinations with the pinned AEAT schema.
+These are XSD-shape checks, not AEAT identity-registration checks. In particular, a header NIF
+with nine characters is not necessarily a valid Spanish tax number; live AEAT authorization and
+NIF control remain separate.
 
 ### Consultation response flags and cursor — service description §§6.4.2–6.4.3
 
