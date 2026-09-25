@@ -88,8 +88,8 @@ interface RawDatosPresentacion {
 
 interface RawRegistroConsultado {
   IDFactura: unknown;
-  DatosRegistroFacturacion: Record<string, unknown>;
-  EstadoRegistro: RawEstadoRegistro;
+  DatosRegistroFacturacion: unknown;
+  EstadoRegistro: RawEstadoRegistro | undefined;
   DatosPresentacion?: RawDatosPresentacion;
 }
 
@@ -145,13 +145,33 @@ function invoiceIdentityOf(raw: unknown, field: "IDFactura" | "ClavePaginacion")
 }
 
 function parseRegistroConsultado(raw: RawRegistroConsultado): RegistroConsultado {
+  const data = raw.DatosRegistroFacturacion;
+  if (data === undefined || data === null) {
+    throw new Error("Consulta record is missing DatosRegistroFacturacion");
+  }
+  if (Array.isArray(data)) {
+    throw new Error("DatosRegistroFacturacion must appear once");
+  }
+  // An empty required XML element is a present block, not a missing one.
+  const dataBlock = typeof data === "string" && data.trim().length === 0 ? {} : data;
+  if (typeof dataBlock !== "object") {
+    throw new Error("DatosRegistroFacturacion must contain a record");
+  }
+  const state = raw.EstadoRegistro;
+  if (!state) {
+    throw new Error("Consulta record is missing EstadoRegistro");
+  }
+  const timestamp = state.TimestampUltimaModificacion;
+  if (typeof timestamp !== "string" || timestamp.trim().length === 0) {
+    throw new Error("Consulta record is missing TimestampUltimaModificacion");
+  }
   return {
     IDFactura: invoiceIdentityOf(raw.IDFactura, "IDFactura"),
-    DatosRegistroFacturacion: raw.DatosRegistroFacturacion,
-    TimestampUltimaModificacion: raw.EstadoRegistro.TimestampUltimaModificacion,
-    EstadoRegistro: estadoRegistroConsultaOf(raw.EstadoRegistro.EstadoRegistro),
-    CodigoErrorRegistro: asNumber(raw.EstadoRegistro.CodigoErrorRegistro, "CodigoErrorRegistro"),
-    DescripcionErrorRegistro: raw.EstadoRegistro.DescripcionErrorRegistro,
+    DatosRegistroFacturacion: dataBlock as Record<string, unknown>,
+    TimestampUltimaModificacion: timestamp,
+    EstadoRegistro: estadoRegistroConsultaOf(state.EstadoRegistro),
+    CodigoErrorRegistro: asNumber(state.CodigoErrorRegistro, "CodigoErrorRegistro"),
+    DescripcionErrorRegistro: state.DescripcionErrorRegistro,
     DatosPresentacion: raw.DatosPresentacion
       ? {
           NIFPresentador: raw.DatosPresentacion.NIFPresentador,
