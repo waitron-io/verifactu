@@ -1171,6 +1171,12 @@ describe("serializeConsulta", () => {
     },
   );
 
+  it("rejects a missing consultation year before producing XML", () => {
+    expect(() =>
+      serializeConsulta(CABECERA, { Ejercicio: undefined as unknown as string, Periodo: "01" }),
+    ).toThrow("Consulta Ejercicio must be four digits");
+  });
+
   it.each(["0000", "9999"])("accepts four-digit consultation year %s", (ejercicio) => {
     expect(serializeConsulta(CABECERA, { Ejercicio: ejercicio, Periodo: "01" })).toContain(
       `<sf:Ejercicio>${ejercicio}</sf:Ejercicio>`,
