@@ -278,4 +278,79 @@ describe("generated unsigned requests against AEAT XSDs", () => {
       expect(result.stderr).toContain("NumSerieFactura");
     },
   );
+
+  it.each([
+    [
+      "exact date",
+      { FechaExpedicionFactura: "20-07-2026" },
+      "FechaExpedicionFactura",
+      "FechaExpedicionFactura",
+    ],
+    [
+      "range start",
+      { RangoFechaExpedicion: { Desde: "01-07-2026" } },
+      "FechaExpedicionFactura",
+      "Desde",
+    ],
+    [
+      "range end",
+      { RangoFechaExpedicion: { Hasta: "31-07-2026" } },
+      "FechaExpedicionFactura",
+      "Hasta",
+    ],
+    [
+      "pagination date",
+      {
+        ClavePaginacion: {
+          IDEmisorFactura: CABECERA.ObligadoEmision.NIF,
+          NumSerieFactura: "INV/41",
+          FechaExpedicionFactura: "20-07-2026",
+        },
+      },
+      "ClavePaginacion",
+      "FechaExpedicionFactura",
+    ],
+  ] as const)("rejects an XSD-invalid consultation %s", (_case, filter, parentName, leafName) => {
+    const body = soapBodyElement(
+      serializeConsulta(CABECERA, { Ejercicio: "2026", Periodo: "07", ...filter }),
+    );
+    expect(schemaResult(CONSULTA_XSD, body).status).toBe(0);
+    const document = new DOMParser().parseFromString(body, "text/xml");
+    const parent = document.getElementsByTagNameNS(NS_LRC, parentName).item(0);
+    const leaf = parent?.getElementsByTagNameNS(NS_SF, leafName).item(0);
+    if (!leaf) throw new Error(`Consulta fixture has no ${leafName}`);
+    leaf.textContent = "20/07/2026";
+    const result = schemaResult(CONSULTA_XSD, new XMLSerializer().serializeToString(document));
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain(leafName);
+  });
+
+  it("accepts a calendar-impossible but lexically valid consultation date in the XSD", () => {
+    const body = soapBodyElement(
+      serializeConsulta(CABECERA, {
+        Ejercicio: "2026",
+        Periodo: "07",
+        FechaExpedicionFactura: "31-02-2026",
+      }),
+    );
+    const result = schemaResult(CONSULTA_XSD, body);
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it("probes the XSD's Unicode digit class for consultation dates", () => {
+    const body = soapBodyElement(
+      serializeConsulta(CABECERA, {
+        Ejercicio: "2026",
+        Periodo: "07",
+        FechaExpedicionFactura: "20-07-2026",
+      }),
+    );
+    const document = new DOMParser().parseFromString(body, "text/xml");
+    const wrapper = document.getElementsByTagNameNS(NS_LRC, "FechaExpedicionFactura").item(0);
+    const leaf = wrapper?.getElementsByTagNameNS(NS_SF, "FechaExpedicionFactura").item(0);
+    if (!leaf) throw new Error("Consulta fixture has no exact date");
+    leaf.textContent = "٢٠-٠٧-٢٠٢٦";
+    const result = schemaResult(CONSULTA_XSD, new XMLSerializer().serializeToString(document));
+    expect(result.status, result.stderr).toBe(0);
+  });
 });

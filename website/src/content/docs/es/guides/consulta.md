@@ -57,6 +57,10 @@ rellénalo con un cero en lugar de enviar `"7"`.
 periodo.
 Usa `RangoFechaExpedicion` con `Desde` y `Hasta` para acotar un intervalo de fechas. Es
 una alternativa a `FechaExpedicionFactura`; el serializador rechaza una solicitud que envíe ambos.
+Escribe cada fecha como `DD-MM-YYYY`, incluida la de `ClavePaginacion`. El cliente comprueba este
+formato antes del envío, y el analizador de solicitudes XML también lo comprueba. Una fecha como
+`31-02-2026` tiene ese formato, pero no existe en el calendario; comprueba las fechas reales en tu
+aplicación.
 Usa entre 1 y 60 caracteres para `NumSerieFactura`. Usa `RefExterna` si guardaste una referencia
 propia en el registro; puede estar vacío, pero no superar los 60 caracteres. El cliente comprueba
 estos límites, incluido el número de factura de `ClavePaginacion`, antes del envío porque el

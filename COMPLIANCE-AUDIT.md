@@ -312,7 +312,8 @@ well as invalid months. They keep the year as a string so the exact four digits 
 serialize/parse round trip. `src/xml/serialize.test.ts` and `src/xml/parse-request.test.ts` cover
 valid bounds and invalid literals, including a whitespace-padded XML leaf. The client uses this
 serializer, so invalid values fail before transport. The guard checks the year’s lexical shape,
-not whether a calendar period is plausible for a particular taxpayer or date.
+not whether a calendar period is plausible for a particular taxpayer or date. XML Schema's `\d`
+also allows Unicode decimal digits in the year; the guards accept these but do not normalize them.
 
 The rest of the §6.4.1 filter table remains a separate audit surface. Existing tests pin the
 header/version, optional filter order, issuer/recipient choice, date-choice wrapper, counterpart
@@ -330,9 +331,22 @@ serializer/parser tests cover missing-length and overlong cases, and offline XSD
 the 60-code-point boundary and rejection of the invalid values. The other consultation filter
 fields and nested identity/text types are not covered by this length check.
 The consulta response parser still accepts an overlong returned pagination number; echoing that
-cursor in a later request now fails locally. `RespuestaConsultaLR.xsd` declares the returned
+cursor in a later request now fails locally. The same asymmetry applies to a returned cursor date
+with a malformed shape. `RespuestaConsultaLR.xsd` declares the returned
 cursor with the same `IDFacturaExpedidaBCType`, but the library has not verified live response
 behavior or harmonized the two parser bounds.
+
+The service description §6.4.1 and `sf:fecha` require `DD-MM-YYYY` text for an exact issue-date
+filter, each supplied range endpoint, and the pagination key's required date. `serializeConsulta`
+and `parseConsulta` reject malformed values at those paths; the client therefore sends no request
+with a malformed date. Offline request-XSD probes reject slash-formatted dates in all four places
+and accept a `31-02-2026` literal, which demonstrates that the XSD tests text shape rather than
+calendar reality. The XSD's `\d` also accepts Unicode decimal digits; an offline Arabic-digit
+probe and serializer/parser tests keep that valid path open. The library leaves real-date and range-order policy to the caller. Empty range
+endpoints remain optional under `RangoFechaExpedicionType`; the pagination date is required.
+The bundled fake AEAT compares stored and queried date strings, and its range comparison assumes
+ASCII digits. Use ASCII digits for fake-AEAT filtering until its Unicode semantics are addressed;
+the actual AEAT service's handling of Unicode-equivalent dates has not been verified live.
 
 ### Consultation response flags and cursor — service description §§6.4.2–6.4.3
 

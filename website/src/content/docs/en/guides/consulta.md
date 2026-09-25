@@ -55,6 +55,9 @@ XML to AEAT. If you derive the month from a date, pad it to two digits rather th
 `NumSerieFactura` and `FechaExpedicionFactura` narrow the query; omit them to sweep the period.
 Use `RangoFechaExpedicion` with `Desde` and `Hasta` when you need a date range. It is an
 alternative to `FechaExpedicionFactura`; the serializer rejects a request that sends both.
+Write each date as `DD-MM-YYYY`, including the date in `ClavePaginacion`. The client checks this
+shape before sending, and the raw request parser checks it when reading XML. A date such as
+`31-02-2026` has the right shape but is not a real day; check calendar validity in your application.
 Keep `NumSerieFactura` between 1 and 60 characters. Use `RefExterna` when you stored your own
 reference on the record; it may be empty but cannot exceed 60 characters. The client checks these
 limits, including the invoice number in `ClavePaginacion`, before sending because AEAT's request
