@@ -135,6 +135,18 @@ describe("parseRespuestaSuministro", () => {
     expect(resolveEstadoEfectivo(response.RespuestaLinea[0]!)).toBe("accepted");
   });
 
+  it("treats whitespace-only status fields as absent while retaining the CSV", () => {
+    const xml = ACCEPTED.replace(
+      "<EstadoEnvio>Correcto</EstadoEnvio>",
+      "<EstadoEnvio> </EstadoEnvio>",
+    ).replace("<EstadoRegistro>Correcto</EstadoRegistro>", "<EstadoRegistro> </EstadoRegistro>");
+    const response = parseRespuestaSuministro(xml);
+    expect(response.CSV).toBe("ABC123CSV");
+    expect(response.EstadoEnvio).toBeUndefined();
+    expect(response.RespuestaLinea[0]?.EstadoRegistro).toBeUndefined();
+    expect(resolveEstadoEfectivo(response.RespuestaLinea[0]!)).toBe("status_unknown");
+  });
+
   it("returns TiempoEsperaEnvio as a number", () => {
     expect(typeof parseRespuestaSuministro(ACCEPTED).TiempoEsperaEnvio).toBe("number");
   });
@@ -380,6 +392,16 @@ describe("resolveEstadoEfectivo", () => {
     // this function exists to prevent.
     const [linea] = parseRespuestaSuministro(DUPLICATE_BUT_ACCEPTED).RespuestaLinea;
     expect(linea?.EstadoRegistro).toBe("Incorrecto");
+    expect(resolveEstadoEfectivo(linea!)).toBe("accepted");
+  });
+
+  it("normalizes a padded duplicate status before resolving the stored record", () => {
+    const xml = DUPLICATE_BUT_ACCEPTED.replace(
+      "<EstadoRegistroDuplicado>Correcta<",
+      "<EstadoRegistroDuplicado> Correcta <",
+    );
+    const [linea] = parseRespuestaSuministro(xml).RespuestaLinea;
+    expect(linea?.RegistroDuplicado?.EstadoRegistroDuplicado).toBe("Correcta");
     expect(resolveEstadoEfectivo(linea!)).toBe("accepted");
   });
 

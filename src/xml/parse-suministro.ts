@@ -9,7 +9,7 @@ export type EstadoRegistroDuplicado = "Correcta" | "AceptadaConErrores" | "Anula
 
 export interface RegistroDuplicado {
   IdPeticionRegistroDuplicado?: string;
-  EstadoRegistroDuplicado?: EstadoRegistroDuplicado;
+  EstadoRegistroDuplicado?: string;
   CodigoErrorRegistro?: number;
   DescripcionErrorRegistro?: string;
 }
@@ -57,7 +57,8 @@ export type EstadoEfectivo =
 export const ERROR_DUPLICADO = 3000;
 
 function statusText(value: unknown): string | undefined {
-  return typeof value === "string" ? value.trim() : undefined;
+  if (typeof value !== "string") return undefined;
+  return value.trim() || undefined;
 }
 
 // The raw shape fast-xml-parser hands back. Leaf values stay strings — parseTagValue is off — so
@@ -106,7 +107,7 @@ function parseRegistroDuplicado(
   if (!raw) return undefined;
   return {
     IdPeticionRegistroDuplicado: raw.IdPeticionRegistroDuplicado,
-    EstadoRegistroDuplicado: raw.EstadoRegistroDuplicado as EstadoRegistroDuplicado | undefined,
+    EstadoRegistroDuplicado: statusText(raw.EstadoRegistroDuplicado),
     CodigoErrorRegistro: asNumber(raw.CodigoErrorRegistro, "RegistroDuplicado.CodigoErrorRegistro"),
     DescripcionErrorRegistro: raw.DescripcionErrorRegistro,
   };

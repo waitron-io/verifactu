@@ -165,16 +165,18 @@ batch-level rules. `src/testing/fake-aeat.test.ts` covers a wholly accepted batc
 future-dated `AceptadoConErrores` line, a mixed batch, an all-rejected two-line batch,
 and a duplicate-only retry, including CSV presence or absence. The duplicate test also
 checks the raw XML omits `CSV` and that `resolveEstadoEfectivo` finds the previously
-accepted record despite the rejected retry. The real response parser exposes AEAT's global
-and per-line status strings without assuming the response is schema-valid. It preserves the
-CSV and recognized lines when either status is missing or unfamiliar, and trims whitespace
-around status strings. `resolveEstadoEfectivo` returns `status_unknown` for a missing or
-unfamiliar line status rather than falsely calling it rejected; focused tests cover those
-boundaries and a mixed batch. The exported known-code types still describe AEAT's XSD enums,
-while the parsed status properties are wider because malformed or future responses must not
-hide an unretrievable CSV. The parser does not reconcile global and per-line values or validate
-the entire response XSD; the fake remains a transport test double, not proof of a schema-valid
-AEAT response.
+accepted record despite the rejected retry. The real response parser exposes AEAT's global,
+per-line, and duplicate-detail status strings without assuming the response is schema-valid. It
+preserves the CSV and recognized lines when a status is missing or unfamiliar, and trims
+whitespace around all three status fields. `resolveEstadoEfectivo` returns `status_unknown` for a
+missing or unfamiliar line status rather than falsely calling it rejected; focused tests cover those
+boundaries and a mixed batch. An unfamiliar duplicate-detail status still resolves to
+`duplicate_unknown`. The exported known-code types describe AEAT's XSD enums, while parsed
+status properties are wider because malformed or future responses must not hide an
+unretrievable CSV. A missing or malformed `TiempoEsperaEnvio` still throws before the caller
+receives the CSV; that separate response-boundary case remains to be audited. The parser does
+not reconcile global and per-line values or validate the entire response XSD; the fake remains
+a transport test double, not proof of a schema-valid AEAT response.
 
 ### SOAP faults and voluntary flow control — service description §§5.1, 6.4.4.1
 
