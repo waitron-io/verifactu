@@ -33,8 +33,10 @@ que nunca se inscribió.
 Para subsanar un alta, `Subsanacion: "S"` con `RechazoPrevio` omitido o `N` sustituye un
 registro existente en el transporte falso, incluso si estaba anulado. Sin ese registro previo,
 el transporte devuelve el error `3002`; usa `RechazoPrevio: "X"` para la operativa publicada sin
-registro previo. El transporte falso no conserva el historial de intentos de subsanación
-rechazados ni implementa todos los estados de anulación del
+registro previo. Una anulación ordinaria también requiere un registro existente. Si no lo hay,
+indica `SinRegistroPrevio: "S"`; sin este indicador, el transporte devuelve `3002`. Rechaza esa
+operativa especial si ya existe un registro. El transporte falso no conserva el historial de
+intentos rechazados ni implementa todos los estados de anulación del
 [anexo §6 de la AEAT](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Validaciones_Errores_Veri-Factu.pdf).
 Comprueba esas operativas en la preproducción de la AEAT.
 

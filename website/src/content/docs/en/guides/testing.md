@@ -31,7 +31,10 @@ never registered.
 For an alta correction, `Subsanacion: "S"` with `RechazoPrevio` omitted or `N` replaces an
 existing fake record, including one that was annulled. Without that prior record, the fake
 returns error `3002`; use `RechazoPrevio: "X"` for the published no-prior-record path. The fake
-does not track rejected correction attempts or implement every cancellation state in
+also requires an existing record for an ordinary cancellation. If none exists, set
+`SinRegistroPrevio: "S"`; without it, the fake returns `3002`. It rejects that special path
+when a record already exists. The fake does not track rejected correction attempts or implement
+every cancellation state in
 [AEAT's annex §6](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Validaciones_Errores_Veri-Factu.pdf).
 Check those workflows in AEAT preproduction.
 

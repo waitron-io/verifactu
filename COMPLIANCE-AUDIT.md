@@ -323,9 +323,20 @@ the [published `3002` missing-record code](https://prewww2.aeat.es/static_files/
 `src/testing/fake-aeat.test.ts` covers these states,
 the no-prior `X` path, and refusal to overwrite an existing record with that path.
 
+### Cancellation without a prior record — validation annex §6.2
+
+AEAT's cancellation matrix requires an existing invoice record for an ordinary anulación
+(`SinRegistroPrevio` omitted or `N`). `SinRegistroPrevio: "S"` is the special path when no
+record exists at AEAT, and must not be used when one already exists. The fake now rejects an
+ordinary cancellation with no prior record using `3002`, accepts the special no-prior path,
+and refuses that path against an existing alta. Focused fake-AEAT tests cover each state and
+preserve the stored record on rejection. Existing standalone-cancellation fixtures now carry
+the published `S` indicator rather than relying on an invalid ordinary cancellation.
+
 This is not full annex §6 fidelity. The fake still does not track the history needed for
-`RechazoPrevio: "S"` after a rejected subsanación, and its cancellation behavior does not yet
-implement every §6.2 state. The library does not select a correction operation for callers;
+`RechazoPrevio: "S"` after a rejected subsanación or cancellation, and it does not yet
+implement every §6.2 state (including replacement of an existing cancellation). The library
+does not select a correction operation for callers;
 check those flows against AEAT preproduction rather than treating the fake as an authority.
 
 ## Remaining work

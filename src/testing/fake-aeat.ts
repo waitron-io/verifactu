@@ -187,6 +187,7 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
       const forced = rejections.get(key);
       const future = fechaToDate(fecha).getTime() > serverNow.getTime();
       const alta = "RegistroAlta" in entry ? entry.RegistroAlta : undefined;
+      const anulacion = "RegistroAnulacion" in entry ? entry.RegistroAnulacion : undefined;
       const isNormalSubsanacion =
         alta?.Subsanacion === "S" &&
         (alta.RechazoPrevio === undefined || alta.RechazoPrevio === "N");
@@ -199,9 +200,22 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
         );
         continue;
       }
+      // A normal cancellation needs a stored record; SinRegistroPrevio=S is the no-prior path.
+      if (!forced && !existing && anulacion && anulacion.SinRegistroPrevio !== "S") {
+        rejectedCount += 1;
+        lineas.push(
+          lineaXml(idf, "Incorrecto", 3002, "No existe el registro de facturación", ref, operacion),
+        );
+        continue;
+      }
       if (
         existing &&
-        !(tipo === "anulacion" && existing.tipo === "alta" && existing.estado !== "Anulado") &&
+        !(
+          anulacion &&
+          anulacion.SinRegistroPrevio !== "S" &&
+          existing.tipo === "alta" &&
+          existing.estado !== "Anulado"
+        ) &&
         !replacesExistingAlta
       ) {
         // Only an allowed cancellation or subsanación can replace stored state. A duplicate
