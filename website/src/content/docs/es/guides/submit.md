@@ -210,6 +210,14 @@ await scheduleNextSubmissionAfter(response.TiempoEsperaEnvio * 1000);
 y tu cola de tareas. Conserva el `CSV` **en cuanto llegue**, antes de seguir procesando: falta
 cuando la AEAT rechaza el envío entero y una consulta posterior no puede recuperarlo.
 
+Si la AEAT incluye `DatosPresentacion`, el analizador devuelve el NIF del presentador y la marca
+temporal. También comprueba que cada identidad de factura devuelta respete la longitud del NIF,
+el límite de 1 a 60 caracteres del número y la forma `DD-MM-YYYY`, y que los códigos de error sean
+enteros que JavaScript pueda representar exactamente. Si falla una de estas comprobaciones
+estructurales, `client.submit` lanza un error y no puede devolver el CSV ni las demás líneas. Si
+necesitas conservar el XML incorrecto para conciliarlo, guarda un clon de la respuesta HTTP sin
+procesar en tu envoltorio `fetch` con certificado antes de que el cliente lo analice.
+
 Interpreta cada línea con `resolveEstadoEfectivo`. Devuelve `accepted`, `accepted_with_errors`,
 `rejected`, `status_unknown`, `duplicate_annulled` o `duplicate_unknown`. Si falta
 `EstadoRegistro` o tiene un valor desconocido, `status_unknown` evita dar el registro por

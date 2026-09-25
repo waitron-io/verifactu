@@ -20,6 +20,9 @@ console.log(aeat.stored()[0].huella === record.Huella); // true
 The fake accepts the same XML that `createClient` sends and returns parsed SOAP responses. It can
 also force a rejection, omit duplicate detail, and return paged consulta results. Use it for
 application tests; it does not replace AEAT preproduction checks with your real certificate.
+Its filing responses use the pinned schema's namespaces, echo the submitted header, and follow the
+required element order; the offline suite validates accepted, rejected, and duplicate examples
+against `RespuestaSuministro.xsd`. That proves the fake's tested XML shape, not AEAT behavior.
 
 Inspect each response line as well as `EstadoEnvio`. The fake returns `Correcto` only when every
 line is correct, `ParcialmenteCorrecto` if a line is accepted with errors or accepted and rejected

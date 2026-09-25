@@ -21,6 +21,10 @@ El transporte falso acepta el XML que envía `createClient` y devuelve respuesta
 analizadas. También puede forzar un rechazo, omitir detalles de un duplicado y paginar las
 consultas. Úsalo en tus pruebas de aplicación; antes de producción, comprueba además la conexión
 real con tu certificado en la preproducción de la AEAT.
+Sus respuestas de envío usan los espacios de nombres del esquema fijado, repiten la cabecera
+enviada y respetan el orden obligatorio. Las pruebas sin conexión validan ejemplos aceptados,
+rechazados y duplicados contra `RespuestaSuministro.xsd`. Esto demuestra la forma XML probada del
+transporte falso, no el comportamiento de la AEAT.
 
 Inspecciona cada línea de la respuesta además de `EstadoEnvio`. El transporte falso devuelve
 `Correcto` solo si todas las líneas son correctas, `ParcialmenteCorrecto` si alguna se acepta con

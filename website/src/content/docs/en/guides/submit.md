@@ -208,6 +208,13 @@ await scheduleNextSubmissionAfter(response.TiempoEsperaEnvio * 1000);
 and queue operations. Persist `CSV` **as soon as it arrives**, before further processing. It is
 absent when AEAT rejects a submission outright, and consulta cannot retrieve it later.
 
+When AEAT includes `DatosPresentacion`, the parser returns its presenter NIF and timestamp. It also
+checks that every returned invoice identity has the XSD's NIF length, 1–60-character serial number,
+and `DD-MM-YYYY` date shape, and that error codes are integers that JavaScript can represent exactly.
+If one of those structural checks fails, `client.submit` throws and cannot return the CSV or the
+other lines. If you need the non-conforming XML for reconciliation, retain a clone of the raw HTTP
+response in your certificate-bearing `fetch` wrapper before the client parses it.
+
 Read every line through `resolveEstadoEfectivo`. Its result is `accepted`,
 `accepted_with_errors`, `rejected`, `status_unknown`, `duplicate_annulled`, or `duplicate_unknown`.
 If a line has a missing or unfamiliar `EstadoRegistro`, `status_unknown` keeps you from treating
