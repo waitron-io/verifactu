@@ -80,8 +80,12 @@ requires recipient queries to omit `MostrarSistemaInformatico` or set it to `"N"
 `SuministroInformacion.xsd` restricts both options to `"S"` or `"N"`. The client rejects other
 values before sending and places valid options after `FiltroConsulta` in the XML request.
 
-A recipient uses a different consulta header and identifies the issuer as the counterparty, as the
-`received` query above demonstrates.
+A recipient uses a different consulta header. Include the issuer as `Contraparte` when you want
+to target it, as the `received` query above demonstrates. In the schema annotation, `Obligado` and
+`Destinatario` name the party whose identity belongs in this block; they do not make the block
+mandatory. The XSD leaves `Contraparte` optional, and so does the library. This establishes the XML
+shape, not which broad recipient queries AEAT authorizes. Check that behavior in preproduction
+before relying on an omitted counterparty.
 
 Set `IndicadorRepresentante: "S"` alongside `ObligadoEmision` when the certificate holder queries
 as that issuer's representative. `"N"` is not a valid consultation value; omit the flag when the

@@ -14,7 +14,7 @@ is accepted. The [source watch](sources/README.md) checks for publication change
 | [QR specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf)               | 0.5.0, 10 December 2025                    | §§2–10 and 12 classified; verifiable QR URL rules checked; printed layout and lookup responses outside library scope       |
 | [Developer FAQ](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/FAQs-Desarrolladores.pdf)                              | 1.3, 4 December 2025                       | Pending entry-by-entry review                                                                                              |
 | [Public FAQ](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes.html)                                 | Pages listed by AEAT on 22 September 2026  | Pending entry-by-entry review                                                                                              |
-| [XSD and WSDL files](schemas/README.md)                                                                                                                            | Versions and checksums in the linked index | Filing record and `SuministroLR.xsd` envelope inventories complete; consultation, response, and cross-schema review open   |
+| [XSD and WSDL files](schemas/README.md)                                                                                                                            | Versions and checksums in the linked index | Filing record, `SuministroLR.xsd`, and `ConsultaLR.xsd` inventories complete; response and cross-schema review open        |
 
 ## Web-service description coverage map
 
@@ -352,16 +352,16 @@ for that header before the fake or a real transport receives the request; issuer
 allowed forms. The two response options are both `S`/`N` enumerations in
 `SuministroInformacion.xsd`; the shared serializer/parser guard now rejects other runtime values
 for issuer and recipient queries, preserving the stricter recipient rule. Focused serializer,
-raw-request, and client tests cover rejected values before network transport. Other consultation
-code-list values still need an element-by-element check. The raw request parser also rejects
+raw-request, and client tests cover rejected values before network transport. This closes every
+consultation request enum in the two schemas. The raw request parser also rejects
 duplicate `DatosAdicionalesRespuesta` blocks, which otherwise become an array and silently drop
 both option values before the shared guard runs.
 An `xmllint --xpath` extraction of the bundled XSD confirmed exactly `01`–`12` and `S`.
 `src/xsd-conformance.test.ts` now checks generated unsigned message bodies against the bundled
 AEAT request schemas. `test/xsd/catalog.xml` resolves the external XML-signature import to a
 local placeholder for its optional `Signature` element; the test refuses signed messages because
-that placeholder does not validate signatures. The four passing request shapes are a minimal
-issuer consulta, a recipient consulta with every filter family, an alta, and a cancellation. A
+that placeholder does not validate signatures. Passing request shapes include a minimal issuer
+consulta, a recipient consulta with every filter and software-field family, an alta, and a cancellation. A
 deliberately invalid consultation year and out-of-bounds filter lengths are rejected by the schema,
 confirming that a failed import cannot produce a false green result. These are fixture-level XSD
 checks, not proof that every public input combination or SOAP envelope is schema-valid or accepted
@@ -379,12 +379,9 @@ serializer, so invalid values fail before transport. The guard checks the year�
 not whether a calendar period is plausible for a particular taxpayer or date. XML Schema's `\d`
 also allows Unicode decimal digits in the year; the guards accept these but do not normalize them.
 
-The rest of the §6.4.1 filter table remains a separate audit surface. Tests pin the header/version,
-optional filter order, issuer/recipient choice, date-choice wrapper, counterpart identity,
-software-system block, external reference, pagination key, and response options. They do not
-establish that every optional field’s runtime value satisfies its imported XSD type. In
-particular, consultation header NIF control and full request-XSD validation at runtime remain open in the
-backlog rather than being treated as verified.
+The complete §6.4.1 filter table is covered by the request-schema inventory below. Consultation
+header NIF control remains a separate business-level question: the XSD fixes its length at nine
+characters, while only AEAT can establish registration and authorization.
 
 `ConsultaLR.xsd` gives the top-level `NumSerieFactura` filter and the pagination key's
 `NumSerieFactura` the shared `TextoIDFacturaType` limit of 1–60 Unicode code points. Its
@@ -436,6 +433,27 @@ country-code parity test compares the entire local code list with the pinned AEA
 These are XSD-shape checks, not AEAT identity-registration checks. In particular, a header NIF
 with nine characters is not necessarily a valid Spanish tax number; live AEAT authorization and
 NIF control remain separate.
+
+The `ConsultaLR.xsd` inventory is complete for the unsigned request surface:
+
+| Schema element or constraint                                | Library behavior                                                                                                                                                                                  | Evidence                                                                                                                                    | Deliberate limit or stricter policy                                                                                                                                                                                        |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ConsultaFactuSistemaFacturacion` root sequence             | `serializeConsulta` emits one `Cabecera`, one `FiltroConsulta`, then at most one `DatosAdicionalesRespuesta`; `parseConsulta` requires the first two and rejects repeated response-options blocks | Exact XML and round-trip tests; controlled offline mutations reject repeated or reordered top-level blocks and an out-of-order filter field | The parser projects known fields and does not validate namespaces, unexpected children, or general XML order; whole-request runtime XSD validation remains an open consumer-need question rather than part of this closure |
+| `Cabecera.IDVersion`                                        | The serializer always emits `1.0`; the parser rejects a missing, repeated, or unfamiliar value before returning the header                                                                        | RED/GREEN parser regression and independent offline XSD mutations                                                                           | The public header type omits this constant because callers cannot choose it                                                                                                                                                |
+| Header issuer/recipient choice and `IndicadorRepresentante` | Public types select one identity; both boundaries require one and reject both, and permit the representative flag only as `S` beside an issuer                                                    | Header round trips, untyped-input regressions, duplicate-element tests, and full-schema probes                                              | The XSD choice permits neither identity because both branches have `minOccurs=0`; the library is deliberately stricter. NIF registration and certificate authority remain external                                         |
+| Required `PeriodoImputacion`                                | Both boundaries require a four-decimal-digit `Ejercicio` and one month from `01` to `12`                                                                                                          | Boundary, Unicode-digit, whitespace, and offline XSD tests                                                                                  | Calendar and taxpayer-period policy remain caller and AEAT responsibilities                                                                                                                                                |
+| Optional invoice number and counterpart filters             | Both boundaries enforce invoice-number length, counterpart text and identity choice, country and ID-type enums, and imported text limits                                                          | Serializer/parser regressions plus Unicode boundaries, complete country-list parity, and negative XSD probes                                | The annotation's `Obligado` and `Destinatario` name which party belongs in the block; the element remains optional. Offline schema validity does not prove AEAT authorizes every broad query                               |
+| Optional exact/range issue-date filter                      | Both boundaries preserve the wrapper choice, date text shapes, optional range endpoints, and single occurrences                                                                                   | Exact/range round trips, mixed-text and occurrence regressions, and positive/negative XSD probes                                            | The XSD accepts an empty wrapper and impossible calendar dates; the library follows those lexical rules and does not order the range                                                                                       |
+| Optional software-system filter                             | Both boundaries enforce its identity choice, required system/installation IDs, optional text limits, and three `S`/`N` flags in schema order                                                      | Maximal generated request, field-boundary regressions, identity choice tests, and XSD mutations                                             | These checks establish XML shape, not that AEAT recognizes the installation                                                                                                                                                |
+| Optional external reference and pagination key              | Both boundaries enforce the 60-code-point reference and invoice-number limits, nine-code-point issuer NIF, required cursor children, and date shape                                               | Empty, exact, overlong, and Unicode boundary tests plus offline XSD probes                                                                  | NIF control, calendar validity, and whether a cursor belongs to the queried result set remain external                                                                                                                     |
+| Optional response-detail flags                              | Both boundaries accept only `S`/`N`, enforce the recipient restriction on software details, and preserve schema order                                                                             | Issuer/recipient regressions, duplicate-block tests, maximal request validation, and exact XML                                              | The performance effect described by AEAT and returned live fields are not established by offline request validation                                                                                                        |
+
+The source-watch attempt on 25 September 2026 could not resolve the AEAT or GitHub hosts, so it
+does not establish that the live publications were unchanged for this inventory. The bundled
+`ConsultaLR.xsd` still matches the recorded SHA-256
+`bf2cdb8fc4b95b291757a72b76d8fffca06a6d30d9329122ca2fd6b2d5f8f1b1`. The audit therefore
+closes the pinned offline schema only; publication freshness remains unverified until the watch
+can reach AEAT again.
 
 ### Filing `IDOtro` shape — `SuministroInformacion.xsd`
 
@@ -624,7 +642,7 @@ check those flows against AEAT preproduction rather than treating the fake as an
 ## Remaining work
 
 Review every numbered validation rule, every service and hash/QR requirement, the remaining
-envelope/consultation/response XSD and WSDL constraints, and every developer and public FAQ entry. For each rule, add a
+response XSD and cross-schema WSDL constraints, and every developer and public FAQ entry. For each rule, add a
 row with the exact source section, implementation, behavioural test, and any intentional scope
 limit. Check the English and Spanish guides against each finding. The audit remains open until
 this review is complete.

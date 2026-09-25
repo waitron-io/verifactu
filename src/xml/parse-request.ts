@@ -52,6 +52,7 @@ interface RawEnvelope {
   };
 }
 interface RawCabecera {
+  IDVersion?: unknown;
   ObligadoEmision?: { NombreRazon: string; NIF: string };
   Destinatario?: { NombreRazon: string; NIF: string };
   Representante?: { NombreRazon: string; NIF: string };
@@ -164,6 +165,9 @@ function cabeceraOf(raw: RawCabecera): Cabecera {
 }
 
 function cabeceraConsultaOf(raw: RawCabecera): CabeceraConsulta {
+  if (raw.IDVersion !== "1.0") {
+    throw new Error("Consulta Cabecera.IDVersion must be 1.0");
+  }
   if (raw.ObligadoEmision !== undefined && raw.Destinatario !== undefined) {
     throw new Error(
       "Consulta Cabecera must contain exactly one of ObligadoEmision or Destinatario",

@@ -1013,6 +1013,17 @@ describe("parseConsulta full header and date choice", () => {
     });
   });
 
+  it.each([
+    ["missing", ""],
+    ["unfamiliar", "<sf:IDVersion>2.0</sf:IDVersion>"],
+    ["repeated", "<sf:IDVersion>1.0</sf:IDVersion><sf:IDVersion>1.0</sf:IDVersion>"],
+  ])("rejects a %s consultation header version", (_case, replacement) => {
+    const valid = serializeConsulta(cabecera, { Ejercicio: "2026", Periodo: "07" });
+    const xml = valid.replace("<sf:IDVersion>1.0</sf:IDVersion>", replacement);
+    expect(xml).not.toBe(valid);
+    expect(() => parseConsulta(xml)).toThrow("Consulta Cabecera.IDVersion must be 1.0");
+  });
+
   it("rejects a parsed N representative indicator in a consultation", () => {
     const xml = serializeConsulta(
       {

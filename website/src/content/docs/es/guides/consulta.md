@@ -83,8 +83,12 @@ como destinatario. Los tipos de `SuministroInformacion.xsd`, que importa esta no
 ambos indicadores a `"S"` o `"N"`. El cliente rechaza los demás valores antes del envío y coloca
 las opciones válidas después de `FiltroConsulta` en el XML.
 
-El destinatario usa otra cabecera de consulta e identifica al emisor como contraparte, como muestra
-la consulta `recibidas` anterior.
+El destinatario usa otra cabecera de consulta. Incluye al emisor como `Contraparte` cuando quieras
+acotar la búsqueda, como muestra la consulta `recibidas`. En la anotación del esquema, `Obligado` y
+`Destinatario` nombran a la parte cuya identidad corresponde a este bloque; no hacen que el bloque
+sea obligatorio. El XSD deja `Contraparte` como opcional, y la biblioteca también. Esto demuestra
+la forma del XML, no qué consultas amplias autoriza la AEAT al destinatario. Comprueba ese
+comportamiento en preproducción antes de depender de una consulta sin contraparte.
 
 Indica `IndicadorRepresentante: "S"` junto a `ObligadoEmision` cuando el titular del certificado
 consulta como representante del emisor. `"N"` no es válido en una consulta; omite el indicador
