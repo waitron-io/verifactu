@@ -5,6 +5,7 @@ import {
   assertConsultaPersona,
   assertConsultaResponseOptions,
   assertFilingRecordXsd,
+  assertSubmissionHeaderXsd,
   isValidConsultaEjercicio,
   isValidConsultaFecha,
   isValidConsultaNumSerieFactura,
@@ -125,7 +126,7 @@ function cabeceraOf(raw: RawCabecera): Cabecera {
     }),
   };
   if (raw.RemisionVoluntaria !== undefined) {
-    return {
+    const result: Cabecera = {
       ...cabecera,
       RemisionVoluntaria: {
         ...(raw.RemisionVoluntaria.FechaFinVeriFactu !== undefined && {
@@ -136,6 +137,8 @@ function cabeceraOf(raw: RawCabecera): Cabecera {
         }),
       },
     };
+    assertSubmissionHeaderXsd(result);
+    return result;
   }
   if (raw.RemisionRequerimiento !== undefined) {
     if (
@@ -144,7 +147,7 @@ function cabeceraOf(raw: RawCabecera): Cabecera {
     ) {
       throw new Error("Cabecera.RemisionRequerimiento.RefRequerimiento is required");
     }
-    return {
+    const result: Cabecera = {
       ...cabecera,
       RemisionRequerimiento: {
         RefRequerimiento: raw.RemisionRequerimiento.RefRequerimiento,
@@ -153,7 +156,10 @@ function cabeceraOf(raw: RawCabecera): Cabecera {
         }),
       },
     };
+    assertSubmissionHeaderXsd(result);
+    return result;
   }
+  assertSubmissionHeaderXsd(cabecera);
   return cabecera;
 }
 

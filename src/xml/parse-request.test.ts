@@ -64,6 +64,31 @@ describe("parseEnvio", () => {
     );
   });
 
+  it("rejects an XSD-invalid parsed header NIF length", () => {
+    const xml = serializeEnvio(cabecera, [{ RegistroAlta: alta }]).replace(
+      `<sf:NIF>${cabecera.ObligadoEmision.NIF}</sf:NIF>`,
+      "<sf:NIF>12345678</sf:NIF>",
+    );
+
+    expect(() => parseEnvio(xml)).toThrow(
+      "Cabecera.ObligadoEmision.NIF must contain exactly 9 characters",
+    );
+  });
+
+  it.each(["NombreRazon", "NIF"] as const)("rejects a parsed issuer missing %s", (field) => {
+    const value = cabecera.ObligadoEmision[field];
+    const xml = serializeEnvio(cabecera, [{ RegistroAlta: alta }]).replace(
+      `<sf:${field}>${value}</sf:${field}>`,
+      "",
+    );
+
+    expect(() => parseEnvio(xml)).toThrow(
+      field === "NombreRazon"
+        ? "Cabecera.ObligadoEmision.NombreRazon must be a string"
+        : "Cabecera.ObligadoEmision.NIF must contain exactly 9 characters",
+    );
+  });
+
   it("§3.1.2 refuses more than 1000 record wrappers on parse", () => {
     const one = serializeEnvio(cabecera, [{ RegistroAlta: alta }]);
     const wrapper = one.match(/<sfLR:RegistroFactura>[\s\S]*?<\/sfLR:RegistroFactura>/)?.[0];
@@ -333,6 +358,48 @@ describe("parseEnvio", () => {
   it.each(remittanceHeaders)("round-trips a submission header remittance block", (c) => {
     const registros: EnvioRegistro[] = [{ RegistroAlta: alta }];
     expect(parseEnvio(serializeEnvio(c, registros))).toStrictEqual({ cabecera: c, registros });
+  });
+
+  it.each([
+    ["ObligadoEmision", "Waitron SL", "X".repeat(121)],
+    ["Representante", "Gestoría X", "😀".repeat(121)],
+  ] as const)("rejects an XSD-overlong parsed Cabecera.%s.NombreRazon", (field, valid, invalid) => {
+    const c: Cabecera = {
+      ...cabecera,
+      ...(field === "Representante"
+        ? { Representante: { NombreRazon: valid, NIF: "11111111H" } }
+        : {}),
+    };
+    const xml = serializeEnvio(c, [{ RegistroAlta: alta }]).replace(
+      `<sf:NombreRazon>${valid}</sf:NombreRazon>`,
+      `<sf:NombreRazon>${invalid}</sf:NombreRazon>`,
+    );
+
+    expect(() => parseEnvio(xml)).toThrow(
+      `Cabecera.${field}.NombreRazon must contain at most 120 characters`,
+    );
+  });
+
+  it("rejects an XSD-overlong parsed requirement reference", () => {
+    const xml = serializeEnvio(remittanceHeaders[1]!, [{ RegistroAlta: alta }]).replace(
+      "REQ-123",
+      "R".repeat(19),
+    );
+
+    expect(() => parseEnvio(xml)).toThrow(
+      "Cabecera.RemisionRequerimiento.RefRequerimiento must contain at most 18 characters",
+    );
+  });
+
+  it("rejects an XSD-invalid parsed voluntary-remittance date", () => {
+    const xml = serializeEnvio(remittanceHeaders[0]!, [{ RegistroAlta: alta }]).replace(
+      "31-12-2026",
+      "2026/12/31",
+    );
+
+    expect(() => parseEnvio(xml)).toThrow(
+      "Cabecera.RemisionVoluntaria.FechaFinVeriFactu must be DD-MM-YYYY",
+    );
   });
 
   it("rejects both remittance modes when parsing a submission", () => {

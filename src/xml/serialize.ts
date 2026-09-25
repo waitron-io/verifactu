@@ -587,6 +587,30 @@ function assertFilingDate(field: string, value: unknown, optional = false): void
   }
 }
 
+/** @internal Shared XSD-shape guard for unsigned submission headers. */
+export function assertSubmissionHeaderXsd(cabecera: Cabecera): void {
+  for (const [field, persona] of [
+    ["ObligadoEmision", cabecera.ObligadoEmision],
+    ["Representante", cabecera.Representante],
+  ] as const) {
+    if (persona === undefined) continue;
+    assertFilingText(`Cabecera.${field}.NombreRazon`, persona.NombreRazon, 120);
+    assertFilingNif(`Cabecera.${field}.NIF`, persona.NIF);
+  }
+  assertFilingDate(
+    "Cabecera.RemisionVoluntaria.FechaFinVeriFactu",
+    cabecera.RemisionVoluntaria?.FechaFinVeriFactu,
+    true,
+  );
+  if (cabecera.RemisionRequerimiento !== undefined) {
+    assertFilingText(
+      "Cabecera.RemisionRequerimiento.RefRequerimiento",
+      cabecera.RemisionRequerimiento.RefRequerimiento,
+      18,
+    );
+  }
+}
+
 function assertFilingAmount(field: string, value: unknown, optional = false): void {
   if (value === undefined && optional) return;
   if (typeof value !== "string" || !/^[+-]?\p{Nd}{1,12}(?:\.\p{Nd}{0,2})?$/u.test(value)) {
@@ -1058,6 +1082,9 @@ export function serializeEnvio(
       throw new Error(`${field} must be 31-12-20XX from 2027`);
     }
   }
+  // Run the shared lexical guard after the serializer's stricter control, content, and date rules
+  // so their established errors win; parseEnvio uses this guard without those business policies.
+  assertSubmissionHeaderXsd(cabecera);
   registros.forEach((entry, index) => {
     const hasAlta = entry != null && typeof entry === "object" && "RegistroAlta" in entry;
     const hasAnulacion = entry != null && typeof entry === "object" && "RegistroAnulacion" in entry;
