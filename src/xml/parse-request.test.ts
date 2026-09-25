@@ -651,6 +651,125 @@ describe("parseConsulta full header and date choice", () => {
     );
   });
 
+  it("rejects both date alternatives inside one parsed consultation filter", () => {
+    const valid = serializeConsulta(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      FechaExpedicionFactura: "20-07-2026",
+    });
+    const xml = valid.replace(
+      "<sf:FechaExpedicionFactura>20-07-2026</sf:FechaExpedicionFactura>",
+      "<sf:FechaExpedicionFactura>20-07-2026</sf:FechaExpedicionFactura>" +
+        "<sf:RangoFechaExpedicion><sf:Desde>01-07-2026</sf:Desde></sf:RangoFechaExpedicion>",
+    );
+    expect(xml).not.toBe(valid);
+    expect(() => parseConsulta(xml)).toThrow(
+      "Consulta FechaExpedicionFactura must contain either an exact date or a date range",
+    );
+  });
+
+  it("rejects repeated consultation date-filter wrappers", () => {
+    const valid = serializeConsulta(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      FechaExpedicionFactura: "20-07-2026",
+    });
+    const wrapper =
+      "<sfLRC:FechaExpedicionFactura>" +
+      "<sf:FechaExpedicionFactura>20-07-2026</sf:FechaExpedicionFactura>" +
+      "</sfLRC:FechaExpedicionFactura>";
+    const xml = valid.replace(wrapper, wrapper + wrapper);
+    expect(xml).not.toBe(valid);
+    expect(() => parseConsulta(xml)).toThrow(
+      "Consulta FechaExpedicionFactura must occur at most once",
+    );
+  });
+
+  it.each([
+    ["exact dates", "<sf:FechaExpedicionFactura>20-07-2026</sf:FechaExpedicionFactura>"],
+    [
+      "date ranges",
+      "<sf:RangoFechaExpedicion><sf:Desde>01-07-2026</sf:Desde></sf:RangoFechaExpedicion>",
+    ],
+  ])("rejects repeated %s inside one consultation date wrapper", (_case, inner) => {
+    const valid = serializeConsulta(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      FechaExpedicionFactura: "20-07-2026",
+    });
+    const xml = valid.replace(
+      "<sf:FechaExpedicionFactura>20-07-2026</sf:FechaExpedicionFactura>",
+      inner + inner,
+    );
+    expect(xml).not.toBe(valid);
+    expect(() => parseConsulta(xml)).toThrow(
+      "Consulta FechaExpedicionFactura must contain at most one date alternative",
+    );
+  });
+
+  it("keeps an empty consultation date wrapper optional", () => {
+    const valid = serializeConsulta(cabecera, { Ejercicio: "2026", Periodo: "07" });
+    const xml = valid.replace(
+      "</sfLRC:FiltroConsulta>",
+      "<sfLRC:FechaExpedicionFactura/></sfLRC:FiltroConsulta>",
+    );
+    expect(xml).not.toBe(valid);
+    expect(parseConsulta(xml).filtro).toEqual({ Ejercicio: "2026", Periodo: "07" });
+  });
+
+  it("keeps an indented empty consultation date wrapper optional", () => {
+    const valid = serializeConsulta(cabecera, { Ejercicio: "2026", Periodo: "07" });
+    const xml = valid.replace(
+      "</sfLRC:FiltroConsulta>",
+      "<sfLRC:FechaExpedicionFactura>\n  \t</sfLRC:FechaExpedicionFactura></sfLRC:FiltroConsulta>",
+    );
+    expect(xml).not.toBe(valid);
+    expect(parseConsulta(xml).filtro).toEqual({ Ejercicio: "2026", Periodo: "07" });
+  });
+
+  it("rejects text beside a valid consultation date child", () => {
+    const valid = serializeConsulta(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      FechaExpedicionFactura: "20-07-2026",
+    });
+    const xml = valid.replace(
+      "<sf:FechaExpedicionFactura>20-07-2026</sf:FechaExpedicionFactura>",
+      "junk<sf:FechaExpedicionFactura>20-07-2026</sf:FechaExpedicionFactura>",
+    );
+    expect(xml).not.toBe(valid);
+    expect(() => parseConsulta(xml)).toThrow(
+      "Consulta FechaExpedicionFactura must contain only date elements or XML whitespace",
+    );
+  });
+
+  it("does not treat non-XML whitespace as ignorable date-wrapper content", () => {
+    const valid = serializeConsulta(cabecera, { Ejercicio: "2026", Periodo: "07" });
+    const xml = valid.replace(
+      "</sfLRC:FiltroConsulta>",
+      "<sfLRC:FechaExpedicionFactura>\u00a0</sfLRC:FechaExpedicionFactura></sfLRC:FiltroConsulta>",
+    );
+    expect(() => parseConsulta(xml)).toThrow(
+      "Consulta FechaExpedicionFactura must contain only date elements or XML whitespace",
+    );
+  });
+
+  it("rejects text in place of a consultation date alternative", () => {
+    const valid = serializeConsulta(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      FechaExpedicionFactura: "20-07-2026",
+    });
+    const xml = valid.replace(
+      "<sf:FechaExpedicionFactura>20-07-2026</sf:FechaExpedicionFactura>",
+      "20-07-2026",
+    );
+    expect(xml).not.toBe(valid);
+    expect(() => parseConsulta(xml)).toThrow(
+      "Consulta FechaExpedicionFactura must contain only date elements or XML whitespace",
+    );
+  });
+
   it("round-trips an issuer header with IndicadorRepresentante", () => {
     const consultaCabecera = {
       ObligadoEmision: cabecera.ObligadoEmision,

@@ -348,6 +348,14 @@ The bundled fake AEAT compares stored and queried date strings, and its range co
 ASCII digits. Use ASCII digits for fake-AEAT filtering until its Unicode semantics are addressed;
 the actual AEAT service's handling of Unicode-equivalent dates has not been verified live.
 
+`sf:FechaExpedicionConsultaType` lets a consultation date wrapper contain an exact date or a
+range, but not both. `parseConsulta` now rejects both alternatives together, repeated wrappers,
+repeated alternatives, and non-XML-whitespace text beside or in place of a child element. It still
+accepts an empty wrapper, including one containing only XML whitespace, which the XSD permits.
+Parser tests and offline XSD probes cover these boundaries.
+This targeted check does not turn the raw parser into a complete XSD validator; other unexpected
+children and XML ordering remain separate audit surfaces.
+
 ### Consultation response flags and cursor — service description §§6.4.2–6.4.3
 
 `RespuestaConsultaLR.xsd` restricts `ResultadoConsulta` to `ConDatos`/`SinDatos` and
