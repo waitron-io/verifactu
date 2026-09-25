@@ -239,6 +239,25 @@ offline `xmllint --schema` check of a consultation request could not compile bec
 common schema imports the external XML-signature schema; these tests do not claim whole-request
 XSD validity.
 
+### Consultation request period — service description §6.4.1 and `sf:YearType`
+
+You must supply `PeriodoImputacion` even when querying one invoice. Its `Ejercicio` is a four-digit
+year in the service table and `SuministroInformacion.xsd`; its `Periodo` is one of `01`–`12`.
+`serializeConsulta` and `parseConsulta` now reject missing, short, padded, or non-digit years as
+well as invalid months. They keep the year as a string so the exact four digits survive a
+serialize/parse round trip. `src/xml/serialize.test.ts` and `src/xml/parse-request.test.ts` cover
+valid bounds and invalid literals, including a whitespace-padded XML leaf. The client uses this
+serializer, so invalid values fail before transport. The guard checks the year’s lexical shape,
+not whether a calendar period is plausible for a particular taxpayer or date.
+
+The rest of the §6.4.1 filter table remains a separate audit surface. Existing tests pin the
+header/version, optional filter order, issuer/recipient choice, date-choice wrapper, counterpart
+identity, software-system block, external reference, pagination key, and response options. They
+do not establish that every optional field’s runtime value satisfies its imported XSD type, nor
+that a complete request passes offline XSD validation. In particular, consulta header NIF parity,
+identity-less untyped counterpart/software filters, and optional text limits remain open in the
+backlog rather than being treated as verified.
+
 ### Consultation response flags and cursor — service description §§6.4.2–6.4.3
 
 `RespuestaConsultaLR.xsd` restricts `ResultadoConsulta` to `ConDatos`/`SinDatos` and

@@ -1,6 +1,7 @@
 import { asArray, parser } from "./parse-common.js";
 import {
   assertConsultaResponseOptions,
+  isValidConsultaEjercicio,
   isValidConsultaPeriodo,
   MAX_REGISTROS_POR_ENVIO,
 } from "./serialize.js";
@@ -358,6 +359,9 @@ export function parseConsulta(xml: string): { cabecera: CabeceraConsulta; filtro
   const f = body.FiltroConsulta;
   if (!f.PeriodoImputacion)
     throw new Error("Consulta FiltroConsulta does not contain a PeriodoImputacion");
+  if (!isValidConsultaEjercicio(f.PeriodoImputacion.Ejercicio)) {
+    throw new Error("Consulta Ejercicio must be four digits");
+  }
   if (!isValidConsultaPeriodo(f.PeriodoImputacion.Periodo)) {
     throw new Error("Consulta Periodo must be 01 through 12");
   }

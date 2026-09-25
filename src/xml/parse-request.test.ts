@@ -552,6 +552,17 @@ describe("parseConsulta full header and date choice", () => {
     expect(() => parseConsulta(xml)).toThrow("Consulta Periodo must be 01 through 12");
   });
 
+  it.each(["202", "20A6", " 2026 ", ""])(
+    "rejects a parsed consultation year %s outside the four-digit YearType",
+    (ejercicio) => {
+      const xml = serializeConsulta(cabecera, { Ejercicio: "2026", Periodo: "07" }).replace(
+        "<sf:Ejercicio>2026</sf:Ejercicio>",
+        `<sf:Ejercicio>${ejercicio}</sf:Ejercicio>`,
+      );
+      expect(() => parseConsulta(xml)).toThrow("Consulta Ejercicio must be four digits");
+    },
+  );
+
   it("rejects a consultation period padded inside its XML leaf", () => {
     const xml = serializeConsulta(cabecera, { Ejercicio: "2026", Periodo: "07" }).replace(
       "<sf:Periodo>07</sf:Periodo>",

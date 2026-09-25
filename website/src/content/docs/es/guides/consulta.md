@@ -48,9 +48,10 @@ const recibidas = await client.consultar(
 );
 ```
 
-Indica en `Periodo` un mes de dos dígitos, de `"01"` a `"12"`, como `"07"` en la consulta
-anterior. El cliente rechaza un valor incorrecto antes de enviar el XML a la AEAT. Si calculas
-el mes a partir de una fecha, rellénalo con un cero en lugar de enviar `"7"`.
+Indica en `Ejercicio` un año de cuatro dígitos y en `Periodo` un mes de dos dígitos, de `"01"`
+a `"12"`, como en la consulta anterior. El cliente rechaza cualquiera de los dos campos si tiene
+un formato incorrecto antes de enviar el XML a la AEAT. Si calculas el mes a partir de una fecha,
+rellénalo con un cero en lugar de enviar `"7"`.
 
 `NumSerieFactura` y `FechaExpedicionFactura` acotan la consulta; omítelos para recorrer el
 periodo. Usa `RangoFechaExpedicion` con `Desde` y `Hasta` para acotar un intervalo de fechas. Es

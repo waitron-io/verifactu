@@ -169,6 +169,15 @@ describe("createClient", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("does not send a consulta with an invalid year", async () => {
+    const fetch = fakeFetch(CONSULTA_OK);
+    const client = createClient({ endpoint: "https://example.test/soap", fetch });
+    await expect(client.consultar(CABECERA, { Ejercicio: "20A4", Periodo: "01" })).rejects.toThrow(
+      "Consulta Ejercicio must be four digits",
+    );
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("does not send a recipient consulta requesting software details", async () => {
     const fetch = fakeFetch(CONSULTA_OK);
     const client = createClient({ endpoint: "https://example.test/soap", fetch });
