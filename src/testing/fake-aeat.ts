@@ -192,6 +192,14 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
         alta?.Subsanacion === "S" &&
         (alta.RechazoPrevio === undefined || alta.RechazoPrevio === "N");
       const replacesExistingAlta = existing !== undefined && isNormalSubsanacion;
+      const permitsCancellationReplacement =
+        anulacion !== undefined &&
+        (anulacion.RechazoPrevio === undefined || anulacion.RechazoPrevio === "N");
+      // A changed hash or reference marks new cancellation data; an exact retry stays a duplicate.
+      const replacesExistingCancellation =
+        existing?.tipo === "anulacion" &&
+        permitsCancellationReplacement &&
+        (existing.huella !== huella || (ref !== undefined && existing.refExterna !== ref));
       // A normal subsanación replaces an AEAT record; only RechazoPrevio=X permits no prior record.
       if (!forced && !existing && alta?.Subsanacion === "S" && alta.RechazoPrevio !== "X") {
         rejectedCount += 1;
@@ -241,7 +249,8 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
           existing.tipo === "alta" &&
           existing.estado !== "Anulado"
         ) &&
-        !replacesExistingAlta
+        !replacesExistingAlta &&
+        !replacesExistingCancellation
       ) {
         // Only an allowed cancellation or subsanación can replace stored state. A duplicate
         // leaves it untouched and reports that state for resolveEstadoEfectivo.
@@ -270,21 +279,20 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
           refExterna: tipo === "anulacion" ? (ref ?? existing?.refExterna) : ref,
         });
         petitionIds.set(key, `PET-${String(csvSequence).padStart(8, "0")}`);
-        if (!existing || replacesExistingAlta) {
-          metadata.set(
-            key,
-            "RegistroAlta" in entry
-              ? {
-                  nombreRazonEmisor: entry.RegistroAlta.NombreRazonEmisor,
-                  destinatarios: entry.RegistroAlta.Destinatarios?.IDDestinatario ?? [],
-                  sistema: entry.RegistroAlta.SistemaInformatico,
-                }
-              : {
-                  nombreRazonEmisor: cabecera.ObligadoEmision.NombreRazon,
-                  destinatarios: [],
-                  sistema: entry.RegistroAnulacion.SistemaInformatico,
-                },
-          );
+        if (alta) {
+          metadata.set(key, {
+            nombreRazonEmisor: alta.NombreRazonEmisor,
+            destinatarios: alta.Destinatarios?.IDDestinatario ?? [],
+            sistema: alta.SistemaInformatico,
+          });
+        } else if (anulacion) {
+          // Cancellation has no buyer list; preserve any previously stored issuer and recipients.
+          const prior = metadata.get(key);
+          metadata.set(key, {
+            nombreRazonEmisor: prior?.nombreRazonEmisor ?? cabecera.ObligadoEmision.NombreRazon,
+            destinatarios: prior?.destinatarios ?? [],
+            sistema: anulacion.SistemaInformatico,
+          });
         }
         if (future) {
           // 2004 is non-rejecting: the record is stored and the line reads AceptadoConErrores.
