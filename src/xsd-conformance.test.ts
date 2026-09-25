@@ -77,6 +77,43 @@ describe("generated unsigned requests against AEAT XSDs", () => {
     expect(result.status, result.stderr).toBe(0);
   });
 
+  it.each(["both date alternatives", "repeated date wrapper"] as const)(
+    "rejects a consultation with %s under the date-choice XSD",
+    (invalid) => {
+      const body = soapBodyElement(
+        serializeConsulta(CABECERA, {
+          Ejercicio: "2026",
+          Periodo: "07",
+          FechaExpedicionFactura: "20-07-2026",
+        }),
+      );
+      const document = new DOMParser().parseFromString(body, "text/xml");
+      const wrapper = document.getElementsByTagNameNS(NS_LRC, "FechaExpedicionFactura").item(0);
+      if (!wrapper) throw new Error("Consultation fixture has no date wrapper");
+      if (invalid === "both date alternatives") {
+        const range = document.createElementNS(NS_SF, "sf:RangoFechaExpedicion");
+        const from = document.createElementNS(NS_SF, "sf:Desde");
+        from.textContent = "01-07-2026";
+        range.appendChild(from);
+        wrapper.appendChild(range);
+      } else {
+        wrapper.parentNode?.insertBefore(wrapper.cloneNode(true), wrapper.nextSibling);
+      }
+      const result = schemaResult(CONSULTA_XSD, new XMLSerializer().serializeToString(document));
+      expect(result.status, result.stderr).not.toBe(0);
+    },
+  );
+
+  it("accepts an empty consultation date-choice wrapper", () => {
+    const body = soapBodyElement(serializeConsulta(CABECERA, { Ejercicio: "2026", Periodo: "07" }));
+    const document = new DOMParser().parseFromString(body, "text/xml");
+    const filter = document.getElementsByTagNameNS(NS_LRC, "FiltroConsulta").item(0);
+    if (!filter) throw new Error("Consultation fixture has no filter");
+    filter.appendChild(document.createElementNS(NS_LRC, "sfLRC:FechaExpedicionFactura"));
+    const result = schemaResult(CONSULTA_XSD, new XMLSerializer().serializeToString(document));
+    expect(result.status, result.stderr).toBe(0);
+  });
+
   it("validates a minimal alta submission", () => {
     const body = soapBodyElement(
       serializeEnvio(CABECERA, [{ RegistroAlta: buildAltaRecord(ALTA_INPUT) }]),

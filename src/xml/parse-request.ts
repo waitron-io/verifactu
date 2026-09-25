@@ -374,6 +374,24 @@ export function parseConsulta(xml: string): { cabecera: CabeceraConsulta; filtro
   if (f.RefExterna !== undefined && !isValidConsultaRefExterna(f.RefExterna)) {
     throw new Error("Consulta RefExterna must contain at most 60 characters");
   }
+  const dateFilter = f.FechaExpedicionFactura;
+  if (Array.isArray(dateFilter)) {
+    throw new Error("Consulta FechaExpedicionFactura must occur at most once");
+  }
+  if (
+    dateFilter?.FechaExpedicionFactura !== undefined &&
+    dateFilter?.RangoFechaExpedicion !== undefined
+  ) {
+    throw new Error(
+      "Consulta FechaExpedicionFactura must contain either an exact date or a date range",
+    );
+  }
+  if (
+    Array.isArray(dateFilter?.FechaExpedicionFactura) ||
+    Array.isArray(dateFilter?.RangoFechaExpedicion)
+  ) {
+    throw new Error("Consulta FechaExpedicionFactura must contain one date alternative");
+  }
   if (
     f.FechaExpedicionFactura?.FechaExpedicionFactura !== undefined &&
     !isValidConsultaFecha(f.FechaExpedicionFactura.FechaExpedicionFactura)
@@ -406,10 +424,10 @@ export function parseConsulta(xml: string): { cabecera: CabeceraConsulta; filtro
   };
   if (f.NumSerieFactura !== undefined) filtro.NumSerieFactura = f.NumSerieFactura;
   if (f.Contraparte !== undefined) filtro.Contraparte = consultaPersonaOf(f.Contraparte);
-  if (f.FechaExpedicionFactura?.FechaExpedicionFactura !== undefined)
-    filtro.FechaExpedicionFactura = f.FechaExpedicionFactura.FechaExpedicionFactura;
-  if (f.FechaExpedicionFactura?.RangoFechaExpedicion !== undefined)
-    filtro.RangoFechaExpedicion = f.FechaExpedicionFactura.RangoFechaExpedicion;
+  if (dateFilter?.FechaExpedicionFactura !== undefined)
+    filtro.FechaExpedicionFactura = dateFilter.FechaExpedicionFactura;
+  if (dateFilter?.RangoFechaExpedicion !== undefined)
+    filtro.RangoFechaExpedicion = dateFilter.RangoFechaExpedicion;
   if (f.SistemaInformatico !== undefined) {
     const raw = f.SistemaInformatico;
     const sistema: SistemaInformaticoConsulta = {
