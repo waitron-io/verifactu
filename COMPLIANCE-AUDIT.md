@@ -80,7 +80,9 @@ undefined value from an untyped caller. Focused invalid-value tests and offline 
 mutations cover every value, including cancellation `RechazoPrevio: "X"` versus the valid alta
 value. This is lexical XSD checking; existing business rules for valid combinations still apply.
 An untyped object missing the `TipoFactura` key entirely is a separate shape problem because
-`isAlta` uses that key to distinguish record kinds; this branch does not change that discriminator.
+`isAlta` uses that key to distinguish record kinds; `validate` can therefore throw before returning
+issues for that malformed shape. This branch does not change the discriminator or claim to make
+arbitrary untyped record shapes safe.
 
 ### Cancellation generator — validation §3.1.4.1–3
 
