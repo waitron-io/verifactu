@@ -377,7 +377,9 @@ export function parseConsulta(xml: string): { cabecera: CabeceraConsulta; filtro
     f.ClavePaginacion !== undefined &&
     !isValidConsultaNumSerieFactura(f.ClavePaginacion.NumSerieFactura)
   ) {
-    throw new Error("Consulta ClavePaginacion.NumSerieFactura must contain 1 to 60 characters");
+    throw new Error(
+      "Consulta ClavePaginacion.NumSerieFactura must be present and contain 1 to 60 characters",
+    );
   }
   const filtro: ConsultaFiltro = {
     Ejercicio: f.PeriodoImputacion.Ejercicio,

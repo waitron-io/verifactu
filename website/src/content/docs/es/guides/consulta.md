@@ -62,8 +62,7 @@ propia en el registro; puede estar vacío, pero no superar los 60 caracteres. El
 estos límites, incluido el número de factura de `ClavePaginacion`, antes del envío porque el
 esquema de AEAT rechaza valores más largos.
 
-Usa `Contraparte`
-con `NombreRazon` y el `NIF` o `IDOtro` del cliente para buscar sus facturas.
+Usa `Contraparte` con `NombreRazon` y el `NIF` o `IDOtro` del cliente para buscar sus facturas.
 `SistemaInformatico` limita el resultado a una instalación. Indica `NombreRazon`, `NIF` o
 `IDOtro`, `IdSistemaInformatico` y `NumeroInstalacion`. El nombre del software, la versión y los
 indicadores de uso son opcionales.

@@ -4,6 +4,7 @@ import { serializeConsulta, serializeEnvio } from "./serialize.js";
 import type {
   Cabecera,
   CabeceraConsulta,
+  ConsultaFiltro,
   DatosAdicionalesRespuesta,
   EnvioRegistro,
 } from "./serialize.js";
@@ -1177,7 +1178,16 @@ describe("serializeConsulta", () => {
           FechaExpedicionFactura: "20-07-2026",
         },
       },
-      "Consulta ClavePaginacion.NumSerieFactura must contain 1 to 60 characters",
+      "Consulta ClavePaginacion.NumSerieFactura must be present and contain 1 to 60 characters",
+    ],
+    [
+      {
+        ClavePaginacion: {
+          IDEmisorFactura: CABECERA.ObligadoEmision.NIF,
+          FechaExpedicionFactura: "20-07-2026",
+        } as ConsultaFiltro["ClavePaginacion"],
+      },
+      "Consulta ClavePaginacion.NumSerieFactura must be present and contain 1 to 60 characters",
     ],
   ])("rejects an XSD-invalid consultation identifier filter %#", (fields, message) => {
     expect(() =>

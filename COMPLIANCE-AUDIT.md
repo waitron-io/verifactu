@@ -305,6 +305,10 @@ Both `serializeConsulta` and `parseConsulta` reject values outside these bounds.
 serializer/parser tests cover missing-length and overlong cases, and offline XSD probes confirm
 the 60-code-point boundary and rejection of the invalid values. The other consultation filter
 fields and nested identity/text types are not covered by this length check.
+The consulta response parser still accepts an overlong returned pagination number; echoing that
+cursor in a later request now fails locally. `RespuestaConsultaLR.xsd` declares the returned
+cursor with the same `IDFacturaExpedidaBCType`, but the library has not verified live response
+behavior or harmonized the two parser bounds.
 
 ### Consultation response flags and cursor — service description §§6.4.2–6.4.3
 

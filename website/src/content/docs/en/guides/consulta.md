@@ -60,8 +60,8 @@ reference on the record; it may be empty but cannot exceed 60 characters. The cl
 limits, including the invoice number in `ClavePaginacion`, before sending because AEAT's request
 schema rejects longer values.
 
-Use `Contraparte` with the
-customer's `NombreRazon` and either `NIF` or `IDOtro` when you need that customer's records.
+Use `Contraparte` with the customer's `NombreRazon` and either `NIF` or `IDOtro` when you need
+that customer's records.
 `SistemaInformatico` narrows the result to one software installation. Supply `NombreRazon`, either
 `NIF` or `IDOtro`, `IdSistemaInformatico`, and `NumeroInstalacion`. The software name, version, and
 use flags are optional.

@@ -120,6 +120,7 @@ export function isValidConsultaNumSerieFactura(value: unknown): value is string 
   return length >= 1 && length <= 60;
 }
 
+/** sf:TextMax60Type allows an empty external reference but no more than 60 code points. */
 export function isValidConsultaRefExterna(value: unknown): value is string {
   return typeof value === "string" && Array.from(value).length <= 60;
 }
@@ -598,7 +599,9 @@ export function serializeConsulta(cabecera: CabeceraConsulta, filtro: ConsultaFi
     filtro.ClavePaginacion !== undefined &&
     !isValidConsultaNumSerieFactura(filtro.ClavePaginacion.NumSerieFactura)
   ) {
-    throw new Error("Consulta ClavePaginacion.NumSerieFactura must contain 1 to 60 characters");
+    throw new Error(
+      "Consulta ClavePaginacion.NumSerieFactura must be present and contain 1 to 60 characters",
+    );
   }
   assertConsultaResponseOptions(cabecera, filtro);
   if (filtro.FechaExpedicionFactura !== undefined && filtro.RangoFechaExpedicion !== undefined) {

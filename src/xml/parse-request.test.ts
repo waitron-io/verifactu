@@ -535,7 +535,24 @@ describe("parseConsulta full header and date choice", () => {
     );
     expect(xml).not.toBe(valid);
     expect(() => parseConsulta(xml)).toThrow(
-      "Consulta ClavePaginacion.NumSerieFactura must contain 1 to 60 characters",
+      "Consulta ClavePaginacion.NumSerieFactura must be present and contain 1 to 60 characters",
+    );
+  });
+
+  it("rejects a parsed pagination key with no invoice number", () => {
+    const valid = serializeConsulta(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      ClavePaginacion: {
+        IDEmisorFactura: cabecera.ObligadoEmision.NIF,
+        NumSerieFactura: "INV/41",
+        FechaExpedicionFactura: "20-07-2026",
+      },
+    });
+    const xml = valid.replace("<sf:NumSerieFactura>INV/41</sf:NumSerieFactura>", "");
+    expect(xml).not.toBe(valid);
+    expect(() => parseConsulta(xml)).toThrow(
+      "Consulta ClavePaginacion.NumSerieFactura must be present and contain 1 to 60 characters",
     );
   });
 
