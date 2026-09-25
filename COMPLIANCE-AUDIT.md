@@ -4,7 +4,7 @@ This is the working record for checking this library against AEAT's published ru
 local test confirms the stated library behaviour; only AEAT can confirm that a submitted record
 is accepted. The [source watch](sources/README.md) checks for publication changes each week.
 
-## Sources checked through 24 September 2026
+## Sources checked through 25 September 2026
 
 | AEAT publication                                                                                                                                                   | Version                                    | Audit status                                                                                                               |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
@@ -14,7 +14,7 @@ is accepted. The [source watch](sources/README.md) checks for publication change
 | [QR specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf)               | 0.5.0, 10 December 2025                    | §§2–10 and 12 classified; verifiable QR URL rules checked; printed layout and lookup responses outside library scope       |
 | [Developer FAQ](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/FAQs-Desarrolladores.pdf)                              | 1.3, 4 December 2025                       | Pending entry-by-entry review                                                                                              |
 | [Public FAQ](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes.html)                                 | Pages listed by AEAT on 22 September 2026  | Pending entry-by-entry review                                                                                              |
-| [XSD and WSDL files](schemas/README.md)                                                                                                                            | Versions and checksums in the linked index | Four unsigned generated request shapes checked against XSD; element-by-element review still pending                        |
+| [XSD and WSDL files](schemas/README.md)                                                                                                                            | Versions and checksums in the linked index | WSDL messages, bindings, and ports checked; four unsigned request shapes checked against XSD; XSD element review pending   |
 
 ## Web-service description coverage map
 
@@ -28,7 +28,7 @@ rule from a section whose examples or tables still need line-by-line comparison.
 | §§4–5: standards, transport, faults                            | SOAP 1.1 document/literal, UTF-8, HTTPS/certificate responsibility, and fault retry guidance         | Real certificate and transport acceptance in AEAT preproduction                       |
 | §§6.1–6.6: messages, consultation, response, code lists, modes | Selected header/wrapper, consulta, response, flow-control, and endpoint rules recorded below         | All remaining message diagrams, field tables, pagination rules, and code-list entries |
 | §§6.7–6.9: text and numeric XML                                | Whitespace, leading-zero, and escaping rules recorded below                                          | AEAT's exact Unicode trim boundary needs a controlled live probe                      |
-| §§7–8: test and production annexes                             | Four published under-requirement endpoints and voluntary endpoint constants                          | Each schema/WSDL link, binding, and element in both environments                      |
+| §§7–8: test and production annexes                             | All eight WSDL service ports, two bindings, and four messages checked against the client             | Remaining annex links and XSD elements in both environments                           |
 | §§9–11: worked operating flows                                 | Selected voluntary/requirement correction policy and consulta behavior                               | Every worked XML example and remaining flow variant                                   |
 
 ## Rules checked in this branch
@@ -204,6 +204,31 @@ HTTPS or proves that a certificate is qualified or authorized for the taxpayer; 
 deployment must supply that transport. Both submission guides show a certificate-bearing HTTPS
 configuration and direct you to check it against AEAT preproduction. AEAT validates NIFs against
 its own register, which cannot be established by local syntax and control-digit checks.
+
+### WSDL messages, bindings, and ports — service description §§6.6–8
+
+The [published WSDL](https://prewww2.aeat.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1.0/cont/ws/SistemaFacturacion.wsdl)
+imports the common `SuministroInformacion.xsd` plus four request/response XSDs. Its four message
+parts name submission request and response roots from `SuministroLR.xsd` and
+`RespuestaSuministro.xsd`, and consulta request and response roots from `ConsultaLR.xsd` and
+`RespuestaConsultaLR.xsd`. The voluntary port type exposes submission and consulta; the
+under-requirement port type exposes submission only. Both bindings use SOAP 1.1's HTTP transport
+with document/literal bodies and empty `soapAction`; all eight service addresses are HTTPS.
+The client sends the matching SOAP 1.1 body and `SOAPAction: ""`; `src/client.test.ts` checks the
+wire headers and both methods, while `src/xsd-conformance.test.ts` checks four unsigned request
+bodies against their imported XSDs.
+
+The WSDL assigns four ports to each binding: ordinary and sello-certificate addresses in both
+production and preproduction. `SistemaVerifactu`, `SistemaVerifactuSello`,
+`SistemaVerifactuPruebas`, and `SistemaVerifactuSelloPruebas` match `SOAP_ENDPOINTS` and
+`SOAP_ENDPOINTS_SELLO`; the four corresponding `SistemaRequerimiento` ports match
+`SOAP_ENDPOINTS_REQUERIMIENTO` and `SOAP_ENDPOINTS_REQUERIMIENTO_SELLO`. `src/endpoints.test.ts`
+pins all eight full URLs. `xmllint --nonet --noout` accepted the bundled WSDL, and XPath counts
+confirmed five imports, four messages, two bindings, and eight ports. The focused endpoint,
+client, source-file, and XSD tests passed 44 cases. `createClient` still accepts any caller-supplied
+endpoint and cannot prevent consulta being sent to a requirement-only URL; select the voluntary
+endpoint for consulta. WSDL structure and local tests do not prove certificate authorization,
+live service acceptance, or element-by-element conformance of every XSD type.
 
 ### XML text and escaping — service description §§6.7, 6.9
 
