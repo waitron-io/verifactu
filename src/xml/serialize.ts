@@ -696,6 +696,14 @@ export function serializeEnvio(
           recipient.IDOtro,
         );
       });
+      for (const [name, value, allowed, description] of [
+        ["Subsanacion", alta.Subsanacion, ["S", "N"], "S or N"],
+        ["RechazoPrevio", alta.RechazoPrevio, ["N", "S", "X"], "N, S or X"],
+      ] as const) {
+        if (value !== undefined && !allowed.some((allowedValue) => allowedValue === value)) {
+          throw new Error(`RegistroAlta[${index}].${name} must be ${description}`);
+        }
+      }
       if (alta.Encadenamiento.RegistroAnterior !== undefined) {
         assertPreviousInvoiceNumberXsd(
           `RegistroAlta[${index}].Encadenamiento.RegistroAnterior.NumSerieFactura`,
@@ -723,6 +731,15 @@ export function serializeEnvio(
       const field = `RegistroAnulacion[${index}]`;
       assertIdOtroShape(`${field}.SistemaInformatico`, cancellation.SistemaInformatico?.IDOtro);
       assertIdOtroShape(`${field}.Generador`, cancellation.Generador?.IDOtro);
+      for (const [name, value, allowed, description] of [
+        ["SinRegistroPrevio", entry.RegistroAnulacion.SinRegistroPrevio, ["S", "N"], "S or N"],
+        ["RechazoPrevio", entry.RegistroAnulacion.RechazoPrevio, ["S", "N"], "S or N"],
+        ["GeneradoPor", entry.RegistroAnulacion.GeneradoPor, ["E", "D", "T"], "E, D or T"],
+      ] as const) {
+        if (value !== undefined && !allowed.some((allowedValue) => allowedValue === value)) {
+          throw new Error(`RegistroAnulacion[${index}].${name} must be ${description}`);
+        }
+      }
       if (entry.RegistroAnulacion.Encadenamiento.RegistroAnterior !== undefined) {
         assertPreviousInvoiceNumberXsd(
           `RegistroAnulacion[${index}].Encadenamiento.RegistroAnterior.NumSerieFactura`,

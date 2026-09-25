@@ -34,6 +34,7 @@ export type ValidationCode =
   | "IDOTRO_COUNTRY_CODE"
   | "IDOTRO_IDTYPE"
   | "IDOTRO_ID_SHAPE"
+  | "XSD_ENUM_VALUE"
   | "CONTROL_CHAR"
   | "HUELLA_ANTERIOR_FORMAT"
   | "HUELLA_ANTERIOR_EQUALS_CURRENT"
@@ -489,6 +490,16 @@ export function validate(
       );
     }
   };
+  const checkXsdEnum = (
+    field: string,
+    value: unknown,
+    allowed: readonly string[],
+    description: string,
+  ) => {
+    if (value !== undefined && (typeof value !== "string" || !allowed.includes(value))) {
+      add("XSD_ENUM_VALUE", field, `${field} must be ${description}`);
+    }
+  };
 
   const emisor = isAlta(record)
     ? record.IDFactura.IDEmisorFactura
@@ -697,6 +708,9 @@ export function validate(
   }
 
   if (!isAlta(record)) {
+    checkXsdEnum("SinRegistroPrevio", record.SinRegistroPrevio, ["S", "N"], "S or N");
+    checkXsdEnum("RechazoPrevio", record.RechazoPrevio, ["S", "N"], "S or N");
+    checkXsdEnum("GeneradoPor", record.GeneradoPor, ["E", "D", "T"], "E, D or T");
     if (record.GeneradoPor !== undefined && record.Generador === undefined) {
       add("GENERADOR_REQUIRED", "Generador", "Generador is mandatory when GeneradoPor is present");
     }
@@ -766,6 +780,9 @@ export function validate(
     }
     return issues;
   }
+
+  checkXsdEnum("Subsanacion", record.Subsanacion, ["S", "N"], "S or N");
+  checkXsdEnum("RechazoPrevio", record.RechazoPrevio, ["N", "S", "X"], "N, S or X");
 
   if (record.FechaOperacion !== undefined && operacionOrdinal === undefined) {
     add("FECHA_FORMAT", "FechaOperacion", "Date must be DD-MM-YYYY");

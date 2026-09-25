@@ -83,6 +83,9 @@ referenced invoice receives local NIF, 1–60-character invoice-number, and real
 main invoice's narrower QR-safe alphabet is not applied to these references because they never
 enter the QR payload. AEAT remains responsible for confirming that a NIF is registered.
 
+When you supply these flags on an alta, use `S` or `N` for `Subsanacion` and `N`, `S`, or `X` for
+`RechazoPrevio`. An untyped value outside those lists is rejected before filing XML is sent.
+
 For an alta, `FechaExpedicionFactura` cannot be before 28 October 2024 or after the current date.
 It also cannot be before `FechaOperacion` on an IVA or IGIC line unless that line uses regime `14`
 or `15`. `FechaOperacion` cannot be more than 20 years old or later than the end of the next
@@ -191,6 +194,9 @@ to alta and cancellation records. Only AEAT can confirm that a locally well-form
 identity is registered.
 
 For cancellations, `GeneradoPor` and `Generador` must either both be present or both be absent.
+Use `E`, `D`, or `T` for `GeneradoPor`; use `S` or `N` for `SinRegistroPrevio` and
+`RechazoPrevio`. Unlike an alta, a cancellation cannot use `RechazoPrevio: "X"`.
+
 `Generador` needs exactly one NIF or `IDOtro`. Its NIF must differ from the taxpayer's; `E`
 requires a NIF. With Spanish `IDOtro`, `D` accepts types `03` and `07`, while `T` requires `03`
 and never accepts `07`. An `IDType: "02"` number must match an uppercase EU VAT-number structure.

@@ -95,6 +95,17 @@ describe("serializeEnvio", () => {
   });
 
   it.each([
+    ["Subsanacion", "S or N"],
+    ["RechazoPrevio", "N, S or X"],
+  ] as const)("rejects an XSD-invalid alta %s before sending", (field, allowed) => {
+    const invalid = buildAltaRecord(ALTA_INPUT);
+    (invalid as unknown as Record<string, unknown>)[field] = "Z";
+    expect(() => serializeEnvio(CABECERA, [{ RegistroAlta: invalid }])).toThrow(
+      `RegistroAlta[0].${field} must be ${allowed}`,
+    );
+  });
+
+  it.each([
     ["country code", "CodigoPais", "ZZ", "CodigoPais must be an AEAT CountryType2 code"],
     ["identifier type", "IDType", "01", "IDType must be 02 through 07"],
     [
@@ -155,6 +166,33 @@ describe("serializeEnvio", () => {
           `Registro${role === "generator" ? "Anulacion" : "Alta"}[0].${fieldRoot}.${message}`,
         );
       }
+    },
+  );
+
+  it.each([
+    ["SinRegistroPrevio", "Z", "S or N"],
+    ["RechazoPrevio", "Z", "S or N"],
+    ["RechazoPrevio", "X", "S or N"],
+    ["GeneradoPor", "Z", "E, D or T"],
+  ] as const)(
+    "rejects an XSD-invalid cancellation %s=%s before sending",
+    (field, invalid, allowed) => {
+      const cancellation = buildAnulacionRecord({
+        IDEmisorFacturaAnulada: CABECERA.ObligadoEmision.NIF,
+        NumSerieFacturaAnulada: "CANCEL-ENUM",
+        FechaExpedicionFacturaAnulada: new Date("2024-10-28T00:00:00+01:00"),
+        Encadenamiento: { PrimerRegistro: "S" },
+        SistemaInformatico: SISTEMA,
+        generadoEn: new Date("2024-10-28T19:20:30+01:00"),
+        offsetMinutes: 60,
+      });
+      (cancellation as unknown as Record<string, unknown>)[field] = invalid;
+      if (field === "GeneradoPor") {
+        cancellation.Generador = { NombreRazon: "Cliente Factura SL", NIF: "B99999997" };
+      }
+      expect(() => serializeEnvio(CABECERA, [{ RegistroAnulacion: cancellation }])).toThrow(
+        `RegistroAnulacion[0].${field} must be ${allowed}`,
+      );
     },
   );
 

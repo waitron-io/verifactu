@@ -136,6 +136,20 @@ describe("validate", () => {
     },
   );
 
+  it.each([
+    ["Subsanacion", "S or N"],
+    ["RechazoPrevio", "N, S or X"],
+  ] as const)("rejects an XSD-invalid alta %s", (field, allowed) => {
+    const record = valid();
+    (record as unknown as Record<string, unknown>)[field] = "Z";
+    expect(validate(record)).toContainEqual({
+      code: "XSD_ENUM_VALUE",
+      severity: "error",
+      field,
+      message: `${field} must be ${allowed}`,
+    });
+  });
+
   it("returns no issues for a well-formed record", () => {
     expect(validate(valid())).toEqual([]);
   });
@@ -4030,6 +4044,25 @@ describe("validate — the recipient's own name and NIF", () => {
 });
 
 describe("validate — RegistroAnulacion", () => {
+  it.each([
+    ["SinRegistroPrevio", "Z", "S or N"],
+    ["RechazoPrevio", "Z", "S or N"],
+    ["RechazoPrevio", "X", "S or N"],
+    ["GeneradoPor", "Z", "E, D or T"],
+  ] as const)("rejects an XSD-invalid cancellation %s=%s", (field, invalid, allowed) => {
+    const record = validAnulacion();
+    (record as unknown as Record<string, unknown>)[field] = invalid;
+    if (field === "GeneradoPor") {
+      record.Generador = { NombreRazon: "Cliente Factura SL", NIF: "B99999997" };
+    }
+    expect(validate(record)).toContainEqual({
+      code: "XSD_ENUM_VALUE",
+      severity: "error",
+      field,
+      message: `${field} must be ${allowed}`,
+    });
+  });
+
   const withGenerator = (GeneradoPor: "E" | "D" | "T" = "D") => {
     const record = validAnulacion();
     record.GeneradoPor = GeneradoPor;
@@ -5482,6 +5515,15 @@ describe("validate — pins the exact field, message and severity for every Vali
   ] as const satisfies readonly Case[];
 
   const cancellationCases = [
+    {
+      code: "XSD_ENUM_VALUE",
+      field: "GeneradoPor",
+      message: "GeneradoPor must be E, D or T",
+      mutate: (r: RegistroAnulacion) => {
+        r.GeneradoPor = "Z" as RegistroAnulacion["GeneradoPor"];
+        r.Generador = { NombreRazon: "Cliente Factura SL", NIF: "B99999997" };
+      },
+    },
     {
       code: "GENERADOR_REQUIRED",
       field: "Generador",
