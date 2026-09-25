@@ -384,10 +384,10 @@ describe("parseRespuestaSuministro", () => {
     );
   });
 
-  it("rejects a fractional RespuestaLinea.CodigoErrorRegistro under the integer XSD type", () => {
-    const xml = MULTI_LINE.replace("<CodigoErrorRegistro>1180<", "<CodigoErrorRegistro>1180.5<");
+  it("rejects a decimal RespuestaLinea.CodigoErrorRegistro under the integer XSD type", () => {
+    const xml = MULTI_LINE.replace("<CodigoErrorRegistro>1180<", "<CodigoErrorRegistro>1180.0<");
     expect(() => parseRespuestaSuministro(xml)).toThrow(
-      /RespuestaLinea\.CodigoErrorRegistro.*integer.*1180\.5/,
+      'RespuestaLinea.CodigoErrorRegistro must be an integer, received "1180.0"',
     );
   });
 
@@ -425,13 +425,13 @@ describe("parseRespuestaSuministro", () => {
     );
   });
 
-  it("rejects a fractional RegistroDuplicado.CodigoErrorRegistro under the integer XSD type", () => {
+  it("rejects a decimal RegistroDuplicado.CodigoErrorRegistro under the integer XSD type", () => {
     const xml = DUPLICATE_BUT_ACCEPTED.replace(
       "</EstadoRegistroDuplicado>",
-      "</EstadoRegistroDuplicado><CodigoErrorRegistro>3000.5</CodigoErrorRegistro>",
+      "</EstadoRegistroDuplicado><CodigoErrorRegistro>3000.0</CodigoErrorRegistro>",
     );
     expect(() => parseRespuestaSuministro(xml)).toThrow(
-      /RegistroDuplicado\.CodigoErrorRegistro.*integer.*3000\.5/,
+      'RegistroDuplicado.CodigoErrorRegistro must be an integer, received "3000.0"',
     );
   });
 
