@@ -566,7 +566,10 @@ function assertPreviousInvoiceNumberXsd(field: string, value: unknown): void {
 
 function assertFilingText(field: string, value: unknown, max: number, optional = false): void {
   if (value === undefined && optional) return;
-  if (typeof value !== "string" || Array.from(value).length > max) {
+  if (typeof value !== "string") {
+    throw new Error(`${field} must be a string`);
+  }
+  if (Array.from(value).length > max) {
     throw new Error(`${field} must contain at most ${max} characters`);
   }
 }
@@ -649,7 +652,7 @@ function assertFilingOccurrence(field: string, child: string, values: readonly u
 function assertFilingDateTime(field: string, value: unknown): void {
   const match =
     typeof value === "string"
-      ? /^(\d{4,})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(?:(Z)|([+-])(\d{2}):(\d{2}))?$/.exec(
+      ? /^(\d{4}|[1-9]\d{4,})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(?:(Z)|([+-])(\d{2}):(\d{2}))?$/.exec(
           value,
         )
       : null;

@@ -873,6 +873,14 @@ describe("validate", () => {
     expect(codes(record)).toContain("ID_SISTEMA_LENGTH");
   });
 
+  it("counts IdSistemaInformatico length in Unicode code points before applying its stricter alphabet", () => {
+    const record = valid();
+    record.SistemaInformatico = { ...SISTEMA, IdSistemaInformatico: "😀😀" };
+    const issues = codes(record);
+    expect(issues).not.toContain("ID_SISTEMA_LENGTH");
+    expect(issues).toContain("ID_SISTEMA_CHARSET");
+  });
+
   it("rejects a NombreSistemaInformatico longer than thirty characters", () => {
     const record = valid();
     record.SistemaInformatico = {

@@ -301,6 +301,37 @@ describe("generated unsigned requests against AEAT XSDs", () => {
   });
 
   it.each([
+    "2024-02-29T24:00:00Z",
+    "2024-02-29T12:34:56.789Z",
+    "2024-02-29T12:34:56",
+    "2024-02-29T12:34:56+14:00",
+  ])("accepts the filing dateTime boundary %s", (timestamp) => {
+    const alta = buildAltaRecord(ALTA_INPUT);
+    alta.FechaHoraHusoGenRegistro = timestamp;
+    const body = soapBodyElement(serializeEnvio(CABECERA, [{ RegistroAlta: alta }]));
+    const result = schemaResult(ENVIO_XSD, body);
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it.each([
+    "2023-02-29T12:34:56Z",
+    "2024-02-29T24:00:01Z",
+    "2024-02-29T12:34:56+14:01",
+    "01234-02-28T12:34:56Z",
+  ])("rejects the filing dateTime boundary %s", (timestamp) => {
+    const body = soapBodyElement(
+      serializeEnvio(CABECERA, [{ RegistroAlta: buildAltaRecord(ALTA_INPUT) }]),
+    );
+    const document = new DOMParser().parseFromString(body, "text/xml");
+    const leaf = document.getElementsByTagNameNS(NS_SF, "FechaHoraHusoGenRegistro").item(0);
+    if (!leaf) throw new Error("Alta fixture has no FechaHoraHusoGenRegistro");
+    leaf.textContent = timestamp;
+    const result = schemaResult(ENVIO_XSD, new XMLSerializer().serializeToString(document));
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("FechaHoraHusoGenRegistro");
+  });
+
+  it.each([
     ["IDEmisorFactura", "SHORT"],
     ["FechaExpedicionFactura", "2024/01/01"],
     ["CuotaTotal", "not-an-amount"],

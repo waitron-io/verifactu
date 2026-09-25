@@ -637,7 +637,7 @@ export function validate(
   }
   const sistema = record.SistemaInformatico;
   const sistemaId = sistema.IdSistemaInformatico ?? "";
-  if (sistemaId.length !== 2) {
+  if (xmlCharacterCount(sistemaId) !== 2) {
     add(
       "ID_SISTEMA_LENGTH",
       "IdSistemaInformatico",

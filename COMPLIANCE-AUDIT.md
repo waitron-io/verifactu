@@ -109,6 +109,11 @@ This inventory is offline evidence against the watched schema file, not a live A
 claim. `schemas/README.md` remains the checksum authority, and the source-watch test detects a
 publication change that would require this table to be revisited.
 
+One compatibility change is intentional: through 2026, an IPSI `ClaveRegimen` outside the
+tax-specific business list still retains its existing advisory `CLAVE_REGIMEN_VALUE`, but a
+literal such as `99` now also receives blocking `XSD_ENUM_VALUE` because the pinned schema rejects
+it in every period. A missing IPSI regime keeps the existing advisory-only behavior until 2027.
+
 ### Cancellation generator — validation §3.1.4.1–3
 
 `serializeEnvio` requires `RegistroAnulacion.IDFactura.IDEmisorFacturaAnulada` to match

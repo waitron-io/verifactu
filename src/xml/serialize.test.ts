@@ -61,6 +61,38 @@ describe("serializeEnvio", () => {
   );
 
   it.each([
+    "2024-02-29T24:00:00Z",
+    "2024-02-29T12:34:56.789Z",
+    "2024-02-29T12:34:56",
+    "2024-02-29T12:34:56+14:00",
+  ])("accepts the supported XML Schema dateTime boundary %s", (timestamp) => {
+    const filing = buildAltaRecord(ALTA_INPUT);
+    filing.FechaHoraHusoGenRegistro = timestamp;
+    expect(() => serializeEnvio(CABECERA, [{ RegistroAlta: filing }])).not.toThrow();
+  });
+
+  it.each([
+    "2023-02-29T12:34:56Z",
+    "2024-02-29T24:00:01Z",
+    "2024-02-29T12:34:56+14:01",
+    "01234-02-28T12:34:56Z",
+  ])("rejects the XML Schema dateTime boundary %s", (timestamp) => {
+    const filing = buildAltaRecord(ALTA_INPUT);
+    filing.FechaHoraHusoGenRegistro = timestamp;
+    expect(() => serializeEnvio(CABECERA, [{ RegistroAlta: filing }])).toThrow(
+      "RegistroAlta[0].FechaHoraHusoGenRegistro must be an XML Schema dateTime",
+    );
+  });
+
+  it("reports a missing required filing text as missing rather than overlong", () => {
+    const filing = buildAltaRecord(ALTA_INPUT);
+    filing.NombreRazonEmisor = undefined as unknown as string;
+    expect(() => serializeEnvio(CABECERA, [{ RegistroAlta: filing }])).toThrow(
+      "RegistroAlta[0].NombreRazonEmisor must be a string",
+    );
+  });
+
+  it.each([
     [
       "person NIF length",
       "RegistroAlta[0].Tercero.NIF must contain exactly 9 characters",
