@@ -4,7 +4,7 @@ This is the working record for checking this library against AEAT's published ru
 local test confirms the stated library behaviour; only AEAT can confirm that a submitted record
 is accepted. The [source watch](sources/README.md) checks for publication changes each week.
 
-## Sources checked through 25 September 2026
+## Sources checked through 26 September 2026
 
 | AEAT publication                                                                                                                                                   | Version                                    | Audit status                                                                                                               |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
@@ -14,7 +14,7 @@ is accepted. The [source watch](sources/README.md) checks for publication change
 | [QR specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf)               | 0.5.0, 10 December 2025                    | §§2–10 and 12 classified; verifiable QR URL rules checked; printed layout and lookup responses outside library scope       |
 | [Developer FAQ](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/FAQs-Desarrolladores.pdf)                              | 1.3, 4 December 2025                       | Pending entry-by-entry review                                                                                              |
 | [Public FAQ](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes.html)                                 | Pages listed by AEAT on 22 September 2026  | Pending entry-by-entry review                                                                                              |
-| [XSD and WSDL files](schemas/README.md)                                                                                                                            | Versions and checksums in the linked index | All five individual XSD inventories complete; WSDL/import and cross-schema reconciliation remains open                     |
+| [XSD and WSDL files](schemas/README.md)                                                                                                                            | Versions and checksums in the linked index | Offline closure complete for all five XSD inventories, the WSDL graph, and their cross-schema links                        |
 
 ## Web-service description coverage map
 
@@ -28,7 +28,7 @@ rule from a section whose examples or tables still need line-by-line comparison.
 | §§4–5: standards, transport, faults                            | SOAP 1.1 document/literal, UTF-8, HTTPS/certificate responsibility, and fault retry guidance         | Real certificate and transport acceptance in AEAT preproduction                       |
 | §§6.1–6.6: messages, consultation, response, code lists, modes | Selected header/wrapper, consulta, response, flow-control, and endpoint rules recorded below         | All remaining message diagrams, field tables, pagination rules, and code-list entries |
 | §§6.7–6.9: text and numeric XML                                | Whitespace, leading-zero, and escaping rules recorded below                                          | AEAT's exact Unicode trim boundary needs a controlled live probe                      |
-| §§7–8: test and production annexes                             | All eight WSDL service ports, two bindings, and four messages checked against the client             | Remaining annex links and XSD elements in both environments                           |
+| §§7–8: test and production annexes                             | All eight WSDL ports, both bindings, all four messages, five imports, and six global XSD elements    | Remaining annex links and live environment behavior                                   |
 | §§9–11: worked operating flows                                 | Selected voluntary/requirement correction policy and consulta behavior                               | Every worked XML example and remaining flow variant                                   |
 
 ## Rules checked in this branch
@@ -195,7 +195,7 @@ The `SuministroLR.xsd` inventory is complete for the unsigned request surface:
 | Each `RegistroFacturaType` choice references one `sf:RegistroAlta` or `sf:RegistroAnulacion` | Public `EnvioRegistro` is a union; both boundaries reject both/neither and retain caller order across mixed batches                                                                                               | Choice mutation tests in both request boundaries, namespace assertions, exact mixed XML, and negative XSD probes                | Record field coverage belongs to the completed `SuministroInformacion.xsd` inventory above                                                                                                                                                                                   |
 | Optional record `ds:Signature` content imported by `SuministroInformacion.xsd`               | Generated requests are unsigned and pass the complete local request schema                                                                                                                                        | Minimal alta, cancellation, and both header-mode bodies pass `xmllint --nonet` through the pinned catalog                       | The library neither creates nor parses XML signatures; signed-message verification is outside its surface                                                                                                                                                                    |
 
-The source watch on 25 September 2026 reported that every watched publication still matched its
+The source watch on 26 September 2026 reported that every watched publication still matched its
 pinned fingerprint. These offline checks establish schema conformance of generated unsigned bodies,
 not endpoint selection, certificate authorization, requirement validity, or live AEAT acceptance.
 
@@ -327,12 +327,32 @@ production and preproduction. `SistemaVerifactu`, `SistemaVerifactuSello`,
 `SistemaVerifactuPruebas`, and `SistemaVerifactuSelloPruebas` match `SOAP_ENDPOINTS` and
 `SOAP_ENDPOINTS_SELLO`; the four corresponding `SistemaRequerimiento` ports match
 `SOAP_ENDPOINTS_REQUERIMIENTO` and `SOAP_ENDPOINTS_REQUERIMIENTO_SELLO`. `src/endpoints.test.ts`
-pins all eight full URLs. `xmllint --nonet --noout` accepted the bundled WSDL, and XPath counts
-confirmed five imports, four messages, two bindings, and eight ports. The focused endpoint,
-client, source-file, and XSD tests passed 44 cases. `createClient` still accepts any caller-supplied
-endpoint and cannot prevent consulta being sent to a requirement-only URL; select the voluntary
-endpoint for consulta. WSDL structure and local tests do not prove certificate authorization,
-live service acceptance, or element-by-element conformance of every XSD type.
+pins all eight full URLs. `src/wsdl-conformance.test.ts` parses the pinned sources and checks every
+namespace/import pair, global element, message part, port-type edge, binding operation, body style,
+action, port binding, and address. This ties the WSDL to the exported endpoint constants instead of
+leaving the relationship as a manual comparison.
+
+The fake transport now emits consultation responses with the published response and common
+namespaces, echoed `Cabecera` and `PeriodoImputacion`, and the exact response-XSD sequence. Issuer,
+recipient, and populated fake responses pass `RespuestaConsultaLR.xsd`; filing fake responses
+continue to pass `RespuestaSuministro.xsd`. `createClient` still accepts any caller-supplied endpoint
+and cannot prevent consulta being sent to a requirement-only URL, so select the voluntary endpoint
+for consulta. These offline checks do not prove certificate authorization or live service acceptance.
+
+#### Global element coverage index
+
+The WSDL can only dispatch global schema elements, so this index is the boundary between the five
+schema inventories and the client transport. Local types and child fields remain covered by their
+individual inventory sections.
+
+| Source                      | Global element                             | WSDL or library consumer                                                                                                        | Executable evidence                                                                             | External limit                                                                                                  |
+| --------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `SuministroInformacion.xsd` | `RegistroAlta`                             | `SuministroLR.xsd` references it from each request record choice; `serializeEnvio` and `parseEnvio` produce and consume it      | Cross-schema import/global-element check plus generated alta request XSD tests                  | AEAT acceptance and optional XML signatures require the live service or an external signer                      |
+| `SuministroInformacion.xsd` | `RegistroAnulacion`                        | `SuministroLR.xsd` references it from the other request record choice; `serializeEnvio` and `parseEnvio` produce and consume it | Cross-schema import/global-element check plus generated cancellation request XSD tests          | AEAT acceptance and optional XML signatures require the live service or an external signer                      |
+| `SuministroLR.xsd`          | `RegFactuSistemaFacturacion`               | Submission input message; `createClient.submit` sends it and the fake transport dispatches it                                   | WSDL message/operation/binding tests, client wire test, and generated request XSD tests         | Certificate authorization and under-requirement references remain external                                      |
+| `ConsultaLR.xsd`            | `ConsultaFactuSistemaFacturacion`          | Consultation input message; `createClient.consultar` sends it and the fake transport dispatches it                              | WSDL message/operation/binding tests, client wire test, and generated request XSD tests         | Consulta is absent from the under-requirement port type; live query authorization remains external              |
+| `RespuestaSuministro.xsd`   | `RespuestaRegFactuSistemaFacturacion`      | Submission output message; `parseRespuestaSuministro` and the fake transport consume and produce it                             | WSDL output-link test plus accepted, rejected, and duplicate fake-response XSD tests            | The parser is a projection and does not replace whole-response validation for arbitrary live XML                |
+| `RespuestaConsultaLR.xsd`   | `RespuestaConsultaFactuSistemaFacturacion` | Consultation output message; `parseRespuestaConsulta` and the fake transport consume and produce it                             | WSDL output-link test plus issuer, recipient, populated, field, order, and occurrence XSD tests | The parser deliberately omits echoed header/period fields and recursive validation of the stored-record subtree |
 
 ### Submitted invoice-number lengths — `sf:TextoIDFacturaType`
 
@@ -684,8 +704,8 @@ check those flows against AEAT preproduction rather than treating the fake as an
 
 ## Remaining work
 
-Review every numbered validation rule, every service and hash/QR requirement, the consultation
-response XSD and cross-schema WSDL constraints, and every developer and public FAQ entry. For each rule, add a
+Review every remaining numbered validation rule, service-description section, hash/QR requirement,
+and developer and public FAQ entry. For each rule, add a
 row with the exact source section, implementation, behavioural test, and any intentional scope
 limit. Check the English and Spanish guides against each finding. The audit remains open until
 this review is complete.

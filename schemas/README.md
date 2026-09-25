@@ -47,3 +47,8 @@ They let a future reader tell "AEAT published a new revision" apart from "someon
 primary source to make a test pass". Those two look identical in a diff and have opposite
 consequences. When AEAT does publish a revision, update the file, the date and the checksum in
 one commit whose message says what changed.
+
+`src/wsdl-conformance.test.ts` checks the relationships that checksums alone cannot: every local
+import must resolve to the pinned file and target namespace, every WSDL message must name the
+published global element, and every operation, binding, port, and address must still match the
+client surface. If AEAT changes one side of that graph, CI fails until you reconcile the other side.

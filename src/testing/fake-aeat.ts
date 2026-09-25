@@ -9,6 +9,7 @@ import type {
 } from "../xml/parse-suministro.js";
 import type {
   Cabecera,
+  CabeceraConsulta,
   ConsultaFiltro,
   EnvioRegistro,
   SistemaInformaticoConsulta,
@@ -21,6 +22,11 @@ import {
   type RegistroAnulacion,
   type SistemaInformatico,
 } from "../types.js";
+
+const NS_SF =
+  "https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/SuministroInformacion.xsd";
+const NS_RC =
+  "https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/RespuestaConsultaLR.xsd";
 
 export type FacturaKey = string;
 
@@ -408,7 +414,14 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
     }
     const page = all.slice(0, consultaPageSize);
     const more = all.length > consultaPageSize;
-    return consultaEnvelope(page, more, metadata, filtro.DatosAdicionalesRespuesta);
+    return consultaEnvelope(
+      cabecera,
+      filtro,
+      page,
+      more,
+      metadata,
+      filtro.DatosAdicionalesRespuesta,
+    );
   }
 
   const fetchImpl: typeof globalThis.fetch = async (_url, init) => {
@@ -652,8 +665,30 @@ function sistemaConsultaXml(value: SistemaInformatico): string {
   );
 }
 
+function consultaResponseHeaderXml(cabecera: CabeceraConsulta): string {
+  const identity =
+    cabecera.ObligadoEmision !== undefined
+      ? "<sf:ObligadoEmision>" +
+        sfValueXml("NombreRazon", cabecera.ObligadoEmision.NombreRazon) +
+        sfValueXml("NIF", cabecera.ObligadoEmision.NIF) +
+        "</sf:ObligadoEmision>"
+      : "<sf:Destinatario>" +
+        sfValueXml("NombreRazon", cabecera.Destinatario.NombreRazon) +
+        sfValueXml("NIF", cabecera.Destinatario.NIF) +
+        "</sf:Destinatario>";
+  return (
+    "<sfRC:Cabecera>" +
+    sfValueXml("IDVersion", "1.0") +
+    identity +
+    sfValueXml("IndicadorRepresentante", cabecera.IndicadorRepresentante) +
+    "</sfRC:Cabecera>"
+  );
+}
+
 /** `matches` is the already-paged slice to return; `more` says whether further pages remain beyond it. */
 function consultaEnvelope(
+  cabecera: CabeceraConsulta,
+  filtro: ConsultaFiltro,
   matches: StoredRecord[],
   more: boolean,
   metadata: Map<FacturaKey, StoredMetadata>,
@@ -675,16 +710,16 @@ function consultaEnvelope(
           ? `<sfRC:NombreRazonEmisor>${escapeXml(details.nombreRazonEmisor)}</sfRC:NombreRazonEmisor>`
           : "") +
         (s.refExterna !== undefined
-          ? `<sf:RefExterna>${escapeXml(s.refExterna)}</sf:RefExterna>`
+          ? `<sfRC:RefExterna>${escapeXml(s.refExterna)}</sfRC:RefExterna>`
           : "") +
         (responseOptions?.MostrarSistemaInformatico === "S" && details
           ? sistemaConsultaXml(details.sistema)
           : "") +
-        `<sf:TipoHuella>01</sf:TipoHuella><sf:Huella>${escapeXml(s.huella)}</sf:Huella>` +
+        `<sfRC:TipoHuella>01</sfRC:TipoHuella><sfRC:Huella>${escapeXml(s.huella)}</sfRC:Huella>` +
         "</sfRC:DatosRegistroFacturacion>" +
         "<sfRC:EstadoRegistro>" +
-        "<sf:TimestampUltimaModificacion>2026-07-21T00:00:00+00:00</sf:TimestampUltimaModificacion>" +
-        `<sf:EstadoRegistro>${s.estado}</sf:EstadoRegistro>` +
+        "<sfRC:TimestampUltimaModificacion>2026-07-21T00:00:00+00:00</sfRC:TimestampUltimaModificacion>" +
+        `<sfRC:EstadoRegistro>${s.estado}</sfRC:EstadoRegistro>` +
         "</sfRC:EstadoRegistro>" +
         "</sfRC:RegistroRespuestaConsultaFactuSistemaFacturacion>"
       );
@@ -693,12 +728,17 @@ function consultaEnvelope(
   const last = matches[matches.length - 1];
   return (
     `<?xml version="1.0" encoding="UTF-8"?>` +
-    `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sf="sf" xmlns:sfRC="sfRC"><soapenv:Body>` +
+    `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sf="${NS_SF}" xmlns:sfRC="${NS_RC}"><soapenv:Body>` +
     "<sfRC:RespuestaConsultaFactuSistemaFacturacion>" +
-    `<sfRC:ResultadoConsulta>${matches.length > 0 ? "ConDatos" : "SinDatos"}</sfRC:ResultadoConsulta>` +
+    consultaResponseHeaderXml(cabecera) +
+    "<sfRC:PeriodoImputacion>" +
+    `<sfRC:Ejercicio>${escapeXml(filtro.Ejercicio)}</sfRC:Ejercicio>` +
+    `<sfRC:Periodo>${escapeXml(filtro.Periodo)}</sfRC:Periodo>` +
+    "</sfRC:PeriodoImputacion>" +
     `<sfRC:IndicadorPaginacion>${more ? "S" : "N"}</sfRC:IndicadorPaginacion>` +
-    (more && last ? clavePaginacionXml(last) : "") +
+    `<sfRC:ResultadoConsulta>${matches.length > 0 ? "ConDatos" : "SinDatos"}</sfRC:ResultadoConsulta>` +
     registros +
+    (more && last ? clavePaginacionXml(last) : "") +
     "</sfRC:RespuestaConsultaFactuSistemaFacturacion>" +
     "</soapenv:Body></soapenv:Envelope>"
   );
