@@ -87,16 +87,16 @@ interface RawDatosPresentacion {
 }
 
 interface RawRegistroConsultado {
-  IDFactura: IDFactura;
+  IDFactura: unknown;
   DatosRegistroFacturacion: Record<string, unknown>;
   EstadoRegistro: RawEstadoRegistro;
   DatosPresentacion?: RawDatosPresentacion;
 }
 
 interface RawRespuestaConsulta {
-  ResultadoConsulta: string;
-  IndicadorPaginacion: string;
-  ClavePaginacion?: IDFactura;
+  ResultadoConsulta: unknown;
+  IndicadorPaginacion: unknown;
+  ClavePaginacion?: unknown;
   RegistroRespuestaConsultaFactuSistemaFacturacion?:
     RawRegistroConsultado | RawRegistroConsultado[];
 }
@@ -109,17 +109,44 @@ interface RawEnvelope {
   };
 }
 
-function parseIDFactura(raw: IDFactura): IDFactura {
+function resultadoConsultaOf(value: unknown): RespuestaConsulta["ResultadoConsulta"] {
+  if (value === "ConDatos" || value === "SinDatos") return value;
+  throw new Error(`Unexpected consulta result: ${JSON.stringify(value)}`);
+}
+
+function indicadorPaginacionOf(value: unknown): RespuestaConsulta["IndicadorPaginacion"] {
+  if (value === "S" || value === "N") return value;
+  throw new Error(`Unexpected pagination indicator: ${JSON.stringify(value)}`);
+}
+
+function invoiceIdentityOf(raw: unknown, field: "IDFactura" | "ClavePaginacion"): IDFactura {
+  if (Array.isArray(raw)) {
+    throw new Error(`${field} must appear once`);
+  }
+  if (!raw || typeof raw !== "object") {
+    throw new Error(`${field} must contain one invoice identity`);
+  }
+  const key = raw as Partial<IDFactura>;
+  if (
+    typeof key.IDEmisorFactura !== "string" ||
+    key.IDEmisorFactura.trim().length === 0 ||
+    typeof key.NumSerieFactura !== "string" ||
+    key.NumSerieFactura.trim().length === 0 ||
+    typeof key.FechaExpedicionFactura !== "string" ||
+    key.FechaExpedicionFactura.trim().length === 0
+  ) {
+    throw new Error(`${field} must contain one invoice identity`);
+  }
   return {
-    IDEmisorFactura: raw.IDEmisorFactura,
-    NumSerieFactura: raw.NumSerieFactura,
-    FechaExpedicionFactura: raw.FechaExpedicionFactura,
+    IDEmisorFactura: key.IDEmisorFactura,
+    NumSerieFactura: key.NumSerieFactura,
+    FechaExpedicionFactura: key.FechaExpedicionFactura,
   };
 }
 
 function parseRegistroConsultado(raw: RawRegistroConsultado): RegistroConsultado {
   return {
-    IDFactura: parseIDFactura(raw.IDFactura),
+    IDFactura: invoiceIdentityOf(raw.IDFactura, "IDFactura"),
     DatosRegistroFacturacion: raw.DatosRegistroFacturacion,
     TimestampUltimaModificacion: raw.EstadoRegistro.TimestampUltimaModificacion,
     EstadoRegistro: estadoRegistroConsultaOf(raw.EstadoRegistro.EstadoRegistro),
@@ -142,10 +169,18 @@ export function parseRespuestaConsulta(xml: string): RespuestaConsulta {
   if (!body) {
     throw new Error("Response does not contain a RespuestaConsultaFactuSistemaFacturacion body");
   }
+  const resultadoConsulta = resultadoConsultaOf(body.ResultadoConsulta);
+  const indicadorPaginacion = indicadorPaginacionOf(body.IndicadorPaginacion);
+  const rawCursor = body.ClavePaginacion;
+  if (indicadorPaginacion === "S" && rawCursor === undefined) {
+    throw new Error("ClavePaginacion is required when IndicadorPaginacion is S");
+  }
   return {
-    ResultadoConsulta: body.ResultadoConsulta as "ConDatos" | "SinDatos",
-    IndicadorPaginacion: body.IndicadorPaginacion as "S" | "N",
-    ClavePaginacion: body.ClavePaginacion ? parseIDFactura(body.ClavePaginacion) : undefined,
+    ResultadoConsulta: resultadoConsulta,
+    IndicadorPaginacion: indicadorPaginacion,
+    // A final page needs no cursor; ignore an unexpected optional block rather than losing its records.
+    ClavePaginacion:
+      indicadorPaginacion === "S" ? invoiceIdentityOf(rawCursor, "ClavePaginacion") : undefined,
     registros: asArray(body.RegistroRespuestaConsultaFactuSistemaFacturacion).map(
       parseRegistroConsultado,
     ),

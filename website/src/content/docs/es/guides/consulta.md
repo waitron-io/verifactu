@@ -76,4 +76,9 @@ consulta como representante del emisor. `"N"` no es válido en una consulta; omi
 si no consultas como representante. No lo incluyas en una consulta como destinatario.
 
 Cuando `IndicadorPaginacion` sea `"S"`, envía la `ClavePaginacion` recibida en la
-siguiente consulta. El CSV del envío no se puede recuperar aquí: la consulta no lo devuelve.
+siguiente consulta. El analizador comprueba que `ResultadoConsulta` sea `ConDatos` o `SinDatos`,
+que `IndicadorPaginacion` sea `S` o `N`, y que una página `S` lleve una clave con sus tres campos
+de identidad de factura no vacíos. Si falta esa clave o está incompleta, lanza un error para que
+no repitas la primera página. Una página final `N` no necesita clave; si la respuesta la incluye,
+el analizador la ignora y conserva los registros de esa página. El CSV del envío no se puede
+recuperar aquí: la consulta no lo devuelve.

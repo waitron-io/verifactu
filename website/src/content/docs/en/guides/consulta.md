@@ -75,4 +75,9 @@ as that issuer's representative. `"N"` is not a valid consultation value; omit t
 query is not on behalf of a representative. Do not include it in a recipient query.
 
 When `IndicadorPaginacion` is `"S"`, send `ClavePaginacion` from the response in your next query.
+The response parser checks that `ResultadoConsulta` is `ConDatos` or `SinDatos`, that
+`IndicadorPaginacion` is `S` or `N`, and that a continuing `S` page has one cursor with all three
+invoice-identity fields nonblank. It throws if that cursor is missing or incomplete, so you do not
+repeat the first page. A final `N` page needs no cursor; if the response includes one anyway, the
+parser ignores it and keeps the page's records.
 Do not try to recover a submission's CSV here: consulta does not return it.
