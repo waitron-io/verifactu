@@ -83,6 +83,70 @@ describe("parseRespuestaSuministro", () => {
     expect(response.TiempoEsperaEnvio).toBe(60);
   });
 
+  it.each([
+    ["an unknown", "<EstadoEnvio>Other</EstadoEnvio>", "Other"],
+    ["a missing", "", undefined],
+  ])("preserves the CSV with %s global state", (_case, state, expected) => {
+    const xml = ACCEPTED.replace("<EstadoEnvio>Correcto</EstadoEnvio>", state);
+    const response = parseRespuestaSuministro(xml);
+    expect(response.CSV).toBe("ABC123CSV");
+    expect(response.EstadoEnvio).toBe(expected);
+  });
+
+  it.each([
+    ["an unknown", "<EstadoRegistro>Other</EstadoRegistro>", "Other"],
+    ["a missing", "", undefined],
+  ])(
+    "preserves the CSV with %s record state without treating it as rejected",
+    (_case, state, expected) => {
+      const xml = ACCEPTED.replace("<EstadoRegistro>Correcto</EstadoRegistro>", state);
+      const response = parseRespuestaSuministro(xml);
+      expect(response.CSV).toBe("ABC123CSV");
+      expect(response.RespuestaLinea[0]?.EstadoRegistro).toBe(expected);
+      expect(resolveEstadoEfectivo(response.RespuestaLinea[0]!)).toBe("status_unknown");
+    },
+  );
+
+  it("preserves the CSV and known lines when a later line has an unfamiliar state", () => {
+    const xml = ACCEPTED.replace(
+      "</RespuestaRegFactuSistemaFacturacion>",
+      `<RespuestaLinea><IDFactura><IDEmisorFactura>89890001K</IDEmisorFactura><NumSerieFactura>OTHER</NumSerieFactura><FechaExpedicionFactura>01-01-2024</FechaExpedicionFactura></IDFactura><EstadoRegistro>Anulado</EstadoRegistro></RespuestaLinea></RespuestaRegFactuSistemaFacturacion>`,
+    );
+    const response = parseRespuestaSuministro(xml);
+    expect(response.CSV).toBe("ABC123CSV");
+    expect(response.RespuestaLinea.map(resolveEstadoEfectivo)).toEqual([
+      "accepted",
+      "status_unknown",
+    ]);
+    expect(response.RespuestaLinea[1]?.EstadoRegistro).toBe("Anulado");
+  });
+
+  it("normalizes whitespace around known status codes without losing the CSV", () => {
+    const xml = ACCEPTED.replace(
+      "<EstadoEnvio>Correcto</EstadoEnvio>",
+      "<EstadoEnvio> Correcto </EstadoEnvio>",
+    ).replace(
+      "<EstadoRegistro>Correcto</EstadoRegistro>",
+      "<EstadoRegistro> Correcto </EstadoRegistro>",
+    );
+    const response = parseRespuestaSuministro(xml);
+    expect(response.CSV).toBe("ABC123CSV");
+    expect(response.EstadoEnvio).toBe("Correcto");
+    expect(resolveEstadoEfectivo(response.RespuestaLinea[0]!)).toBe("accepted");
+  });
+
+  it("treats whitespace-only status fields as absent while retaining the CSV", () => {
+    const xml = ACCEPTED.replace(
+      "<EstadoEnvio>Correcto</EstadoEnvio>",
+      "<EstadoEnvio> </EstadoEnvio>",
+    ).replace("<EstadoRegistro>Correcto</EstadoRegistro>", "<EstadoRegistro> </EstadoRegistro>");
+    const response = parseRespuestaSuministro(xml);
+    expect(response.CSV).toBe("ABC123CSV");
+    expect(response.EstadoEnvio).toBeUndefined();
+    expect(response.RespuestaLinea[0]?.EstadoRegistro).toBeUndefined();
+    expect(resolveEstadoEfectivo(response.RespuestaLinea[0]!)).toBe("status_unknown");
+  });
+
   it("returns TiempoEsperaEnvio as a number", () => {
     expect(typeof parseRespuestaSuministro(ACCEPTED).TiempoEsperaEnvio).toBe("number");
   });
@@ -328,6 +392,16 @@ describe("resolveEstadoEfectivo", () => {
     // this function exists to prevent.
     const [linea] = parseRespuestaSuministro(DUPLICATE_BUT_ACCEPTED).RespuestaLinea;
     expect(linea?.EstadoRegistro).toBe("Incorrecto");
+    expect(resolveEstadoEfectivo(linea!)).toBe("accepted");
+  });
+
+  it("normalizes a padded duplicate status before resolving the stored record", () => {
+    const xml = DUPLICATE_BUT_ACCEPTED.replace(
+      "<EstadoRegistroDuplicado>Correcta<",
+      "<EstadoRegistroDuplicado> Correcta <",
+    );
+    const [linea] = parseRespuestaSuministro(xml).RespuestaLinea;
+    expect(linea?.RegistroDuplicado?.EstadoRegistroDuplicado).toBe("Correcta");
     expect(resolveEstadoEfectivo(linea!)).toBe("accepted");
   });
 
