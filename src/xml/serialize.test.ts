@@ -1759,6 +1759,35 @@ describe("serializeConsulta", () => {
     }
   });
 
+  it.each(["Contraparte", "SistemaInformatico"] as const)(
+    "rejects an unknown AEAT country code in %s.IDOtro",
+    (field) => {
+      const identity = {
+        NombreRazon: "Foreign",
+        IDOtro: { CodigoPais: "ZZ", IDType: "03", ID: "FR123" },
+        ...(field === "SistemaInformatico"
+          ? { IdSistemaInformatico: "AB", NumeroInstalacion: "1" }
+          : {}),
+      };
+      expect(() =>
+        serializeConsulta(CABECERA, {
+          Ejercicio: "2026",
+          Periodo: "07",
+          [field]: identity,
+        } as ConsultaFiltro),
+      ).toThrow(`Consulta ${field}.IDOtro.CodigoPais`);
+    },
+  );
+
+  it("keeps an AEAT-specific country code valid", () => {
+    const xml = serializeConsulta(CABECERA, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      Contraparte: { NombreRazon: "Foreign", IDOtro: { CodigoPais: "QU", IDType: "03", ID: "X" } },
+    });
+    expect(xml).toContain("<sf:CodigoPais>QU</sf:CodigoPais>");
+  });
+
   it("emits the mandatory PeriodoImputacion, qualified with sf: (declared locally in SI.xsd)", () => {
     // PeriodoImputacionType's Ejercicio and Periodo children are declared locally inside
     // SuministroInformacion.xsd, so — unlike the sfLRC:-owned wrapper elements around them —

@@ -1,5 +1,6 @@
 import { escapeXml } from "./escape.js";
 import { hasValidNifControl } from "../nif.js";
+import { isValidConsultaCountryCode } from "./consulta-country.js";
 import type {
   DesgloseRectificacion,
   Destinatario,
@@ -176,6 +177,9 @@ export function assertConsultaPersona(
       raw.IDOtro && typeof raw.IDOtro === "object" && !Array.isArray(raw.IDOtro)
         ? (raw.IDOtro as Record<string, unknown>)
         : {};
+    if (other.CodigoPais !== undefined && !isValidConsultaCountryCode(other.CodigoPais)) {
+      throw new Error(`Consulta ${field}.IDOtro.CodigoPais must be an AEAT CountryType2 code`);
+    }
     if (typeof other.IDType !== "string" || !/^0[2-7]$/.test(other.IDType)) {
       throw new Error(`Consulta ${field}.IDOtro.IDType must be 02 through 07`);
     }

@@ -1055,6 +1055,23 @@ describe("parseConsulta", () => {
     expect(() => parseConsulta(xml)).toThrow(`Consulta Contraparte.IDOtro.${field}`);
   });
 
+  it("rejects a parsed country code outside AEAT CountryType2", () => {
+    const valid = serializeConsulta(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      Contraparte: {
+        NombreRazon: "Foreign",
+        IDOtro: { CodigoPais: "FR", IDType: "03", ID: "FR123" },
+      },
+    });
+    const xml = valid.replace(
+      "<sf:CodigoPais>FR</sf:CodigoPais>",
+      "<sf:CodigoPais>ZZ</sf:CodigoPais>",
+    );
+    expect(xml).not.toBe(valid);
+    expect(() => parseConsulta(xml)).toThrow("Consulta Contraparte.IDOtro.CodigoPais");
+  });
+
   it("drops unknown fields inside a consulta counterpart's IDOtro", () => {
     const identity = {
       NombreRazon: "Société X",
