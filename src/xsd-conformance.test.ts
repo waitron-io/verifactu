@@ -1199,9 +1199,46 @@ describe("consultation response identity fields against AEAT XSDs", () => {
       `<rc:NifRepresentante>89890001K</rc:NifRepresentante>` +
       `<rc:FechaFinVeriFactu>31-12-2026</rc:FechaFinVeriFactu><rc:Incidencia>S</rc:Incidencia>` +
       `</rc:DatosRegistroFacturacion>`;
-    const maximal = response.replace("<rc:DatosRegistroFacturacion/>", data);
+    const presentation =
+      `<rc:DatosPresentacion><sf:NIFPresentador>89890001K</sf:NIFPresentador>` +
+      `<sf:TimestampPresentacion>2026-07-21T09:00:00+02:00</sf:TimestampPresentacion>` +
+      `<sf:IdPeticion>PET-42</sf:IdPeticion></rc:DatosPresentacion>`;
+    const maximal = response
+      .replace("<rc:DatosRegistroFacturacion/>", data)
+      .replace("<rc:EstadoRegistro>", presentation + "<rc:EstadoRegistro>");
     const result = schemaResult(RESPUESTA_CONSULTA_XSD, maximal);
     expect(result.status, result.stderr).toBe(0);
+
+    const schema = new DOMParser().parseFromString(
+      readFileSync(RESPUESTA_CONSULTA_XSD, "utf8"),
+      "text/xml",
+    );
+    const document = new DOMParser().parseFromString(maximal, "text/xml");
+    const directElementNames = (typeName: string): string[] => {
+      const type = Array.from(schema.getElementsByTagNameNS("*", "complexType")).find(
+        (element) => element.getAttribute("name") === typeName,
+      );
+      const sequence = Array.from(type?.childNodes ?? []).find(
+        (node) => node.nodeType === 1 && node.localName === "sequence",
+      );
+      return Array.from(sequence?.childNodes ?? [])
+        .filter((node) => node.nodeType === 1 && node.localName === "element")
+        .map((node) =>
+          (node as unknown as { getAttribute(name: string): string | null }).getAttribute("name")!,
+        );
+    };
+    const directChildNames = (elementName: string): string[] => {
+      const element = document.getElementsByTagNameNS(NS_RC, elementName).item(0);
+      return Array.from(element?.childNodes ?? [])
+        .filter((node) => node.nodeType === 1)
+        .map((node) => node.localName!);
+    };
+    expect(directChildNames("DatosRegistroFacturacion")).toEqual(
+      directElementNames("RespuestaDatosRegistroFacturacionType"),
+    );
+    expect(directChildNames("RegistroRespuestaConsultaFactuSistemaFacturacion")).toEqual(
+      directElementNames("RegistroRespuestaConsultaRegFacturacionType"),
+    );
   });
 
   it.each(["Cabecera", "PeriodoImputacion", "IndicadorPaginacion", "ResultadoConsulta"])(
@@ -1434,6 +1471,12 @@ describe("consultation response identity fields against AEAT XSDs", () => {
     );
     const valid = schemaResult(RESPUESTA_CONSULTA_XSD, withPresentation);
     expect(valid.status, valid.stderr).toBe(0);
+    const duplicate = schemaResult(
+      RESPUESTA_CONSULTA_XSD,
+      withPresentation.replace(presentation, presentation + presentation),
+    );
+    expect(duplicate.status, duplicate.stderr).not.toBe(0);
+    expect(duplicate.stderr).toContain("DatosPresentacion");
     const emptyPetition = schemaResult(
       RESPUESTA_CONSULTA_XSD,
       withPresentation.replace("<sf:IdPeticion>PET-42</sf:IdPeticion>", "<sf:IdPeticion/>"),

@@ -31,8 +31,11 @@ function estadoRegistroConsultaOf(value: string): EstadoRegistroConsulta {
   }
 }
 
-function integerNumber(value: string | undefined, field: string): number | undefined {
+function integerNumber(value: unknown, field: string): number | undefined {
   if (value === undefined) return undefined;
+  if (typeof value !== "string") {
+    throw new Error(`${field} must contain text`);
+  }
   const trimmed = value.trim();
   if (!/^[+-]?\d+$/.test(trimmed)) {
     throw new Error(`${field} must be an integer, received ${JSON.stringify(value)}`);
@@ -95,8 +98,8 @@ export interface RespuestaConsulta {
 interface RawEstadoRegistro {
   TimestampUltimaModificacion: string;
   EstadoRegistro: string;
-  CodigoErrorRegistro?: string;
-  DescripcionErrorRegistro?: string;
+  CodigoErrorRegistro?: unknown;
+  DescripcionErrorRegistro?: unknown;
 }
 
 interface RawDatosPresentacion {
@@ -186,7 +189,10 @@ function datosPresentacionOf(raw: unknown): DatosPresentacionConsulta | undefine
   if (typeof block.TimestampPresentacion !== "string" || !block.TimestampPresentacion.trim()) {
     throw new Error("DatosPresentacion.TimestampPresentacion is required");
   }
-  assertPositiveYearXmlSchemaDateTime("TimestampPresentacion", block.TimestampPresentacion);
+  assertPositiveYearXmlSchemaDateTime(
+    "DatosPresentacion.TimestampPresentacion",
+    block.TimestampPresentacion.trim(),
+  );
   if (typeof block.IdPeticion !== "string" || Array.from(block.IdPeticion).length > 20) {
     throw new Error("DatosPresentacion.IdPeticion must contain at most 20 characters");
   }
@@ -232,12 +238,15 @@ function parseRegistroConsultado(raw: RawRegistroConsultado): RegistroConsultado
   if (typeof timestamp !== "string" || timestamp.trim().length === 0) {
     throw new Error("Consulta record is missing TimestampUltimaModificacion");
   }
-  assertPositiveYearXmlSchemaDateTime("TimestampUltimaModificacion", timestamp);
-  if (
-    typeof state.DescripcionErrorRegistro === "string" &&
-    Array.from(state.DescripcionErrorRegistro).length > 500
-  ) {
-    throw new Error("DescripcionErrorRegistro must contain at most 500 characters");
+  assertPositiveYearXmlSchemaDateTime("TimestampUltimaModificacion", timestamp.trim());
+  const description = state.DescripcionErrorRegistro;
+  if (description !== undefined) {
+    if (typeof description !== "string") {
+      throw new Error("DescripcionErrorRegistro must contain text");
+    }
+    if (Array.from(description).length > 500) {
+      throw new Error("DescripcionErrorRegistro must contain at most 500 characters");
+    }
   }
   return {
     IDFactura: invoiceIdentityOf(raw.IDFactura, "IDFactura"),
@@ -245,7 +254,7 @@ function parseRegistroConsultado(raw: RawRegistroConsultado): RegistroConsultado
     TimestampUltimaModificacion: timestamp,
     EstadoRegistro: estadoRegistroConsultaOf(state.EstadoRegistro),
     CodigoErrorRegistro: integerNumber(state.CodigoErrorRegistro, "CodigoErrorRegistro"),
-    DescripcionErrorRegistro: state.DescripcionErrorRegistro,
+    DescripcionErrorRegistro: description,
     DatosPresentacion: datosPresentacionOf(raw.DatosPresentacion),
   };
 }

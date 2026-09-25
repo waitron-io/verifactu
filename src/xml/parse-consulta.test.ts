@@ -361,8 +361,10 @@ describe("parseRespuestaConsulta", () => {
     const source = field === "TimestampPresentacion" ? WITH_ERROR_DETAIL : SCHEMA_SHAPED;
     const current = source.match(new RegExp(`<[^>]*${field}>([^<]+)</[^>]*${field}>`))?.[1];
     expect(current).toBeDefined();
+    const errorField =
+      field === "TimestampPresentacion" ? "DatosPresentacion.TimestampPresentacion" : field;
     expect(() => parseRespuestaConsulta(source.replace(current!, invalid))).toThrow(
-      `${field} must be an XML Schema dateTime`,
+      `${errorField} must be an XML Schema dateTime`,
     );
   });
 
@@ -375,6 +377,22 @@ describe("parseRespuestaConsulta", () => {
     const xml = SCHEMA_SHAPED.replace("2026-07-21T09:10:00+02:00", timestamp);
     expect(parseRespuestaConsulta(xml).registros[0]?.TimestampUltimaModificacion).toBe(timestamp);
   });
+
+  it.each(["TimestampUltimaModificacion", "TimestampPresentacion"])(
+    "accepts and preserves schema-collapsed whitespace around %s",
+    (field) => {
+      const source = field === "TimestampPresentacion" ? WITH_ERROR_DETAIL : SCHEMA_SHAPED;
+      const current = source.match(new RegExp(`<[^>]*${field}>([^<]+)</[^>]*${field}>`))?.[1];
+      expect(current).toBeDefined();
+      const padded = `  ${current}  `;
+      const parsed = parseRespuestaConsulta(source.replace(current!, padded));
+      const actual =
+        field === "TimestampPresentacion"
+          ? parsed.registros[0]?.DatosPresentacion?.TimestampPresentacion
+          : parsed.registros[0]?.TimestampUltimaModificacion;
+      expect(actual).toBe(padded);
+    },
+  );
 
   it("uses the consulta enum, which has Anulado and no Incorrecta", () => {
     const [registro] = parseRespuestaConsulta(RESPONSE).registros;
@@ -684,6 +702,27 @@ describe("parseRespuestaConsulta", () => {
       "DescripcionErrorRegistro must contain at most 500 characters",
     );
   });
+
+  it("accepts an error description at the 500-code-point Unicode boundary", () => {
+    const description = "😀".repeat(500);
+    const xml = WITH_ERROR_DETAIL.replace(
+      "<DescripcionErrorRegistro>Error de bloque.</DescripcionErrorRegistro>",
+      `<DescripcionErrorRegistro>${description}</DescripcionErrorRegistro>`,
+    );
+    expect(parseRespuestaConsulta(xml).registros[0]?.DescripcionErrorRegistro).toBe(description);
+  });
+
+  it.each(["CodigoErrorRegistro", "DescripcionErrorRegistro"])(
+    "rejects a nested element in the scalar %s field with a named error",
+    (field) => {
+      const value = field === "CodigoErrorRegistro" ? "1180" : "Error de bloque.";
+      const xml = WITH_ERROR_DETAIL.replace(
+        `<${field}>${value}</${field}>`,
+        `<${field}><x>${value}</x></${field}>`,
+      );
+      expect(() => parseRespuestaConsulta(xml)).toThrow(`${field} must contain text`);
+    },
+  );
 
   it("rejects more than 10,000 returned records", () => {
     const block = RESPONSE.match(
