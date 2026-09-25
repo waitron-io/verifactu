@@ -1162,6 +1162,21 @@ describe("exact document output — pins the complete serialised string, not fra
 });
 
 describe("serializeConsulta", () => {
+  it.each(["202", "20A4", " 2024", "2024 ", ""])(
+    "rejects consultation year %s outside the four-digit YearType",
+    (ejercicio) => {
+      expect(() => serializeConsulta(CABECERA, { Ejercicio: ejercicio, Periodo: "01" })).toThrow(
+        "Consulta Ejercicio must be four digits",
+      );
+    },
+  );
+
+  it.each(["0000", "9999"])("accepts four-digit consultation year %s", (ejercicio) => {
+    expect(serializeConsulta(CABECERA, { Ejercicio: ejercicio, Periodo: "01" })).toContain(
+      `<sf:Ejercicio>${ejercicio}</sf:Ejercicio>`,
+    );
+  });
+
   it.each(["00", "1", "13", "AA"])("rejects consultation period %s outside 01–12", (periodo) => {
     expect(() => serializeConsulta(CABECERA, { Ejercicio: "2024", Periodo: periodo })).toThrow(
       "Consulta Periodo must be 01 through 12",

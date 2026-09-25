@@ -108,6 +108,11 @@ export function isValidConsultaPeriodo(value: unknown): value is string {
   return typeof value === "string" && /^(?:0[1-9]|1[0-2])$/.test(value);
 }
 
+/** sf:YearType requires four digits in a consultation's imputation period. */
+export function isValidConsultaEjercicio(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9]{4}$/.test(value);
+}
+
 export function assertConsultaResponseOptions(
   cabecera: CabeceraConsulta,
   filtro: ConsultaFiltro,
@@ -563,6 +568,9 @@ export function serializeEnvio(
 
 /** Serialises a consulta. PeriodoImputacion is mandatory even for one invoice. */
 export function serializeConsulta(cabecera: CabeceraConsulta, filtro: ConsultaFiltro): string {
+  if (!isValidConsultaEjercicio(filtro.Ejercicio)) {
+    throw new Error("Consulta Ejercicio must be four digits");
+  }
   if (!isValidConsultaPeriodo(filtro.Periodo)) {
     throw new Error("Consulta Periodo must be 01 through 12");
   }

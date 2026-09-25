@@ -48,9 +48,9 @@ const received = await client.consultar(
 );
 ```
 
-Give `Periodo` a zero-padded month from `"01"` through `"12"`, as in the `"07"` query above.
-The client rejects an invalid value before sending XML to AEAT. If you derive the month from a
-date, pad it to two digits rather than sending `"7"`.
+Give `Ejercicio` a four-digit year and `Periodo` a zero-padded month from `"01"` through `"12"`,
+as in the query above. The client rejects either field when it has the wrong shape before sending
+XML to AEAT. If you derive the month from a date, pad it to two digits rather than sending `"7"`.
 
 `NumSerieFactura` and `FechaExpedicionFactura` narrow the query; omit them to sweep the period.
 Use `RangoFechaExpedicion` with `Desde` and `Hasta` when you need a date range. It is an
