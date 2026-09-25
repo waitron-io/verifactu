@@ -378,6 +378,9 @@ export function parseConsulta(xml: string): { cabecera: CabeceraConsulta; filtro
   if (Array.isArray(dateFilter)) {
     throw new Error("Consulta FechaExpedicionFactura must occur at most once");
   }
+  if (typeof dateFilter === "string" && dateFilter !== "") {
+    throw new Error("Consulta FechaExpedicionFactura must contain one date alternative");
+  }
   if (
     dateFilter?.FechaExpedicionFactura !== undefined &&
     dateFilter?.RangoFechaExpedicion !== undefined

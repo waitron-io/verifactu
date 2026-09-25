@@ -114,6 +114,22 @@ describe("generated unsigned requests against AEAT XSDs", () => {
     expect(result.status, result.stderr).toBe(0);
   });
 
+  it("rejects text without a child date alternative", () => {
+    const body = soapBodyElement(
+      serializeConsulta(CABECERA, {
+        Ejercicio: "2026",
+        Periodo: "07",
+        FechaExpedicionFactura: "20-07-2026",
+      }),
+    );
+    const document = new DOMParser().parseFromString(body, "text/xml");
+    const wrapper = document.getElementsByTagNameNS(NS_LRC, "FechaExpedicionFactura").item(0);
+    if (!wrapper) throw new Error("Consultation fixture has no date wrapper");
+    wrapper.textContent = "20-07-2026";
+    const result = schemaResult(CONSULTA_XSD, new XMLSerializer().serializeToString(document));
+    expect(result.status, result.stderr).not.toBe(0);
+  });
+
   it("validates a minimal alta submission", () => {
     const body = soapBodyElement(
       serializeEnvio(CABECERA, [{ RegistroAlta: buildAltaRecord(ALTA_INPUT) }]),

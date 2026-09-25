@@ -717,6 +717,22 @@ describe("parseConsulta full header and date choice", () => {
     expect(parseConsulta(xml).filtro).toEqual({ Ejercicio: "2026", Periodo: "07" });
   });
 
+  it("rejects text in place of a consultation date alternative", () => {
+    const valid = serializeConsulta(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      FechaExpedicionFactura: "20-07-2026",
+    });
+    const xml = valid.replace(
+      "<sf:FechaExpedicionFactura>20-07-2026</sf:FechaExpedicionFactura>",
+      "20-07-2026",
+    );
+    expect(xml).not.toBe(valid);
+    expect(() => parseConsulta(xml)).toThrow(
+      "Consulta FechaExpedicionFactura must contain one date alternative",
+    );
+  });
+
   it("round-trips an issuer header with IndicadorRepresentante", () => {
     const consultaCabecera = {
       ObligadoEmision: cabecera.ObligadoEmision,
