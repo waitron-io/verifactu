@@ -453,6 +453,20 @@ function envelope(body: string, extraNs: string): string {
   );
 }
 
+/** TextoIDFacturaType counts Unicode code points, not JavaScript UTF-16 units. */
+function assertInvoiceNumberXsd(field: string, value: unknown): void {
+  if (!isValidConsultaNumSerieFactura(value)) {
+    throw new Error(`${field} must contain 1 to 60 characters`);
+  }
+}
+
+/** A chained predecessor uses sf:TextMax60Type, which permits an empty value. */
+function assertPreviousInvoiceNumberXsd(field: string, value: unknown): void {
+  if (!isValidConsultaRefExterna(value)) {
+    throw new Error(`${field} must contain at most 60 characters`);
+  }
+}
+
 /**
  * Serialises a submission. One Cabecera names the obligado tributario; each
  * record carries its own SistemaInformatico, so a single envio may cover
@@ -558,6 +572,42 @@ export function serializeEnvio(
     ) {
       throw new Error(
         `RegistroAnulacion[${index}].IDFactura.IDEmisorFacturaAnulada must match Cabecera.ObligadoEmision.NIF`,
+      );
+    }
+    if ("RegistroAlta" in entry) {
+      const alta = entry.RegistroAlta;
+      if (alta.Encadenamiento.RegistroAnterior !== undefined) {
+        assertPreviousInvoiceNumberXsd(
+          `RegistroAlta[${index}].Encadenamiento.RegistroAnterior.NumSerieFactura`,
+          alta.Encadenamiento.RegistroAnterior.NumSerieFactura,
+        );
+      }
+      assertInvoiceNumberXsd(
+        `RegistroAlta[${index}].IDFactura.NumSerieFactura`,
+        alta.IDFactura.NumSerieFactura,
+      );
+      alta.FacturasRectificadas?.IDFacturaRectificada.forEach((reference, referenceIndex) =>
+        assertInvoiceNumberXsd(
+          `RegistroAlta[${index}].FacturasRectificadas[${referenceIndex}].NumSerieFactura`,
+          reference.NumSerieFactura,
+        ),
+      );
+      alta.FacturasSustituidas?.IDFacturaSustituida.forEach((reference, referenceIndex) =>
+        assertInvoiceNumberXsd(
+          `RegistroAlta[${index}].FacturasSustituidas[${referenceIndex}].NumSerieFactura`,
+          reference.NumSerieFactura,
+        ),
+      );
+    } else if ("RegistroAnulacion" in entry) {
+      if (entry.RegistroAnulacion.Encadenamiento.RegistroAnterior !== undefined) {
+        assertPreviousInvoiceNumberXsd(
+          `RegistroAnulacion[${index}].Encadenamiento.RegistroAnterior.NumSerieFactura`,
+          entry.RegistroAnulacion.Encadenamiento.RegistroAnterior.NumSerieFactura,
+        );
+      }
+      assertInvoiceNumberXsd(
+        `RegistroAnulacion[${index}].IDFactura.NumSerieFacturaAnulada`,
+        entry.RegistroAnulacion.IDFactura.NumSerieFacturaAnulada,
       );
     }
   });

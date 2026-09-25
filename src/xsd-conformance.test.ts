@@ -100,6 +100,102 @@ describe("generated unsigned requests against AEAT XSDs", () => {
     expect(result.status, result.stderr).toBe(0);
   });
 
+  it("accepts a 60-code-point alta invoice number under TextoIDFacturaType", () => {
+    const alta = buildAltaRecord(ALTA_INPUT);
+    alta.IDFactura.NumSerieFactura = "😀".repeat(60);
+    const body = soapBodyElement(serializeEnvio(CABECERA, [{ RegistroAlta: alta }]));
+    const result = schemaResult(ENVIO_XSD, body);
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it.each(["", "A".repeat(61)])("rejects an XSD-invalid alta invoice number", (invalid) => {
+    const body = soapBodyElement(
+      serializeEnvio(CABECERA, [{ RegistroAlta: buildAltaRecord(ALTA_INPUT) }]),
+    );
+    const document = new DOMParser().parseFromString(body, "text/xml");
+    const leaf = document.getElementsByTagNameNS(NS_SF, "NumSerieFactura").item(0);
+    if (!leaf) throw new Error("Alta fixture has no NumSerieFactura");
+    leaf.textContent = invalid;
+    const result = schemaResult(ENVIO_XSD, new XMLSerializer().serializeToString(document));
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("NumSerieFactura");
+  });
+
+  it("rejects an XSD-invalid cancellation invoice number", () => {
+    const cancellation = buildAnulacionRecord({
+      IDEmisorFacturaAnulada: CABECERA.ObligadoEmision.NIF,
+      NumSerieFacturaAnulada: "INV/42",
+      FechaExpedicionFacturaAnulada: new Date("2026-07-20T00:00:00+02:00"),
+      Encadenamiento: { PrimerRegistro: "S" },
+      SistemaInformatico: SISTEMA,
+      generadoEn: new Date("2026-07-21T09:00:00+02:00"),
+      offsetMinutes: 120,
+    });
+    const body = soapBodyElement(serializeEnvio(CABECERA, [{ RegistroAnulacion: cancellation }]));
+    const document = new DOMParser().parseFromString(body, "text/xml");
+    const leaf = document.getElementsByTagNameNS(NS_SF, "NumSerieFacturaAnulada").item(0);
+    if (!leaf) throw new Error("Cancellation fixture has no NumSerieFacturaAnulada");
+    leaf.textContent = "A".repeat(61);
+    const result = schemaResult(ENVIO_XSD, new XMLSerializer().serializeToString(document));
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("NumSerieFacturaAnulada");
+  });
+
+  it.each(["FacturasRectificadas", "FacturasSustituidas"] as const)(
+    "rejects an XSD-invalid referenced invoice number in %s",
+    (field) => {
+      const alta = buildAltaRecord(ALTA_INPUT);
+      const reference = {
+        IDEmisorFactura: CABECERA.ObligadoEmision.NIF,
+        NumSerieFactura: "INV/41",
+        FechaExpedicionFactura: "20-07-2026",
+      };
+      if (field === "FacturasRectificadas") {
+        alta.FacturasRectificadas = { IDFacturaRectificada: [reference] };
+      } else {
+        alta.FacturasSustituidas = { IDFacturaSustituida: [reference] };
+      }
+      const body = soapBodyElement(serializeEnvio(CABECERA, [{ RegistroAlta: alta }]));
+      const valid = schemaResult(ENVIO_XSD, body);
+      expect(valid.status, valid.stderr).toBe(0);
+      const document = new DOMParser().parseFromString(body, "text/xml");
+      const referenceName =
+        field === "FacturasRectificadas" ? "IDFacturaRectificada" : "IDFacturaSustituida";
+      const referenceElement = document.getElementsByTagNameNS(NS_SF, referenceName).item(0);
+      const leaf = referenceElement?.getElementsByTagNameNS(NS_SF, "NumSerieFactura").item(0);
+      if (!leaf) throw new Error(`${field} fixture has no referenced invoice number`);
+      leaf.textContent = "A".repeat(61);
+      const invalid = schemaResult(ENVIO_XSD, new XMLSerializer().serializeToString(document));
+      expect(invalid.status).not.toBe(0);
+      expect(invalid.stderr).toContain("NumSerieFactura");
+    },
+  );
+
+  it("uses the TextMax60Type boundary for a chained predecessor invoice number", () => {
+    const alta = buildAltaRecord(ALTA_INPUT);
+    alta.Encadenamiento = {
+      RegistroAnterior: {
+        IDEmisorFactura: CABECERA.ObligadoEmision.NIF,
+        NumSerieFactura: "😀".repeat(60),
+        FechaExpedicionFactura: "20-07-2026",
+        Huella: alta.Huella,
+      },
+    };
+    const body = soapBodyElement(serializeEnvio(CABECERA, [{ RegistroAlta: alta }]));
+    expect(schemaResult(ENVIO_XSD, body).status).toBe(0);
+    const document = new DOMParser().parseFromString(body, "text/xml");
+    const previous = document.getElementsByTagNameNS(NS_SF, "RegistroAnterior").item(0);
+    const leaf = previous?.getElementsByTagNameNS(NS_SF, "NumSerieFactura").item(0);
+    if (!leaf) throw new Error("Alta fixture has no predecessor invoice number");
+    leaf.textContent = "A".repeat(61);
+    const invalid = schemaResult(ENVIO_XSD, new XMLSerializer().serializeToString(document));
+    expect(invalid.status).not.toBe(0);
+    expect(invalid.stderr).toContain("NumSerieFactura");
+    leaf.textContent = "";
+    const empty = schemaResult(ENVIO_XSD, new XMLSerializer().serializeToString(document));
+    expect(empty.status, empty.stderr).toBe(0);
+  });
+
   it("rejects an XSD-invalid year in an otherwise valid consultation", () => {
     const body = soapBodyElement(serializeConsulta(CABECERA, { Ejercicio: "2026", Periodo: "07" }));
     const document = new DOMParser().parseFromString(body, "text/xml");

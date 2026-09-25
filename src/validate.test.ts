@@ -236,6 +236,15 @@ describe("validate", () => {
     expect(codes(record)).not.toContain("NUMSERIE_LENGTH");
   });
 
+  it("counts Unicode code points for invoice-number length, while retaining the local charset rule", () => {
+    const record = valid();
+    record.IDFactura.NumSerieFactura = "😀".repeat(60);
+    expect(codes(record)).not.toContain("NUMSERIE_LENGTH");
+    expect(codes(record)).toContain("NUMSERIE_CHARSET");
+    record.IDFactura.NumSerieFactura = "😀".repeat(61);
+    expect(codes(record)).toContain("NUMSERIE_LENGTH");
+  });
+
   it("accepts a NumSerieFactura of exactly 1 character — the other boundary", () => {
     // The existing empty-string test above would not notice a `< 1` -> `<= 1`
     // mutation, which would reject a single-character serial.
@@ -1634,6 +1643,19 @@ describe("validate — AEAT §3.1.3.2–6", () => {
       expect(validate(record).find((issue) => issue.field === field)).toBeUndefined();
     },
   );
+
+  it("counts Unicode code points for referenced invoice-number length", () => {
+    const record = buildAltaRecord({
+      ...INPUT,
+      TipoFactura: "R1",
+      TipoRectificativa: "I",
+      FacturasRectificadas: [{ ...referencedInvoice, NumSerieFactura: "😀".repeat(60) }],
+    });
+    const field = "FacturasRectificadas.IDFacturaRectificada[0].NumSerieFactura";
+    expect(validate(record).find((issue) => issue.field === field)).toBeUndefined();
+    record.FacturasRectificadas!.IDFacturaRectificada[0]!.NumSerieFactura = "😀".repeat(61);
+    expect(validate(record).find((issue) => issue.field === field)?.code).toBe("NUMSERIE_LENGTH");
+  });
 
   it("rejects an impossible referenced rectified invoice date", () => {
     const record = buildAltaRecord({
