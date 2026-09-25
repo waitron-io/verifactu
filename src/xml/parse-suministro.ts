@@ -43,8 +43,8 @@ export interface RespuestaSuministro {
   EstadoEnvio: string | undefined;
   /** Undefined when the response has no usable wait; never schedule another envio from that value. */
   TiempoEsperaEnvio: number | undefined;
-  /** Literal wait field, retained so callers can diagnose an unusable AEAT response. */
-  TiempoEsperaEnvioRaw?: string;
+  /** Parsed wait value before normalization; strings retain their literal text. */
+  TiempoEsperaEnvioRaw: unknown;
   RespuestaLinea: RespuestaLinea[];
 }
 
@@ -146,7 +146,9 @@ function parseRespuestaLinea(raw: RawRespuestaLinea): RespuestaLinea {
 
 /** sf:Tipo6Type permits up to four digits; an empty value gives no usable wait. */
 function waitSeconds(value: unknown): number | undefined {
-  return typeof value === "string" && /^\d{1,4}$/.test(value) ? Number(value) : undefined;
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return /^\d{1,4}$/.test(trimmed) ? Number(trimmed) : undefined;
 }
 
 /** Parses a `RespuestaRegFactuSistemaFacturacion` SOAP response into a plain object. */
@@ -161,8 +163,7 @@ export function parseRespuestaSuministro(xml: string): RespuestaSuministro {
     EstadoEnvio: statusText(body.EstadoEnvio),
     // Preserve the one-time CSV even when the wait cannot safely drive a schedule.
     TiempoEsperaEnvio: waitSeconds(body.TiempoEsperaEnvio),
-    TiempoEsperaEnvioRaw:
-      typeof body.TiempoEsperaEnvio === "string" ? body.TiempoEsperaEnvio : undefined,
+    TiempoEsperaEnvioRaw: body.TiempoEsperaEnvio,
     RespuestaLinea: asArray(body.RespuestaLinea).map(parseRespuestaLinea),
   };
 }

@@ -162,11 +162,28 @@ describe("parseRespuestaSuministro", () => {
     ["0", 0],
     ["0001", 1],
     ["9999", 9999],
-  ])("accepts an XSD-shaped wait of %s seconds", (literal, seconds) => {
+    [" 60 ", 60],
+    ["\n  60\n", 60],
+  ])("accepts a usable wait of %s seconds", (literal, seconds) => {
     const xml = ACCEPTED.replace("<TiempoEsperaEnvio>60<", `<TiempoEsperaEnvio>${literal}<`);
     const response = parseRespuestaSuministro(xml);
     expect(response.TiempoEsperaEnvio).toBe(seconds);
     expect(response.TiempoEsperaEnvioRaw).toBe(literal);
+  });
+
+  it.each([
+    [
+      "duplicate",
+      "<TiempoEsperaEnvio>60</TiempoEsperaEnvio><TiempoEsperaEnvio>61</TiempoEsperaEnvio>",
+      ["60", "61"],
+    ],
+    ["nested", "<TiempoEsperaEnvio><Value>60</Value></TiempoEsperaEnvio>", { Value: "60" }],
+  ])("keeps the parsed %s wait shape for diagnosis", (_case, wait, raw) => {
+    const xml = ACCEPTED.replace("<TiempoEsperaEnvio>60</TiempoEsperaEnvio>", wait);
+    const response = parseRespuestaSuministro(xml);
+    expect(response.CSV).toBe("ABC123CSV");
+    expect(response.TiempoEsperaEnvio).toBeUndefined();
+    expect(response.TiempoEsperaEnvioRaw).toEqual(raw);
   });
 
   it.each([
@@ -183,18 +200,6 @@ describe("parseRespuestaSuministro", () => {
     expect(response.RespuestaLinea[0]?.EstadoRegistro).toBe("Correcto");
     expect(response.TiempoEsperaEnvio).toBeUndefined();
     expect(response.TiempoEsperaEnvioRaw).toBe(raw);
-  });
-
-  it("never returns NaN for a non-numeric TiempoEsperaEnvio", () => {
-    const xml = ACCEPTED.replace("<TiempoEsperaEnvio>60<", "<TiempoEsperaEnvio>not-a-number<");
-    const response = parseRespuestaSuministro(xml);
-    expect(response.TiempoEsperaEnvio).toBeUndefined();
-    expect(response.TiempoEsperaEnvioRaw).toBe("not-a-number");
-  });
-
-  it("never returns NaN when TiempoEsperaEnvio is absent", () => {
-    const xml = ACCEPTED.replace("<TiempoEsperaEnvio>60</TiempoEsperaEnvio>", "");
-    expect(parseRespuestaSuministro(xml).TiempoEsperaEnvio).toBeUndefined();
   });
 
   it("extracts the CSV when the envio was accepted", () => {
