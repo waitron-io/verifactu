@@ -95,5 +95,9 @@ It applies those same bounds to each returned invoice identity. It throws if a c
 is missing or malformed, so you do not repeat the first page. A final `N` page needs no cursor;
 if the response includes one anyway, the parser ignores it and keeps the page's records.
 If a record includes `DatosPresentacion`, the parser requires its presenter NIF, presentation
-timestamp, and petition ID. It preserves the timestamp text without checking its date-time syntax.
+timestamp, and petition ID elements. The schema allows an empty petition ID. The parser preserves
+the timestamp text without checking its date-time syntax.
+If any returned record has a malformed invoice identity, parsing fails for the whole page; you
+do not get its other records or cursor. Capture the raw response in your transport layer if you
+need to diagnose a non-conforming AEAT response.
 Do not try to recover a submission's CSV here: consulta does not return it.

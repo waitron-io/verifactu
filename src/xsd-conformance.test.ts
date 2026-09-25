@@ -707,7 +707,13 @@ describe("consultation response identity fields against AEAT XSDs", () => {
       "<rc:EstadoRegistro>",
       presentation + "<rc:EstadoRegistro>",
     );
-    expect(schemaResult(RESPUESTA_CONSULTA_XSD, withPresentation).status).toBe(0);
+    const valid = schemaResult(RESPUESTA_CONSULTA_XSD, withPresentation);
+    expect(valid.status, valid.stderr).toBe(0);
+    const emptyPetition = schemaResult(
+      RESPUESTA_CONSULTA_XSD,
+      withPresentation.replace("<sf:IdPeticion>PET-42</sf:IdPeticion>", "<sf:IdPeticion/>"),
+    );
+    expect(emptyPetition.status, emptyPetition.stderr).toBe(0);
     for (const element of [
       "<sf:NIFPresentador>89890001K</sf:NIFPresentador>",
       "<sf:TimestampPresentacion>2026-07-21T09:00:00+02:00</sf:TimestampPresentacion>",

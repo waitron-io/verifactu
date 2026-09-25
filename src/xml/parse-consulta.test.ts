@@ -491,6 +491,16 @@ describe("parseRespuestaConsulta", () => {
     expect(() => parseRespuestaConsulta(xml)).toThrow(`IDFactura.${field}`);
   });
 
+  it("uses response-specific wording for an invalid record NIF", () => {
+    const xml = RESPONSE.replace(
+      "<IDEmisorFactura>89890001K</IDEmisorFactura>",
+      "<IDEmisorFactura>12345678</IDEmisorFactura>",
+    );
+    expect(() => parseRespuestaConsulta(xml)).toThrow(
+      /^IDFactura.IDEmisorFactura must contain exactly 9 characters$/,
+    );
+  });
+
   it("preserves a 60-code-point Unicode cursor invoice number", () => {
     const number = "😀".repeat(60);
     const xml = PAGINATED.replace(
@@ -549,6 +559,19 @@ describe("parseRespuestaConsulta", () => {
     ).toThrow("DatosPresentacion must appear once");
   });
 
+  it.each([
+    ["NIFPresentador", "89890001K"],
+    ["TimestampPresentacion", "01-01-2024 19:20:30"],
+    ["IdPeticion", "PET-9"],
+  ])("names a repeated DatosPresentacion.%s element", (field, value) => {
+    const leaf = `<${field}>${value}</${field}>`;
+    const xml = WITH_ERROR_DETAIL.replace(leaf, leaf + leaf);
+    expect(xml).not.toBe(WITH_ERROR_DETAIL);
+    expect(() => parseRespuestaConsulta(xml)).toThrow(
+      new RegExp(`^DatosPresentacion\\.${field} must appear once$`),
+    );
+  });
+
   it("allows a 20-code-point Unicode presentation petition ID", () => {
     const id = "😀".repeat(20);
     const xml = WITH_ERROR_DETAIL.replace(
@@ -556,6 +579,11 @@ describe("parseRespuestaConsulta", () => {
       `<IdPeticion>${id}</IdPeticion>`,
     );
     expect(parseRespuestaConsulta(xml).registros[0]?.DatosPresentacion?.IdPeticion).toBe(id);
+  });
+
+  it("preserves an empty but present presentation petition ID", () => {
+    const xml = WITH_ERROR_DETAIL.replace("<IdPeticion>PET-9</IdPeticion>", "<IdPeticion/>");
+    expect(parseRespuestaConsulta(xml).registros[0]?.DatosPresentacion?.IdPeticion).toBe("");
   });
 
   it("leaves the error fields and DatosPresentacion undefined when absent", () => {

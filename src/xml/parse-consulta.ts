@@ -142,7 +142,7 @@ function invoiceIdentityOf(raw: unknown, field: "IDFactura" | "ClavePaginacion")
   ) {
     throw new Error(`${field} must contain one invoice identity`);
   }
-  assertConsultaNif(`${field}.IDEmisorFactura`, key.IDEmisorFactura);
+  assertConsultaNif(`${field}.IDEmisorFactura`, key.IDEmisorFactura, "");
   if (!isValidConsultaNumSerieFactura(key.NumSerieFactura)) {
     throw new Error(`${field}.NumSerieFactura must contain 1 to 60 characters`);
   }
@@ -163,7 +163,12 @@ function datosPresentacionOf(raw: unknown): DatosPresentacionConsulta | undefine
     throw new Error("DatosPresentacion must contain its three fields");
   }
   const block = raw as Record<string, unknown>;
-  assertConsultaNif("DatosPresentacion.NIFPresentador", block.NIFPresentador);
+  for (const field of ["NIFPresentador", "TimestampPresentacion", "IdPeticion"] as const) {
+    if (Array.isArray(block[field])) {
+      throw new Error(`DatosPresentacion.${field} must appear once`);
+    }
+  }
+  assertConsultaNif("DatosPresentacion.NIFPresentador", block.NIFPresentador, "");
   if (typeof block.TimestampPresentacion !== "string" || !block.TimestampPresentacion.trim()) {
     throw new Error("DatosPresentacion.TimestampPresentacion is required");
   }

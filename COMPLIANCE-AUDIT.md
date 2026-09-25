@@ -398,13 +398,13 @@ size. A minimal response with one record and a continuation cursor passes offlin
 against the pinned response XSD and its imports; that does not establish every returned field or
 live AEAT behavior.
 
-| Published record field                                    | Parser behavior                                                                                                                                            | Evidence and limit                                                                               |
-| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `IDFactura`                                               | Returns its three identity fields and rejects an absent, repeated, incomplete, or XSD-invalid NIF length, invoice-number length, or date shape             | Parser tests and offline response-XSD probes; calendar validity and NIF control remain separate  |
-| `DatosRegistroFacturacion`                                | Retains the stored subtree and literal string values, including hash and amount fields; a present empty block becomes `{}` and an absent block is rejected | `src/xml/parse-consulta.test.ts`; nested data fields, limits, and combinations are not validated |
-| `DatosPresentacion`                                       | Returns its three fields when present; rejects repeated blocks, missing fields, invalid NIF length, and overlong petition ID                               | Parser tests and offline response-XSD probes; date-time syntax is not validated                  |
-| `EstadoRegistro.TimestampUltimaModificacion`              | Returns the required timestamp literal; rejects a missing or blank value                                                                                   | `src/xml/parse-consulta.test.ts`; date-time syntax is not validated                              |
-| `EstadoRegistro.EstadoRegistro` and optional error detail | Checks the status against `Correcto`, `AceptadoConErrores`, and `Anulado`; converts an error code to a number and returns its description                  | `src/xml/parse-consulta.test.ts`; no rule requires error detail for any one status               |
+| Published record field                                    | Parser behavior                                                                                                                                            | Evidence and limit                                                                                                                                      |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `IDFactura`                                               | Returns its three identity fields and rejects an absent, repeated, incomplete, or XSD-invalid NIF length, invoice-number length, or date shape             | Parser tests and offline response-XSD probes; one invalid record aborts the entire parsed page, while calendar validity and NIF control remain separate |
+| `DatosRegistroFacturacion`                                | Retains the stored subtree and literal string values, including hash and amount fields; a present empty block becomes `{}` and an absent block is rejected | `src/xml/parse-consulta.test.ts`; nested data fields, limits, and combinations are not validated                                                        |
+| `DatosPresentacion`                                       | Returns its three fields when present; rejects repeated blocks, missing fields, invalid NIF length, and overlong petition ID                               | Parser tests and offline response-XSD probes; date-time syntax is not validated                                                                         |
+| `EstadoRegistro.TimestampUltimaModificacion`              | Returns the required timestamp literal; rejects a missing or blank value                                                                                   | `src/xml/parse-consulta.test.ts`; date-time syntax is not validated                                                                                     |
+| `EstadoRegistro.EstadoRegistro` and optional error detail | Checks the status against `Correcto`, `AceptadoConErrores`, and `Anulado`; converts an error code to a number and returns its description                  | `src/xml/parse-consulta.test.ts`; no rule requires error detail for any one status                                                                      |
 
 The required-block check prevents a malformed response from returning `undefined` where the
 public `RegistroConsultado` type promises an object or timestamp. It does not establish that an
@@ -415,6 +415,10 @@ being returned for a later request that would reject it. The parser still ignore
 cursor on a final page, preserving its records. The optional `DatosPresentacion` block now requires
 all three XSD fields when present, while retaining literal timestamp text; it does not claim to
 validate the full XML Schema `dateTime` lexical space.
+Unlike an ignored final-page cursor, a malformed record identity causes parsing to fail for the
+whole response. The API does not return that page's other records or cursor in this case; callers
+who need to diagnose non-conforming AEAT XML must capture the raw response at their transport
+boundary.
 
 ### Own-record hash validation
 

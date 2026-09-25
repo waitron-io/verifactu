@@ -139,10 +139,14 @@ function assertConsultaText(field: string, value: unknown, max: number, required
   }
 }
 
-export function assertConsultaNif(field: string, value: unknown): asserts value is string {
-  if (Array.isArray(value)) throw new Error(`Consulta ${field} must appear once`);
+export function assertConsultaNif(
+  field: string,
+  value: unknown,
+  prefix = "Consulta ",
+): asserts value is string {
+  if (Array.isArray(value)) throw new Error(`${prefix}${field} must appear once`);
   if (typeof value !== "string" || Array.from(value).length !== 9) {
-    throw new Error(`Consulta ${field} must contain exactly 9 characters`);
+    throw new Error(`${prefix}${field} must contain exactly 9 characters`);
   }
 }
 
