@@ -162,6 +162,10 @@ alphabet keeps the invoice number unambiguous when it becomes a QR query paramet
 `serializeEnvio` also rejects an invoice number with fewer than 1 or more than 60 Unicode characters
 in an alta, a cancellation, or a referenced invoice before sending XML. This XSD length check does
 not replace `validate`'s other invoice-number and business-rule checks.
+The preceding record's `Encadenamiento.RegistroAnterior.NumSerieFactura` has a different XSD type:
+it permits an empty value but no more than 60 Unicode characters. `serializeEnvio` checks that
+upper bound for alta and cancellation records. `validate` counts Unicode characters for invoice
+numbers, while its narrower alphabet still rejects emoji in the main number.
 
 For a nine character Spanish taxpayer ID, `NIF_CONTROL` reports a wrong check character or an
 unknown format. It covers DNI, X/Y/Z NIE, company IDs, and numeric K/L/M IDs. The newer K/L/M form

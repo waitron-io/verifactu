@@ -173,6 +173,10 @@ a ser un parámetro de la consulta QR. `serializeEnvio` también rechaza un núm
 de 1 o más de 60 caracteres Unicode en un alta, una anulación o una factura referenciada antes de
 enviar XML. Esta comprobación de longitud del XSD no sustituye a las demás comprobaciones de
 `validate` sobre el número de factura y las reglas fiscales.
+El `Encadenamiento.RegistroAnterior.NumSerieFactura` del registro anterior usa otro tipo del XSD:
+admite un valor vacío, pero no más de 60 caracteres Unicode. `serializeEnvio` comprueba ese máximo
+en las altas y las anulaciones. `validate` cuenta caracteres Unicode para la longitud de los
+números de factura, aunque su alfabeto más restringido sigue rechazando emoji en el número principal.
 
 Para un identificador fiscal español de nueve caracteres, `NIF_CONTROL` señala un carácter de
 control incorrecto o un formato desconocido. Comprueba el DNI, el NIE X/Y/Z, los NIF de entidades y

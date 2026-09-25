@@ -458,7 +458,8 @@ export function validate(
     }
   };
   const checkNumSerieLength = (field: string, value: string) => {
-    if (value.length < 1 || value.length > 60) {
+    const length = Array.from(value).length;
+    if (length < 1 || length > 60) {
       add("NUMSERIE_LENGTH", field, "NumSerieFactura must be 1 to 60 characters");
     }
   };
@@ -480,7 +481,8 @@ export function validate(
   const fechaField = isAlta(record) ? "FechaExpedicionFactura" : "FechaExpedicionFacturaAnulada";
 
   checkNif(emisorField, emisor);
-  if (numSerie.length < 1 || numSerie.length > 60) {
+  const numSerieLength = Array.from(numSerie).length;
+  if (numSerieLength < 1 || numSerieLength > 60) {
     add("NUMSERIE_LENGTH", numSerieField, "NumSerieFactura must be 1 to 60 characters");
   } else if (!NUMSERIE_PATTERN.test(numSerie)) {
     add("NUMSERIE_CHARSET", numSerieField, "NumSerieFactura must use only A-Z a-z 0-9 / _ . -");

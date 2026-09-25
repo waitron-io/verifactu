@@ -455,12 +455,15 @@ function envelope(body: string, extraNs: string): string {
 
 /** TextoIDFacturaType counts Unicode code points, not JavaScript UTF-16 units. */
 function assertInvoiceNumberXsd(field: string, value: unknown): void {
-  if (typeof value !== "string") {
+  if (!isValidConsultaNumSerieFactura(value)) {
     throw new Error(`${field} must contain 1 to 60 characters`);
   }
-  const length = Array.from(value).length;
-  if (length < 1 || length > 60) {
-    throw new Error(`${field} must contain 1 to 60 characters`);
+}
+
+/** A chained predecessor uses sf:TextMax60Type, which permits an empty value. */
+function assertPreviousInvoiceNumberXsd(field: string, value: unknown): void {
+  if (!isValidConsultaRefExterna(value)) {
+    throw new Error(`${field} must contain at most 60 characters`);
   }
 }
 
@@ -573,6 +576,12 @@ export function serializeEnvio(
     }
     if ("RegistroAlta" in entry) {
       const alta = entry.RegistroAlta;
+      if (alta.Encadenamiento.RegistroAnterior !== undefined) {
+        assertPreviousInvoiceNumberXsd(
+          `RegistroAlta[${index}].Encadenamiento.RegistroAnterior.NumSerieFactura`,
+          alta.Encadenamiento.RegistroAnterior.NumSerieFactura,
+        );
+      }
       assertInvoiceNumberXsd(
         `RegistroAlta[${index}].IDFactura.NumSerieFactura`,
         alta.IDFactura.NumSerieFactura,
@@ -590,6 +599,12 @@ export function serializeEnvio(
         ),
       );
     } else if ("RegistroAnulacion" in entry) {
+      if (entry.RegistroAnulacion.Encadenamiento.RegistroAnterior !== undefined) {
+        assertPreviousInvoiceNumberXsd(
+          `RegistroAnulacion[${index}].Encadenamiento.RegistroAnterior.NumSerieFactura`,
+          entry.RegistroAnulacion.Encadenamiento.RegistroAnterior.NumSerieFactura,
+        );
+      }
       assertInvoiceNumberXsd(
         `RegistroAnulacion[${index}].IDFactura.NumSerieFacturaAnulada`,
         entry.RegistroAnulacion.IDFactura.NumSerieFacturaAnulada,

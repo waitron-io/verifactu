@@ -243,6 +243,12 @@ numbers against the bundled request XSD. This serializer boundary does not repla
 separate character-set and fiscal checks, validate arbitrary raw XML accepted by `parseEnvio`, or
 prove AEAT will accept a submitted record.
 
+`Encadenamiento.RegistroAnterior.NumSerieFactura` instead uses `sf:TextMax60Type`: it allows an
+empty value but no more than 60 Unicode code points. The serializer now enforces that upper bound
+for both alta and cancellation records. Offline XSD probes confirm the 60-code-point, 61-character,
+and empty boundaries. `validate` counts Unicode code points for main and referenced invoice-number
+lengths too; its narrower character rule still rejects emoji in the main number.
+
 ### XML text and escaping — service description §§6.7, 6.9
 
 AEAT trims leading and trailing whitespace from XML text fields before storing and returning them.

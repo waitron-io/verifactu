@@ -55,6 +55,14 @@ describe("serializeEnvio", () => {
     );
   });
 
+  it("rejects a missing invoice number passed through an untyped caller", () => {
+    const invalid = buildAltaRecord(ALTA_INPUT);
+    (invalid.IDFactura as { NumSerieFactura?: string }).NumSerieFactura = undefined;
+    expect(() => serializeEnvio(CABECERA, [{ RegistroAlta: invalid }])).toThrow(
+      "RegistroAlta[0].IDFactura.NumSerieFactura must contain 1 to 60 characters",
+    );
+  });
+
   it.each(["FacturasRectificadas", "FacturasSustituidas"] as const)(
     "rejects an XSD-invalid referenced invoice number in %s",
     (field) => {
@@ -428,6 +436,52 @@ describe("serializeEnvio", () => {
     expect(xml).toContain("<sf:RegistroAnterior>");
     expect(xml).toContain(`<sf:Huella>${record.Huella}</sf:Huella>`);
     expect(xml).not.toContain("PrimerRegistro");
+  });
+
+  it.each(["RegistroAlta", "RegistroAnulacion"] as const)(
+    "rejects an overlong %s previous invoice number before submission",
+    (kind) => {
+      const previous = {
+        IDEmisorFactura: CABECERA.ObligadoEmision.NIF,
+        NumSerieFactura: "A".repeat(61),
+        FechaExpedicionFactura: "28-10-2024",
+        Huella: record.Huella,
+      };
+      const entry =
+        kind === "RegistroAlta"
+          ? { RegistroAlta: { ...record, Encadenamiento: { RegistroAnterior: previous } } }
+          : {
+              RegistroAnulacion: buildAnulacionRecord({
+                IDEmisorFacturaAnulada: CABECERA.ObligadoEmision.NIF,
+                NumSerieFacturaAnulada: "CANCEL-1",
+                FechaExpedicionFacturaAnulada: new Date("2024-10-28T00:00:00+01:00"),
+                Encadenamiento: { RegistroAnterior: previous },
+                SistemaInformatico: SISTEMA,
+                generadoEn: new Date("2024-10-28T19:20:30+01:00"),
+                offsetMinutes: 60,
+              }),
+            };
+      expect(() => serializeEnvio(CABECERA, [entry])).toThrow(
+        `${kind}[0].Encadenamiento.RegistroAnterior.NumSerieFactura must contain at most 60 characters`,
+      );
+    },
+  );
+
+  it("allows an empty predecessor invoice number under TextMax60Type", () => {
+    const chained = {
+      ...record,
+      Encadenamiento: {
+        RegistroAnterior: {
+          IDEmisorFactura: CABECERA.ObligadoEmision.NIF,
+          NumSerieFactura: "",
+          FechaExpedicionFactura: "28-10-2024",
+          Huella: record.Huella,
+        },
+      },
+    };
+    expect(serializeEnvio(CABECERA, [{ RegistroAlta: chained }])).toContain(
+      "<sf:NumSerieFactura></sf:NumSerieFactura>",
+    );
   });
 
   it("serialises several records into one envio", () => {
