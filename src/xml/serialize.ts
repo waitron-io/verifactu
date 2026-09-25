@@ -688,7 +688,7 @@ export function serializeEnvio(
     if ("RegistroAlta" in entry) {
       const alta = entry.RegistroAlta;
       const field = `RegistroAlta[${index}]`;
-      assertIdOtroShape(`${field}.SistemaInformatico`, alta.SistemaInformatico.IDOtro);
+      assertIdOtroShape(`${field}.SistemaInformatico`, alta.SistemaInformatico?.IDOtro);
       assertIdOtroShape(`${field}.Tercero`, alta.Tercero?.IDOtro);
       alta.Destinatarios?.IDDestinatario.forEach((recipient, recipientIndex) => {
         assertIdOtroShape(
@@ -721,7 +721,7 @@ export function serializeEnvio(
     } else if ("RegistroAnulacion" in entry) {
       const cancellation = entry.RegistroAnulacion;
       const field = `RegistroAnulacion[${index}]`;
-      assertIdOtroShape(`${field}.SistemaInformatico`, cancellation.SistemaInformatico.IDOtro);
+      assertIdOtroShape(`${field}.SistemaInformatico`, cancellation.SistemaInformatico?.IDOtro);
       assertIdOtroShape(`${field}.Generador`, cancellation.Generador?.IDOtro);
       if (entry.RegistroAnulacion.Encadenamiento.RegistroAnterior !== undefined) {
         assertPreviousInvoiceNumberXsd(
