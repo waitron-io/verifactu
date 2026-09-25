@@ -49,6 +49,20 @@ export type EstadoEfectivo =
 
 export const ERROR_DUPLICADO = 3000;
 
+function estadoEnvioOf(value: unknown): EstadoEnvio {
+  if (value === "Correcto" || value === "ParcialmenteCorrecto" || value === "Incorrecto") {
+    return value;
+  }
+  throw new Error(`Unexpected EstadoEnvio: ${JSON.stringify(value)}`);
+}
+
+function estadoRegistroOf(value: unknown): EstadoRegistroSuministro {
+  if (value === "Correcto" || value === "AceptadoConErrores" || value === "Incorrecto") {
+    return value;
+  }
+  throw new Error(`Unexpected EstadoRegistro: ${JSON.stringify(value)}`);
+}
+
 // The raw shape fast-xml-parser hands back. Leaf values stay strings — parseTagValue is off — so
 // TiempoEsperaEnvio and the error codes need explicit numeric conversion below.
 
@@ -122,7 +136,7 @@ function parseRespuestaLinea(raw: RawRespuestaLinea): RespuestaLinea {
     },
     Operacion: parseOperacion(raw.Operacion),
     RefExterna: raw.RefExterna,
-    EstadoRegistro: raw.EstadoRegistro as EstadoRegistroSuministro,
+    EstadoRegistro: estadoRegistroOf(raw.EstadoRegistro),
     CodigoErrorRegistro: asNumber(raw.CodigoErrorRegistro, "RespuestaLinea.CodigoErrorRegistro"),
     DescripcionErrorRegistro: raw.DescripcionErrorRegistro,
     RegistroDuplicado: parseRegistroDuplicado(raw.RegistroDuplicado),
@@ -138,7 +152,7 @@ export function parseRespuestaSuministro(xml: string): RespuestaSuministro {
   }
   return {
     CSV: body.CSV,
-    EstadoEnvio: body.EstadoEnvio as EstadoEnvio,
+    EstadoEnvio: estadoEnvioOf(body.EstadoEnvio),
     // \d{0,4} in the schema, so up to 9999 seconds — never narrow this to 8 bits.
     // This value drives the caller's next-submission scheduling, so a
     // malformed or absent element must throw here rather than silently

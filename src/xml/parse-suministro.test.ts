@@ -83,6 +83,22 @@ describe("parseRespuestaSuministro", () => {
     expect(response.TiempoEsperaEnvio).toBe(60);
   });
 
+  it.each([
+    ["an unknown", "<EstadoEnvio>Other</EstadoEnvio>"],
+    ["a missing", ""],
+  ])("rejects %s global state instead of returning a typed invalid state", (_case, state) => {
+    const xml = ACCEPTED.replace("<EstadoEnvio>Correcto</EstadoEnvio>", state);
+    expect(() => parseRespuestaSuministro(xml)).toThrow(/EstadoEnvio/);
+  });
+
+  it.each([
+    ["an unknown", "<EstadoRegistro>Other</EstadoRegistro>"],
+    ["a missing", ""],
+  ])("rejects %s record state instead of treating it as rejected", (_case, state) => {
+    const xml = ACCEPTED.replace("<EstadoRegistro>Correcto</EstadoRegistro>", state);
+    expect(() => parseRespuestaSuministro(xml)).toThrow(/EstadoRegistro/);
+  });
+
   it("returns TiempoEsperaEnvio as a number", () => {
     expect(typeof parseRespuestaSuministro(ACCEPTED).TiempoEsperaEnvio).toBe("number");
   });
