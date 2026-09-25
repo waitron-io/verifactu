@@ -351,7 +351,10 @@ function anulacionOf(raw: RawRecord): RegistroAnulacion {
   return record;
 }
 
-export function parseEnvio(xml: string): { cabecera: Cabecera; registros: EnvioRegistro[] } {
+function parseEnvioInternal(
+  xml: string,
+  validateRecordXsd: boolean,
+): { cabecera: Cabecera; registros: EnvioRegistro[] } {
   const body = (parser.parse(xml) as RawEnvelope).Envelope?.Body?.RegFactuSistemaFacturacion;
   if (!body?.Cabecera)
     throw new Error("Envio does not contain a RegFactuSistemaFacturacion Cabecera");
@@ -371,16 +374,28 @@ export function parseEnvio(xml: string): { cabecera: Cabecera; registros: EnvioR
     }
     if ("RegistroAlta" in entry) {
       const record = altaOf(entry.RegistroAlta);
-      assertFilingRecordXsd(record, `RegistroAlta[${index}]`);
+      if (validateRecordXsd) assertFilingRecordXsd(record, `RegistroAlta[${index}]`);
       return { RegistroAlta: record };
     }
     const record = anulacionOf(entry.RegistroAnulacion);
-    assertFilingRecordXsd(record, `RegistroAnulacion[${index}]`);
+    if (validateRecordXsd) assertFilingRecordXsd(record, `RegistroAnulacion[${index}]`);
     return { RegistroAnulacion: record };
   });
   if (registros.length === 0)
     throw new Error("Envio does not contain at least one RegistroFactura");
   return { cabecera: cabeceraOf(body.Cabecera), registros };
+}
+
+export function parseEnvio(xml: string): { cabecera: Cabecera; registros: EnvioRegistro[] } {
+  return parseEnvioInternal(xml, true);
+}
+
+/** @internal Lets the fake AEAT inspect invalid literals so it can emulate AEAT rejection codes. */
+export function parseEnvioUnchecked(xml: string): {
+  cabecera: Cabecera;
+  registros: EnvioRegistro[];
+} {
+  return parseEnvioInternal(xml, false);
 }
 
 export function parseConsulta(xml: string): { cabecera: CabeceraConsulta; filtro: ConsultaFiltro } {

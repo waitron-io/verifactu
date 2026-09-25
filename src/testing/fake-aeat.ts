@@ -1,6 +1,6 @@
 import { createClient, type VerifactuClient } from "../client.js";
 import { escapeXml } from "../xml/escape.js";
-import { parseConsulta, parseEnvio } from "../xml/parse-request.js";
+import { parseConsulta, parseEnvioUnchecked } from "../xml/parse-request.js";
 import type { EstadoRegistroConsulta } from "../xml/parse-consulta.js";
 import type {
   EstadoEnvio,
@@ -173,7 +173,7 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
   const consultaPageSize = options.consultaPageSize ?? 2;
 
   function handleEnvio(xml: string): string {
-    const { cabecera, registros } = parseEnvio(xml);
+    const { cabecera, registros } = parseEnvioUnchecked(xml);
     const lineas: string[] = [];
     let rejectedCount = 0;
     let anyAcceptedWithErrors = false;
