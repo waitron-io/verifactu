@@ -465,6 +465,51 @@ describe("parseRespuestaConsulta", () => {
     );
   });
 
+  it.each([
+    ["IDEmisorFactura", "99999999R", "12345678"],
+    ["NumSerieFactura", "LAST/G99", "X".repeat(61)],
+    ["FechaExpedicionFactura", "31-12-2024", "2024/12/31"],
+  ])("rejects an XSD-invalid continuing cursor %s", (field, valid, invalid) => {
+    const xml = PAGINATED.replace(
+      `<${field}>${valid}</${field}>`,
+      `<${field}>${invalid}</${field}>`,
+    );
+    expect(xml).not.toBe(PAGINATED);
+    expect(() => parseRespuestaConsulta(xml)).toThrow(`ClavePaginacion.${field}`);
+  });
+
+  it.each([
+    ["IDEmisorFactura", "89890001K", "12345678"],
+    ["NumSerieFactura", "12345678/G33", "X".repeat(61)],
+    ["FechaExpedicionFactura", "01-01-2024", "2024/01/01"],
+  ])("rejects an XSD-invalid stored invoice identity %s", (field, valid, invalid) => {
+    const xml = RESPONSE.replace(
+      `<${field}>${valid}</${field}>`,
+      `<${field}>${invalid}</${field}>`,
+    );
+    expect(xml).not.toBe(RESPONSE);
+    expect(() => parseRespuestaConsulta(xml)).toThrow(`IDFactura.${field}`);
+  });
+
+  it("uses response-specific wording for an invalid record NIF", () => {
+    const xml = RESPONSE.replace(
+      "<IDEmisorFactura>89890001K</IDEmisorFactura>",
+      "<IDEmisorFactura>12345678</IDEmisorFactura>",
+    );
+    expect(() => parseRespuestaConsulta(xml)).toThrow(
+      /^IDFactura.IDEmisorFactura must contain exactly 9 characters$/,
+    );
+  });
+
+  it("preserves a 60-code-point Unicode cursor invoice number", () => {
+    const number = "😀".repeat(60);
+    const xml = PAGINATED.replace(
+      "<NumSerieFactura>LAST/G99</NumSerieFactura>",
+      `<NumSerieFactura>${number}</NumSerieFactura>`,
+    );
+    expect(parseRespuestaConsulta(xml).ClavePaginacion?.NumSerieFactura).toBe(number);
+  });
+
   it("rejects a stored record whose invoice identity is incomplete", () => {
     const xml = RESPONSE.replace("<NumSerieFactura>12345678/G33</NumSerieFactura>", "");
     expect(() => parseRespuestaConsulta(xml)).toThrow(
@@ -482,6 +527,63 @@ describe("parseRespuestaConsulta", () => {
       TimestampPresentacion: "01-01-2024 19:20:30",
       IdPeticion: "PET-9",
     });
+  });
+
+  it.each([
+    ["NIFPresentador", "<NIFPresentador>89890001K</NIFPresentador>"],
+    ["TimestampPresentacion", "<TimestampPresentacion>01-01-2024 19:20:30</TimestampPresentacion>"],
+    ["IdPeticion", "<IdPeticion>PET-9</IdPeticion>"],
+  ])("requires %s when DatosPresentacion is present", (field, element) => {
+    const xml = WITH_ERROR_DETAIL.replace(element, "");
+    expect(xml).not.toBe(WITH_ERROR_DETAIL);
+    expect(() => parseRespuestaConsulta(xml)).toThrow(`DatosPresentacion.${field}`);
+  });
+
+  it.each([
+    ["NIFPresentador", "89890001K", "12345678"],
+    ["IdPeticion", "PET-9", "X".repeat(21)],
+  ])("rejects an XSD-invalid DatosPresentacion.%s", (field, valid, invalid) => {
+    const xml = WITH_ERROR_DETAIL.replace(
+      `<${field}>${valid}</${field}>`,
+      `<${field}>${invalid}</${field}>`,
+    );
+    expect(xml).not.toBe(WITH_ERROR_DETAIL);
+    expect(() => parseRespuestaConsulta(xml)).toThrow(`DatosPresentacion.${field}`);
+  });
+
+  it("rejects a repeated DatosPresentacion block", () => {
+    const block = WITH_ERROR_DETAIL.match(/<DatosPresentacion>[\s\S]*?<\/DatosPresentacion>/)?.[0];
+    expect(block).toBeDefined();
+    expect(() =>
+      parseRespuestaConsulta(WITH_ERROR_DETAIL.replace(block!, block! + block!)),
+    ).toThrow("DatosPresentacion must appear once");
+  });
+
+  it.each([
+    ["NIFPresentador", "89890001K"],
+    ["TimestampPresentacion", "01-01-2024 19:20:30"],
+    ["IdPeticion", "PET-9"],
+  ])("names a repeated DatosPresentacion.%s element", (field, value) => {
+    const leaf = `<${field}>${value}</${field}>`;
+    const xml = WITH_ERROR_DETAIL.replace(leaf, leaf + leaf);
+    expect(xml).not.toBe(WITH_ERROR_DETAIL);
+    expect(() => parseRespuestaConsulta(xml)).toThrow(
+      new RegExp(`^DatosPresentacion\\.${field} must appear once$`),
+    );
+  });
+
+  it("allows a 20-code-point Unicode presentation petition ID", () => {
+    const id = "😀".repeat(20);
+    const xml = WITH_ERROR_DETAIL.replace(
+      "<IdPeticion>PET-9</IdPeticion>",
+      `<IdPeticion>${id}</IdPeticion>`,
+    );
+    expect(parseRespuestaConsulta(xml).registros[0]?.DatosPresentacion?.IdPeticion).toBe(id);
+  });
+
+  it("preserves an empty but present presentation petition ID", () => {
+    const xml = WITH_ERROR_DETAIL.replace("<IdPeticion>PET-9</IdPeticion>", "<IdPeticion/>");
+    expect(parseRespuestaConsulta(xml).registros[0]?.DatosPresentacion?.IdPeticion).toBe("");
   });
 
   it("leaves the error fields and DatosPresentacion undefined when absent", () => {

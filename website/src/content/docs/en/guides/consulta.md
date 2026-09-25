@@ -90,7 +90,14 @@ query is not on behalf of a representative. Do not include it in a recipient que
 When `IndicadorPaginacion` is `"S"`, send `ClavePaginacion` from the response in your next query.
 The response parser checks that `ResultadoConsulta` is `ConDatos` or `SinDatos`, that
 `IndicadorPaginacion` is `S` or `N`, and that a continuing `S` page has one cursor with all three
-invoice-identity fields nonblank. It throws if that cursor is missing or incomplete, so you do not
-repeat the first page. A final `N` page needs no cursor; if the response includes one anyway, the
-parser ignores it and keeps the page's records.
+invoice-identity fields present and within the schema's NIF, invoice-number, and date-shape bounds.
+It applies those same bounds to each returned invoice identity. It throws if a continuing cursor
+is missing or malformed, so you do not repeat the first page. A final `N` page needs no cursor;
+if the response includes one anyway, the parser ignores it and keeps the page's records.
+If a record includes `DatosPresentacion`, the parser requires its presenter NIF, presentation
+timestamp, and petition ID elements. The schema allows an empty petition ID. The parser preserves
+the timestamp text without checking its date-time syntax.
+If any returned record has a malformed invoice identity, parsing fails for the whole page; you
+do not get its other records or cursor. Capture the raw response in your transport layer if you
+need to diagnose a non-conforming AEAT response.
 Do not try to recover a submission's CSV here: consulta does not return it.

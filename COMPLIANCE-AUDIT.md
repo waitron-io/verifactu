@@ -330,12 +330,10 @@ serializer/parser tests cover missing-length and overlong cases, and offline XSD
 the 60-code-point boundary and rejection of the invalid values. The pagination key's
 `IDEmisorFactura` also has the `NIFType` length of exactly nine Unicode code points; both request
 boundaries enforce it, with an offline XSD rejection probe. Other nested identity/text fields have
-targeted checks below, not full request-XSD validation.
-The consulta response parser still accepts an overlong returned pagination number; echoing that
-cursor in a later request now fails locally. The same asymmetry applies to a returned cursor date
-with a malformed shape. `RespuestaConsultaLR.xsd` declares the returned
-cursor with the same `IDFacturaExpedidaBCType`, but the library has not verified live response
-behavior or harmonized the two parser bounds.
+targeted checks below, not full request-XSD validation. The response parser now applies the same
+invoice-number and date-shape bounds to a continuing cursor before returning it. Both request and
+response XSDs declare that cursor with `IDFacturaExpedidaBCType`; actual AEAT responses still need
+preproduction observation.
 
 The service description §6.4.1 and `sf:fecha` require `DD-MM-YYYY` text for an exact issue-date
 filter, each supplied range endpoint, and the pagination key's required date. `serializeConsulta`
@@ -381,8 +379,8 @@ NIF control remain separate.
 `IndicadorPaginacion` to `S`/`N`. Service description §6.4.3 says AEAT fills
 `ClavePaginacion` for a continuing `S` page, so callers can echo that last-record identity in
 the next query. `parseRespuestaConsulta` checks the literal enum values, rejects absent or
-duplicated flag elements, and requires a single cursor with three nonblank identity fields for
-`S`. The XSD makes the cursor block optional without a conditional constraint; an unexpected
+duplicated flag elements, and requires a single cursor with three present, XSD-shaped identity
+fields for `S`. The XSD makes the cursor block optional without a conditional constraint; an unexpected
 cursor on a final `N` page is ignored rather than discarding the page's records. The parser also
 rejects incomplete invoice identities inside returned records. Focused tests cover valid final
 and continuing pages, malformed flags, missing or repeated elements, and blank identity fields.
@@ -396,20 +394,31 @@ The response schema requires `Cabecera`, `PeriodoImputacion`, `IndicadorPaginaci
 `ClavePaginacion`. `parseRespuestaConsulta` is a projection of this response, not a complete
 schema validator: it exposes the two flags, a continuation cursor when the flag is `S`, and the
 record list, but it does not expose or validate the echoed header and period or enforce the page
-size. A namespace-qualified fixture follows the schema's wrapper and element order; it has not
-been validated with the full imported schema set.
+size. A minimal response with one record and a continuation cursor passes offline validation
+against the pinned response XSD and its imports; that does not establish every returned field or
+live AEAT behavior.
 
-| Published record field                                    | Parser behavior                                                                                                                                            | Evidence and limit                                                                                 |
-| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `IDFactura`                                               | Returns its three identity fields and rejects an absent, repeated, or incomplete identity                                                                  | `src/xml/parse-consulta.test.ts`; field formats are not fully schema-validated                     |
-| `DatosRegistroFacturacion`                                | Retains the stored subtree and literal string values, including hash and amount fields; a present empty block becomes `{}` and an absent block is rejected | `src/xml/parse-consulta.test.ts`; nested data fields, limits, and combinations are not validated   |
-| `DatosPresentacion`                                       | Returns its three fields when present                                                                                                                      | `src/xml/parse-consulta.test.ts`; the parser does not validate that all three are present together |
-| `EstadoRegistro.TimestampUltimaModificacion`              | Returns the required timestamp literal; rejects a missing or blank value                                                                                   | `src/xml/parse-consulta.test.ts`; date-time syntax is not validated                                |
-| `EstadoRegistro.EstadoRegistro` and optional error detail | Checks the status against `Correcto`, `AceptadoConErrores`, and `Anulado`; converts an error code to a number and returns its description                  | `src/xml/parse-consulta.test.ts`; no rule requires error detail for any one status                 |
+| Published record field                                    | Parser behavior                                                                                                                                            | Evidence and limit                                                                                                                                      |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `IDFactura`                                               | Returns its three identity fields and rejects an absent, repeated, incomplete, or XSD-invalid NIF length, invoice-number length, or date shape             | Parser tests and offline response-XSD probes; one invalid record aborts the entire parsed page, while calendar validity and NIF control remain separate |
+| `DatosRegistroFacturacion`                                | Retains the stored subtree and literal string values, including hash and amount fields; a present empty block becomes `{}` and an absent block is rejected | `src/xml/parse-consulta.test.ts`; nested data fields, limits, and combinations are not validated                                                        |
+| `DatosPresentacion`                                       | Returns its three fields when present; rejects repeated blocks, missing fields, invalid NIF length, and overlong petition ID                               | Parser tests and offline response-XSD probes; date-time syntax is not validated                                                                         |
+| `EstadoRegistro.TimestampUltimaModificacion`              | Returns the required timestamp literal; rejects a missing or blank value                                                                                   | `src/xml/parse-consulta.test.ts`; date-time syntax is not validated                                                                                     |
+| `EstadoRegistro.EstadoRegistro` and optional error detail | Checks the status against `Correcto`, `AceptadoConErrores`, and `Anulado`; converts an error code to a number and returns its description                  | `src/xml/parse-consulta.test.ts`; no rule requires error detail for any one status                                                                      |
 
 The required-block check prevents a malformed response from returning `undefined` where the
 public `RegistroConsultado` type promises an object or timestamp. It does not establish that an
 actual AEAT response contains all fields; that still needs a preproduction observation.
+For a continuing page, `ClavePaginacion` receives the same NIF-length, invoice-number, and date
+shape checks as `IDFactura`, so a malformed cursor fails at the response boundary instead of
+being returned for a later request that would reject it. The parser still ignores an unexpected
+cursor on a final page, preserving its records. The optional `DatosPresentacion` block now requires
+all three XSD fields when present, while retaining literal timestamp text; it does not claim to
+validate the full XML Schema `dateTime` lexical space.
+Unlike an ignored final-page cursor, a malformed record identity causes parsing to fail for the
+whole response. The API does not return that page's other records or cursor in this case; callers
+who need to diagnose non-conforming AEAT XML must capture the raw response at their transport
+boundary.
 
 ### Own-record hash validation
 

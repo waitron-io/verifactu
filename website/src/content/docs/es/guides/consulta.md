@@ -93,7 +93,15 @@ si no consultas como representante. No lo incluyas en una consulta como destinat
 Cuando `IndicadorPaginacion` sea `"S"`, envía la `ClavePaginacion` recibida en la
 siguiente consulta. El analizador comprueba que `ResultadoConsulta` sea `ConDatos` o `SinDatos`,
 que `IndicadorPaginacion` sea `S` o `N`, y que una página `S` lleve una clave con sus tres campos
-de identidad de factura no vacíos. Si falta esa clave o está incompleta, lanza un error para que
-no repitas la primera página. Una página final `N` no necesita clave; si la respuesta la incluye,
-el analizador la ignora y conserva los registros de esa página. El CSV del envío no se puede
-recuperar aquí: la consulta no lo devuelve.
+de identidad de factura presentes y dentro de los límites del esquema para el NIF, el número de
+factura y el formato de fecha. Aplica los mismos límites a cada identidad de factura devuelta. Si
+falta la clave de continuación o sus datos no son válidos, lanza un error para que no repitas la
+primera página. Una página final `N` no necesita clave; si la respuesta la incluye,
+el analizador la ignora y conserva los registros de esa página.
+Si un registro incluye `DatosPresentacion`, el analizador exige el NIF del presentador, la fecha
+y hora de presentación y el elemento de identificación de petición. El esquema permite que este
+último esté vacío. Conserva el texto de la fecha y hora sin comprobar su formato.
+Si un registro devuelto tiene una identidad de factura no válida, falla el análisis de toda la
+página; no se devuelven sus otros registros ni la clave. Captura la respuesta XML en tu capa de
+transporte si necesitas diagnosticar una respuesta de la AEAT que no cumple el esquema.
+El CSV del envío no se puede recuperar aquí: la consulta no lo devuelve.

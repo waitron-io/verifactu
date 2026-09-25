@@ -14,6 +14,11 @@ const CATALOG = fileURLToPath(new URL("../test/xsd/catalog.xml", import.meta.url
 const CONSULTA_XSD = fileURLToPath(new URL("../schemas/ConsultaLR.xsd", import.meta.url));
 const INFO_XSD = fileURLToPath(new URL("../schemas/SuministroInformacion.xsd", import.meta.url));
 const ENVIO_XSD = fileURLToPath(new URL("../schemas/SuministroLR.xsd", import.meta.url));
+const RESPUESTA_CONSULTA_XSD = fileURLToPath(
+  new URL("../schemas/RespuestaConsultaLR.xsd", import.meta.url),
+);
+const NS_RC =
+  "https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/RespuestaConsultaLR.xsd";
 
 function soapBodyElement(xml: string): string {
   const document = new DOMParser().parseFromString(xml, "text/xml");
@@ -639,5 +644,99 @@ describe("generated unsigned requests against AEAT XSDs", () => {
     );
     const result = schemaResult(CONSULTA_XSD, body);
     expect(result.status, result.stderr).toBe(0);
+  });
+});
+
+describe("consultation response identity fields against AEAT XSDs", () => {
+  const response =
+    `<rc:RespuestaConsultaFactuSistemaFacturacion xmlns:rc="${NS_RC}" xmlns:sf="${NS_SF}">` +
+    `<rc:Cabecera><sf:IDVersion>1.0</sf:IDVersion><sf:ObligadoEmision>` +
+    `<sf:NombreRazon>Issuer</sf:NombreRazon><sf:NIF>89890001K</sf:NIF>` +
+    `</sf:ObligadoEmision></rc:Cabecera>` +
+    `<rc:PeriodoImputacion><rc:Ejercicio>2026</rc:Ejercicio><rc:Periodo>07</rc:Periodo></rc:PeriodoImputacion>` +
+    `<rc:IndicadorPaginacion>S</rc:IndicadorPaginacion><rc:ResultadoConsulta>ConDatos</rc:ResultadoConsulta>` +
+    `<rc:RegistroRespuestaConsultaFactuSistemaFacturacion>` +
+    `<rc:IDFactura><sf:IDEmisorFactura>89890001K</sf:IDEmisorFactura>` +
+    `<sf:NumSerieFactura>INV/42</sf:NumSerieFactura>` +
+    `<sf:FechaExpedicionFactura>20-07-2026</sf:FechaExpedicionFactura></rc:IDFactura>` +
+    `<rc:DatosRegistroFacturacion/>` +
+    `<rc:EstadoRegistro><rc:TimestampUltimaModificacion>2026-07-21T09:10:00+02:00</rc:TimestampUltimaModificacion>` +
+    `<rc:EstadoRegistro>Correcto</rc:EstadoRegistro></rc:EstadoRegistro>` +
+    `</rc:RegistroRespuestaConsultaFactuSistemaFacturacion>` +
+    `<rc:ClavePaginacion><sf:IDEmisorFactura>89890001K</sf:IDEmisorFactura>` +
+    `<sf:NumSerieFactura>INV/42</sf:NumSerieFactura>` +
+    `<sf:FechaExpedicionFactura>20-07-2026</sf:FechaExpedicionFactura></rc:ClavePaginacion>` +
+    `</rc:RespuestaConsultaFactuSistemaFacturacion>`;
+
+  it("accepts a minimal record and continuing cursor", () => {
+    const result = schemaResult(RESPUESTA_CONSULTA_XSD, response);
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it.each(["IDFactura", "ClavePaginacion"] as const)(
+    "rejects invalid invoice identity fields in %s",
+    (parentName) => {
+      const document = new DOMParser().parseFromString(response, "text/xml");
+      const parent = document.getElementsByTagNameNS(NS_RC, parentName).item(0);
+      if (!parent) throw new Error(`Response fixture has no ${parentName}`);
+      for (const [name, invalid] of [
+        ["IDEmisorFactura", "12345678"],
+        ["NumSerieFactura", "X".repeat(61)],
+        ["FechaExpedicionFactura", "2026/07/20"],
+      ]) {
+        const leaf = parent.getElementsByTagNameNS(NS_SF, name).item(0);
+        if (!leaf) throw new Error(`Response fixture has no ${parentName}.${name}`);
+        const original = leaf.textContent;
+        leaf.textContent = invalid;
+        const result = schemaResult(
+          RESPUESTA_CONSULTA_XSD,
+          new XMLSerializer().serializeToString(document),
+        );
+        expect(result.status, result.stderr).not.toBe(0);
+        leaf.textContent = original;
+      }
+    },
+  );
+
+  it("requires all three fields when DatosPresentacion is present", () => {
+    const presentation =
+      `<rc:DatosPresentacion><sf:NIFPresentador>89890001K</sf:NIFPresentador>` +
+      `<sf:TimestampPresentacion>2026-07-21T09:00:00+02:00</sf:TimestampPresentacion>` +
+      `<sf:IdPeticion>PET-42</sf:IdPeticion></rc:DatosPresentacion>`;
+    const withPresentation = response.replace(
+      "<rc:EstadoRegistro>",
+      presentation + "<rc:EstadoRegistro>",
+    );
+    const valid = schemaResult(RESPUESTA_CONSULTA_XSD, withPresentation);
+    expect(valid.status, valid.stderr).toBe(0);
+    const emptyPetition = schemaResult(
+      RESPUESTA_CONSULTA_XSD,
+      withPresentation.replace("<sf:IdPeticion>PET-42</sf:IdPeticion>", "<sf:IdPeticion/>"),
+    );
+    expect(emptyPetition.status, emptyPetition.stderr).toBe(0);
+    for (const element of [
+      "<sf:NIFPresentador>89890001K</sf:NIFPresentador>",
+      "<sf:TimestampPresentacion>2026-07-21T09:00:00+02:00</sf:TimestampPresentacion>",
+      "<sf:IdPeticion>PET-42</sf:IdPeticion>",
+    ]) {
+      const invalid = withPresentation.replace(element, "");
+      const result = schemaResult(RESPUESTA_CONSULTA_XSD, invalid);
+      expect(result.status, result.stderr).not.toBe(0);
+    }
+    for (const [original, invalid] of [
+      [
+        "<sf:NIFPresentador>89890001K</sf:NIFPresentador>",
+        "<sf:NIFPresentador>12345678</sf:NIFPresentador>",
+      ],
+      ["<sf:IdPeticion>PET-42</sf:IdPeticion>", `<sf:IdPeticion>${"X".repeat(21)}</sf:IdPeticion>`],
+      [
+        "<sf:TimestampPresentacion>2026-07-21T09:00:00+02:00</sf:TimestampPresentacion>",
+        "<sf:TimestampPresentacion>21-07-2026 09:00:00</sf:TimestampPresentacion>",
+      ],
+    ]) {
+      const invalidResponse = withPresentation.replace(original, invalid);
+      const result = schemaResult(RESPUESTA_CONSULTA_XSD, invalidResponse);
+      expect(result.status, result.stderr).not.toBe(0);
+    }
   });
 });

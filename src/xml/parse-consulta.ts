@@ -1,4 +1,9 @@
 import { asArray, asNumber, parser } from "./parse-common.js";
+import {
+  assertConsultaNif,
+  isValidConsultaFecha,
+  isValidConsultaNumSerieFactura,
+} from "./serialize.js";
 import type { IDFactura } from "../types.js";
 
 /**
@@ -137,10 +142,43 @@ function invoiceIdentityOf(raw: unknown, field: "IDFactura" | "ClavePaginacion")
   ) {
     throw new Error(`${field} must contain one invoice identity`);
   }
+  assertConsultaNif(`${field}.IDEmisorFactura`, key.IDEmisorFactura, "");
+  if (!isValidConsultaNumSerieFactura(key.NumSerieFactura)) {
+    throw new Error(`${field}.NumSerieFactura must contain 1 to 60 characters`);
+  }
+  if (!isValidConsultaFecha(key.FechaExpedicionFactura)) {
+    throw new Error(`${field}.FechaExpedicionFactura must be DD-MM-YYYY`);
+  }
   return {
     IDEmisorFactura: key.IDEmisorFactura,
     NumSerieFactura: key.NumSerieFactura,
     FechaExpedicionFactura: key.FechaExpedicionFactura,
+  };
+}
+
+function datosPresentacionOf(raw: unknown): DatosPresentacionConsulta | undefined {
+  if (raw === undefined) return undefined;
+  if (Array.isArray(raw)) throw new Error("DatosPresentacion must appear once");
+  if (!raw || typeof raw !== "object") {
+    throw new Error("DatosPresentacion must contain its three fields");
+  }
+  const block = raw as Record<string, unknown>;
+  for (const field of ["NIFPresentador", "TimestampPresentacion", "IdPeticion"] as const) {
+    if (Array.isArray(block[field])) {
+      throw new Error(`DatosPresentacion.${field} must appear once`);
+    }
+  }
+  assertConsultaNif("DatosPresentacion.NIFPresentador", block.NIFPresentador, "");
+  if (typeof block.TimestampPresentacion !== "string" || !block.TimestampPresentacion.trim()) {
+    throw new Error("DatosPresentacion.TimestampPresentacion is required");
+  }
+  if (typeof block.IdPeticion !== "string" || Array.from(block.IdPeticion).length > 20) {
+    throw new Error("DatosPresentacion.IdPeticion must contain at most 20 characters");
+  }
+  return {
+    NIFPresentador: block.NIFPresentador,
+    TimestampPresentacion: block.TimestampPresentacion,
+    IdPeticion: block.IdPeticion,
   };
 }
 
@@ -172,13 +210,7 @@ function parseRegistroConsultado(raw: RawRegistroConsultado): RegistroConsultado
     EstadoRegistro: estadoRegistroConsultaOf(state.EstadoRegistro),
     CodigoErrorRegistro: asNumber(state.CodigoErrorRegistro, "CodigoErrorRegistro"),
     DescripcionErrorRegistro: state.DescripcionErrorRegistro,
-    DatosPresentacion: raw.DatosPresentacion
-      ? {
-          NIFPresentador: raw.DatosPresentacion.NIFPresentador,
-          TimestampPresentacion: raw.DatosPresentacion.TimestampPresentacion,
-          IdPeticion: raw.DatosPresentacion.IdPeticion,
-        }
-      : undefined,
+    DatosPresentacion: datosPresentacionOf(raw.DatosPresentacion),
   };
 }
 
