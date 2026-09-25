@@ -274,9 +274,10 @@ AEAT request schemas. `test/xsd/catalog.xml` resolves the external XML-signature
 local placeholder for its optional `Signature` element; the test refuses signed messages because
 that placeholder does not validate signatures. The four passing request shapes are a minimal
 issuer consulta, a recipient consulta with every filter family, an alta, and a cancellation. A
-deliberately invalid consultation year is rejected by the schema, confirming that a failed import
-cannot produce a false green result. These are fixture-level XSD checks, not proof that every
-public input combination or SOAP envelope is schema-valid or accepted by AEAT.
+deliberately invalid consultation year and out-of-bounds filter lengths are rejected by the schema,
+confirming that a failed import cannot produce a false green result. These are fixture-level XSD
+checks, not proof that every public input combination or SOAP envelope is schema-valid or accepted
+by AEAT.
 
 ### Consultation request period — service description §6.4.1 and `sf:YearType`
 
@@ -294,8 +295,16 @@ header/version, optional filter order, issuer/recipient choice, date-choice wrap
 identity, software-system block, external reference, pagination key, and response options. They
 do not establish that every optional field’s runtime value satisfies its imported XSD type, nor
 that a complete request passes offline XSD validation. In particular, consulta header NIF parity,
-identity-less untyped counterpart/software filters, and optional text limits remain open in the
-backlog rather than being treated as verified.
+identity-less untyped counterpart/software filters, and other optional text limits remain open in
+the backlog rather than being treated as verified.
+
+`ConsultaLR.xsd` gives the top-level `NumSerieFactura` filter and the pagination key's
+`NumSerieFactura` the shared `TextoIDFacturaType` limit of 1–60 Unicode code points. Its
+`RefExterna` uses `TextMax60Type`, which permits an empty value but no more than 60 code points.
+Both `serializeConsulta` and `parseConsulta` reject values outside these bounds. Focused
+serializer/parser tests cover missing-length and overlong cases, and offline XSD probes confirm
+the 60-code-point boundary and rejection of the invalid values. The other consultation filter
+fields and nested identity/text types are not covered by this length check.
 
 ### Consultation response flags and cursor — service description §§6.4.2–6.4.3
 

@@ -2,7 +2,9 @@ import { asArray, parser } from "./parse-common.js";
 import {
   assertConsultaResponseOptions,
   isValidConsultaEjercicio,
+  isValidConsultaNumSerieFactura,
   isValidConsultaPeriodo,
+  isValidConsultaRefExterna,
   MAX_REGISTROS_POR_ENVIO,
 } from "./serialize.js";
 import type {
@@ -364,6 +366,18 @@ export function parseConsulta(xml: string): { cabecera: CabeceraConsulta; filtro
   }
   if (!isValidConsultaPeriodo(f.PeriodoImputacion.Periodo)) {
     throw new Error("Consulta Periodo must be 01 through 12");
+  }
+  if (f.NumSerieFactura !== undefined && !isValidConsultaNumSerieFactura(f.NumSerieFactura)) {
+    throw new Error("Consulta NumSerieFactura must contain 1 to 60 characters");
+  }
+  if (f.RefExterna !== undefined && !isValidConsultaRefExterna(f.RefExterna)) {
+    throw new Error("Consulta RefExterna must contain at most 60 characters");
+  }
+  if (
+    f.ClavePaginacion !== undefined &&
+    !isValidConsultaNumSerieFactura(f.ClavePaginacion.NumSerieFactura)
+  ) {
+    throw new Error("Consulta ClavePaginacion.NumSerieFactura must contain 1 to 60 characters");
   }
   const filtro: ConsultaFiltro = {
     Ejercicio: f.PeriodoImputacion.Ejercicio,
