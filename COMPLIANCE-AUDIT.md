@@ -373,15 +373,18 @@ These are XSD-shape checks, not AEAT identity-registration checks. In particular
 with nine characters is not necessarily a valid Spanish tax number; live AEAT authorization and
 NIF control remain separate.
 
-### Filing identity country codes — `SuministroInformacion.xsd` `CountryType2`
+### Filing `IDOtro` shape — `SuministroInformacion.xsd`
 
 The filing `IDOtro.CodigoPais` element uses the same `CountryType2` enumeration as consultation.
 `validate` now reports `IDOTRO_COUNTRY_CODE` for a supplied value outside that list on the software
-producer, third party, recipient, or cancellation generator. `serializeEnvio` also rejects it
-before building XML, including when called directly without `assertValid`. The shared code list is
-checked against every enumeration value in the pinned AEAT XSD. Four-role validation and serializer
-regressions, a schema-valid special `QU` filing, and a schema-rejected `ZZ` mutation verify the
-boundary. The code check does not determine whether a foreign identity is registered with AEAT.
+producer, third party, recipient, or cancellation generator. It also checks the `02`–`07` ID-type
+enumeration and the required `ID` element's 20-character maximum (`IDOTRO_IDTYPE` and
+`IDOTRO_ID_SHAPE`). `serializeEnvio` checks the same shape before building XML, including when
+called directly without `assertValid`. The shared country-code list is compared with every value
+in the pinned AEAT XSD. Four-role validation and serializer regressions, a schema-valid special
+`QU` filing, schema-rejected `ZZ`/`01`/overlong-ID mutations, and valid empty/20-code-point ID
+boundaries verify the rules. An empty `ID` is XSD-valid; these shape checks do not determine
+whether a foreign identity is registered with AEAT or accepted under other business rules.
 
 ### Consultation response flags and cursor — service description §§6.4.2–6.4.3
 

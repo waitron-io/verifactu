@@ -68,37 +68,71 @@ const codes = (record: RegistroAlta, options?: ValidationOptions) =>
 const anulacionCodes = (record: RegistroAnulacion) => validate(record).map((issue) => issue.code);
 
 describe("validate", () => {
-  it.each(["software", "third party", "recipient", "generator"] as const)(
-    "rejects an XSD-invalid country code on the %s identity",
-    (role) => {
-      const record = role === "generator" ? validAnulacion() : valid();
-      const other = { CodigoPais: "ZZ", IDType: "03", ID: "X-1" };
-      if (role === "software") {
-        record.SistemaInformatico = sistemaWithIdOtro(other);
-      } else if (role === "generator") {
-        const cancellation = record as RegistroAnulacion;
-        cancellation.GeneradoPor = "D";
-        cancellation.Generador = { NombreRazon: "Foreign generator", IDOtro: other };
-      } else if (role === "third party" && "TipoFactura" in record) {
-        record.EmitidaPorTerceroODestinatario = "T";
-        record.Tercero = { NombreRazon: "Foreign issuer", IDOtro: other };
-      } else if (role === "recipient" && "TipoFactura" in record) {
-        record.Destinatarios = {
-          IDDestinatario: [{ NombreRazon: "Foreign buyer", IDOtro: other }],
-        };
+  it("rejects an IDOtro without its mandatory ID from an untyped caller", () => {
+    const record = valid();
+    record.SistemaInformatico = sistemaWithIdOtro({
+      CodigoPais: "FR",
+      IDType: "03",
+      ID: undefined as unknown as string,
+    });
+    expect(validate(record)).toContainEqual({
+      code: "IDOTRO_ID_SHAPE",
+      severity: "error",
+      field: "SistemaInformatico.IDOtro.ID",
+      message: "ID must be present and contain at most 20 characters",
+    });
+  });
+
+  it.each([
+    [
+      "country code",
+      "CodigoPais",
+      "ZZ",
+      "IDOTRO_COUNTRY_CODE",
+      "CodigoPais must be an AEAT CountryType2 code",
+    ],
+    ["identifier type", "IDType", "01", "IDOTRO_IDTYPE", "IDType must be 02 through 07"],
+    [
+      "overlong identifier",
+      "ID",
+      "😀".repeat(21),
+      "IDOTRO_ID_SHAPE",
+      "ID must be present and contain at most 20 characters",
+    ],
+  ] as const)(
+    "rejects an XSD-invalid %s on each filing identity",
+    (_description, part, invalid, code, message) => {
+      for (const role of ["software", "third party", "recipient", "generator"] as const) {
+        const record = role === "generator" ? validAnulacion() : valid();
+        const other = { CodigoPais: "FR", IDType: "03", ID: "X-1" };
+        other[part] = invalid;
+        if (role === "software") {
+          record.SistemaInformatico = sistemaWithIdOtro(other);
+        } else if (role === "generator") {
+          const cancellation = record as RegistroAnulacion;
+          cancellation.GeneradoPor = "D";
+          cancellation.Generador = { NombreRazon: "Foreign generator", IDOtro: other };
+        } else if (role === "third party" && "TipoFactura" in record) {
+          record.EmitidaPorTerceroODestinatario = "T";
+          record.Tercero = { NombreRazon: "Foreign issuer", IDOtro: other };
+        } else if (role === "recipient" && "TipoFactura" in record) {
+          record.Destinatarios = {
+            IDDestinatario: [{ NombreRazon: "Foreign buyer", IDOtro: other }],
+          };
+        }
+        const fieldRoot = {
+          software: "SistemaInformatico.IDOtro",
+          "third party": "Tercero.IDOtro",
+          recipient: "Destinatarios.IDDestinatario[0].IDOtro",
+          generator: "Generador.IDOtro",
+        }[role];
+        expect(validate(record)).toContainEqual({
+          code,
+          severity: "error",
+          field: `${fieldRoot}.${part}`,
+          message,
+        });
       }
-      const field = {
-        software: "SistemaInformatico.IDOtro.CodigoPais",
-        "third party": "Tercero.IDOtro.CodigoPais",
-        recipient: "Destinatarios.IDDestinatario[0].IDOtro.CodigoPais",
-        generator: "Generador.IDOtro.CodigoPais",
-      }[role];
-      expect(validate(record)).toContainEqual({
-        code: "IDOTRO_COUNTRY_CODE",
-        severity: "error",
-        field,
-        message: "CodigoPais must be an AEAT CountryType2 code",
-      });
     },
   );
 
@@ -4220,6 +4254,28 @@ describe("validate — pins the exact field, message and severity for every Vali
       message: "CodigoPais must be an AEAT CountryType2 code",
       mutate: (r) => {
         r.SistemaInformatico = sistemaWithIdOtro({ CodigoPais: "ZZ", IDType: "03", ID: "X-1" });
+      },
+    },
+    {
+      description: "IDOTRO_IDTYPE",
+      code: "IDOTRO_IDTYPE",
+      field: "SistemaInformatico.IDOtro.IDType",
+      message: "IDType must be 02 through 07",
+      mutate: (r) => {
+        r.SistemaInformatico = sistemaWithIdOtro({ CodigoPais: "FR", IDType: "01", ID: "X-1" });
+      },
+    },
+    {
+      description: "IDOTRO_ID_SHAPE",
+      code: "IDOTRO_ID_SHAPE",
+      field: "SistemaInformatico.IDOtro.ID",
+      message: "ID must be present and contain at most 20 characters",
+      mutate: (r) => {
+        r.SistemaInformatico = sistemaWithIdOtro({
+          CodigoPais: "FR",
+          IDType: "03",
+          ID: "😀".repeat(21),
+        });
       },
     },
     {

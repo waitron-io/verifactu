@@ -115,6 +115,9 @@ because `F2` and `R5` forbid `Destinatarios`.
 When you supply `IDOtro.CodigoPais` for a software producer, third party, recipient, or cancellation
 generator, use a code from AEAT's `CountryType2` list. A plausible-looking code such as `ZZ` is
 rejected locally before it becomes filing XML; AEAT's special codes, including `QU`, are allowed.
+For each of those `IDOtro` identities, use `IDType` `02`–`07` and supply an `ID` of at most 20
+characters. The XSD permits an empty `ID`, so this shape check does not reject one. AEAT may apply
+further identity rules. Both `validate` and direct `serializeEnvio` calls check these XML limits.
 
 For IVA `S1` detail lines, `validate` checks the official rate list and the dated windows for the
 temporary `5`, `2`, and `7.5` percent rates. When you include `TipoRecargoEquivalencia`, its value

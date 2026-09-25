@@ -31,55 +31,80 @@ describe("escapeXml", () => {
 });
 
 describe("serializeEnvio", () => {
-  it.each(["software", "third party", "recipient", "generator"] as const)(
-    "rejects an XSD-invalid country code on the %s identity before sending",
-    (role) => {
-      const other = { CodigoPais: "ZZ", IDType: "03", ID: "X-1" };
-      const filing =
-        role === "generator"
-          ? {
-              RegistroAnulacion: buildAnulacionRecord({
-                IDEmisorFacturaAnulada: CABECERA.ObligadoEmision.NIF,
-                NumSerieFacturaAnulada: "CANCEL-COUNTRY",
-                FechaExpedicionFacturaAnulada: new Date("2024-10-28T00:00:00+01:00"),
-                GeneradoPor: "D",
-                Generador: { NombreRazon: "Foreign generator", IDOtro: other },
-                Encadenamiento: { PrimerRegistro: "S" },
-                SistemaInformatico: SISTEMA,
-                generadoEn: new Date("2024-10-28T19:20:30+01:00"),
-                offsetMinutes: 60,
-              }),
-            }
-          : {
-              RegistroAlta: buildAltaRecord({
-                ...ALTA_INPUT,
-                ...(role === "software"
-                  ? { SistemaInformatico: { ...withoutNif(SISTEMA), IDOtro: other } }
-                  : {}),
-                ...(role === "third party"
-                  ? {
-                      EmitidaPorTerceroODestinatario: "T" as const,
-                      Tercero: { NombreRazon: "Foreign issuer", IDOtro: other },
-                    }
-                  : {}),
-                ...(role === "recipient"
-                  ? {
-                      Destinatarios: {
-                        IDDestinatario: [{ NombreRazon: "Foreign buyer", IDOtro: other }],
-                      },
-                    }
-                  : {}),
-              }),
-            };
-      const field = {
-        software: "SistemaInformatico.IDOtro.CodigoPais",
-        "third party": "Tercero.IDOtro.CodigoPais",
-        recipient: "Destinatarios.IDDestinatario[0].IDOtro.CodigoPais",
-        generator: "Generador.IDOtro.CodigoPais",
-      }[role];
-      expect(() => serializeEnvio(CABECERA, [filing])).toThrow(
-        `Registro${role === "generator" ? "Anulacion" : "Alta"}[0].${field} must be an AEAT CountryType2 code`,
-      );
+  it("rejects an IDOtro without its mandatory ID from an untyped caller", () => {
+    const invalid = buildAltaRecord({
+      ...ALTA_INPUT,
+      SistemaInformatico: {
+        ...withoutNif(SISTEMA),
+        IDOtro: { CodigoPais: "FR", IDType: "03", ID: undefined as unknown as string },
+      },
+    });
+    expect(() => serializeEnvio(CABECERA, [{ RegistroAlta: invalid }])).toThrow(
+      "RegistroAlta[0].SistemaInformatico.IDOtro.ID must be present and contain at most 20 characters",
+    );
+  });
+
+  it.each([
+    ["country code", "CodigoPais", "ZZ", "CodigoPais must be an AEAT CountryType2 code"],
+    ["identifier type", "IDType", "01", "IDType must be 02 through 07"],
+    [
+      "overlong identifier",
+      "ID",
+      "😀".repeat(21),
+      "ID must be present and contain at most 20 characters",
+    ],
+  ] as const)(
+    "rejects an XSD-invalid %s on each filing identity before sending",
+    (_description, part, invalid, message) => {
+      for (const role of ["software", "third party", "recipient", "generator"] as const) {
+        const other = { CodigoPais: "FR", IDType: "03", ID: "X-1" };
+        other[part] = invalid;
+        const filing =
+          role === "generator"
+            ? {
+                RegistroAnulacion: buildAnulacionRecord({
+                  IDEmisorFacturaAnulada: CABECERA.ObligadoEmision.NIF,
+                  NumSerieFacturaAnulada: "CANCEL-COUNTRY",
+                  FechaExpedicionFacturaAnulada: new Date("2024-10-28T00:00:00+01:00"),
+                  GeneradoPor: "D",
+                  Generador: { NombreRazon: "Foreign generator", IDOtro: other },
+                  Encadenamiento: { PrimerRegistro: "S" },
+                  SistemaInformatico: SISTEMA,
+                  generadoEn: new Date("2024-10-28T19:20:30+01:00"),
+                  offsetMinutes: 60,
+                }),
+              }
+            : {
+                RegistroAlta: buildAltaRecord({
+                  ...ALTA_INPUT,
+                  ...(role === "software"
+                    ? { SistemaInformatico: { ...withoutNif(SISTEMA), IDOtro: other } }
+                    : {}),
+                  ...(role === "third party"
+                    ? {
+                        EmitidaPorTerceroODestinatario: "T" as const,
+                        Tercero: { NombreRazon: "Foreign issuer", IDOtro: other },
+                      }
+                    : {}),
+                  ...(role === "recipient"
+                    ? {
+                        Destinatarios: {
+                          IDDestinatario: [{ NombreRazon: "Foreign buyer", IDOtro: other }],
+                        },
+                      }
+                    : {}),
+                }),
+              };
+        const fieldRoot = {
+          software: "SistemaInformatico.IDOtro",
+          "third party": "Tercero.IDOtro",
+          recipient: "Destinatarios.IDDestinatario[0].IDOtro",
+          generator: "Generador.IDOtro",
+        }[role];
+        expect(() => serializeEnvio(CABECERA, [filing])).toThrow(
+          `Registro${role === "generator" ? "Anulacion" : "Alta"}[0].${fieldRoot}.${message}`,
+        );
+      }
     },
   );
 
