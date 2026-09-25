@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createFakeAeat, keyOf } from "./fake-aeat.js";
 import { createClient } from "../client.js";
-import { resolveEstadoEfectivo } from "../xml/parse-suministro.js";
+import { parseRespuestaSuministro, resolveEstadoEfectivo } from "../xml/parse-suministro.js";
 import type { RegistroAlta, RegistroAnulacion } from "../types.js";
-import { serializeConsulta } from "../xml/serialize.js";
+import { serializeConsulta, serializeEnvio } from "../xml/serialize.js";
 import { withoutNif } from "../../test/fixtures.js";
 
 const cabecera = { ObligadoEmision: { NombreRazon: "Waitron SL", NIF: "89890001K" } };
@@ -605,10 +605,19 @@ describe("fake AEAT — submit", () => {
       const aeat = createFakeAeat();
       const cancellation = {
         ...anulacionFixture("A/INVALID-SIN-PREVIO"),
-        SinRegistroPrevio: value as RegistroAnulacion["SinRegistroPrevio"],
+        SinRegistroPrevio: "N" as const,
       };
-
-      const response = await aeat.client().submit(cabecera, [{ RegistroAnulacion: cancellation }]);
+      const validXml = serializeEnvio(cabecera, [{ RegistroAnulacion: cancellation }]);
+      const invalidXml = validXml.replace(
+        "<sf:SinRegistroPrevio>N</sf:SinRegistroPrevio>",
+        `<sf:SinRegistroPrevio>${value}</sf:SinRegistroPrevio>`,
+      );
+      const wireResponse = await aeat.fetch("https://example.test/Verifactu", {
+        method: "POST",
+        headers: { "Content-Type": "text/xml; charset=utf-8", SOAPAction: '""' },
+        body: invalidXml,
+      });
+      const response = parseRespuestaSuministro(await wireResponse.text());
 
       expect(response.RespuestaLinea[0]).toMatchObject({
         EstadoRegistro: "Incorrecto",

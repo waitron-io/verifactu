@@ -67,6 +67,23 @@ rule from a section whose examples or tables still need line-by-line comparison.
 | Hash specification examples                                                                                                                                              | Canonicalization and `computeHuella` match three published examples                                                                                                                                                                                        | `src/upstream-conformance.test.ts`, fixtures in `test/upstream/`                                                                                                                                                                                                                                                                                                                                                                                                                                                 | The fixtures are packaged by a third party; AEAT's PDF is authoritative                                                                                                                                                                                                              |
 | QR specification examples                                                                                                                                                | QR URL helper matches three supported published examples                                                                                                                                                                                                   | `src/upstream-conformance.test.ts`, fixtures in `test/upstream/`                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Further QR cases and rendering details remain to be audited                                                                                                                                                                                                                          |
 
+### Filing correction and cancellation enums — `SuministroInformacion.xsd`
+
+The alta XSD permits `Subsanacion` `S`/`N`, `RechazoPrevio` `N`/`S`/`X`, `TipoFactura`
+`F1`–`F3`/`R1`–`R5`, `TipoRectificativa` `S`/`I`, and
+`EmitidaPorTerceroODestinatario` `D`/`T`. Cancellation
+`SinRegistroPrevio` and `RechazoPrevio` permit only `S`/`N`, while `GeneradoPor` permits
+`E`/`D`/`T`. The public TypeScript types already express these choices, but JavaScript callers
+could previously pass other values through `validate` and `serializeEnvio`. Both boundaries now
+report the invalid field before XML submission. The required `TipoFactura` also rejects an
+undefined value from an untyped caller. Focused invalid-value tests and offline XSD
+mutations cover every value, including cancellation `RechazoPrevio: "X"` versus the valid alta
+value. This is lexical XSD checking; existing business rules for valid combinations still apply.
+An untyped object missing the `TipoFactura` key entirely is a separate shape problem because
+`isAlta` uses that key to distinguish record kinds; `validate` can therefore throw before returning
+issues for that malformed shape. This branch does not change the discriminator or claim to make
+arbitrary untyped record shapes safe.
+
 ### Cancellation generator — validation §3.1.4.1–3
 
 `serializeEnvio` requires `RegistroAnulacion.IDFactura.IDEmisorFacturaAnulada` to match

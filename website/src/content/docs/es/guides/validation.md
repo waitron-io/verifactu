@@ -92,6 +92,12 @@ factura. Cada factura referenciada recibe comprobaciones locales del NIF, del n�
 principal no se aplica a estas referencias porque nunca entran en el QR. La AEAT sigue siendo quien
 confirma si un NIF está censado.
 
+Si indicas estos campos en un alta, usa `S` o `N` para `Subsanacion` y `N`, `S` o `X` para
+`RechazoPrevio`. Un valor fuera de estas listas se rechaza antes de enviar el XML.
+La misma comprobación solo admite `F1`–`F3` o `R1`–`R5` en `TipoFactura`, `S` o `I` en un
+`TipoRectificativa` presente, y `D` o `T` en un `EmitidaPorTerceroODestinatario` presente. Siguen
+aplicándose las reglas existentes sobre cuándo puedes indicar esos campos.
+
 En un alta, `FechaExpedicionFactura` no puede ser anterior al 28 de octubre de 2024 ni posterior a
 la fecha actual. Tampoco puede preceder a `FechaOperacion` en una línea de IVA o IGIC, salvo que
 esa línea use el régimen `14` o `15`. `FechaOperacion` no puede tener más de 20 años ni ser
@@ -204,9 +210,13 @@ en mayúsculas publicadas por la AEAT. La regla GB/XI sigue la fecha efectiva de
 contenido. Estas comprobaciones se aplican a los registros de alta y anulación. Solo la AEAT puede
 confirmar que una identidad del productor bien formada está censada.
 
-En una anulación, indica `GeneradoPor` y `Generador` juntos, o no indiques ninguno. `Generador`
-necesita exactamente un NIF o `IDOtro`. Su NIF debe ser distinto del del obligado, y `E` exige un
-NIF. Para un `IDOtro` español, `D` permite los tipos `03` y `07`; `T` exige `03` y prohíbe `07`
+En una anulación, indica `GeneradoPor` y `Generador` juntos, o no indiques ninguno. Usa
+`E`, `D` o `T` para `GeneradoPor`; para `SinRegistroPrevio` y `RechazoPrevio`, usa
+`S` o `N`. A diferencia de un alta, una anulación no admite `RechazoPrevio: "X"`.
+
+`Generador` necesita exactamente un NIF o `IDOtro`. Su NIF debe ser distinto del del obligado,
+y `E` exige un NIF. Para un `IDOtro` español, `D` permite los tipos `03` y `07`; `T` exige `03`
+y prohíbe `07`
 con cualquier país. Un identificador `IDType: "02"` debe seguir la estructura NIF-IVA de la UE
 en mayúsculas. Estas comprobaciones locales bloquean el registro. `serializeEnvio` también
 rechaza una anulación cuyo emisor no coincida con el NIF de la cabecera. Solo la AEAT puede

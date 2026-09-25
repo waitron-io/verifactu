@@ -34,6 +34,7 @@ export type ValidationCode =
   | "IDOTRO_COUNTRY_CODE"
   | "IDOTRO_IDTYPE"
   | "IDOTRO_ID_SHAPE"
+  | "XSD_ENUM_VALUE"
   | "CONTROL_CHAR"
   | "HUELLA_ANTERIOR_FORMAT"
   | "HUELLA_ANTERIOR_EQUALS_CURRENT"
@@ -489,6 +490,20 @@ export function validate(
       );
     }
   };
+  const checkXsdEnum = (
+    field: string,
+    value: unknown,
+    allowed: readonly string[],
+    description: string,
+    required = false,
+  ) => {
+    if (
+      (required || value !== undefined) &&
+      (typeof value !== "string" || !allowed.includes(value))
+    ) {
+      add("XSD_ENUM_VALUE", field, `${field} must be ${description}`);
+    }
+  };
 
   const emisor = isAlta(record)
     ? record.IDFactura.IDEmisorFactura
@@ -697,6 +712,9 @@ export function validate(
   }
 
   if (!isAlta(record)) {
+    checkXsdEnum("SinRegistroPrevio", record.SinRegistroPrevio, ["S", "N"], "S or N");
+    checkXsdEnum("RechazoPrevio", record.RechazoPrevio, ["S", "N"], "S or N");
+    checkXsdEnum("GeneradoPor", record.GeneradoPor, ["E", "D", "T"], "E, D or T");
     if (record.GeneradoPor !== undefined && record.Generador === undefined) {
       add("GENERADOR_REQUIRED", "Generador", "Generador is mandatory when GeneradoPor is present");
     }
@@ -766,6 +784,23 @@ export function validate(
     }
     return issues;
   }
+
+  checkXsdEnum("Subsanacion", record.Subsanacion, ["S", "N"], "S or N");
+  checkXsdEnum("RechazoPrevio", record.RechazoPrevio, ["N", "S", "X"], "N, S or X");
+  checkXsdEnum(
+    "TipoFactura",
+    record.TipoFactura,
+    ["F1", "F2", "F3", "R1", "R2", "R3", "R4", "R5"],
+    "F1, F2, F3 or R1 through R5",
+    true,
+  );
+  checkXsdEnum("TipoRectificativa", record.TipoRectificativa, ["S", "I"], "S or I");
+  checkXsdEnum(
+    "EmitidaPorTerceroODestinatario",
+    record.EmitidaPorTerceroODestinatario,
+    ["D", "T"],
+    "D or T",
+  );
 
   if (record.FechaOperacion !== undefined && operacionOrdinal === undefined) {
     add("FECHA_FORMAT", "FechaOperacion", "Date must be DD-MM-YYYY");
