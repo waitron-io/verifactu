@@ -75,6 +75,20 @@ describe("parseEnvio", () => {
     );
   });
 
+  it.each(["NombreRazon", "NIF"] as const)("rejects a parsed issuer missing %s", (field) => {
+    const value = cabecera.ObligadoEmision[field];
+    const xml = serializeEnvio(cabecera, [{ RegistroAlta: alta }]).replace(
+      `<sf:${field}>${value}</sf:${field}>`,
+      "",
+    );
+
+    expect(() => parseEnvio(xml)).toThrow(
+      field === "NombreRazon"
+        ? "Cabecera.ObligadoEmision.NombreRazon must be a string"
+        : "Cabecera.ObligadoEmision.NIF must contain exactly 9 characters",
+    );
+  });
+
   it("§3.1.2 refuses more than 1000 record wrappers on parse", () => {
     const one = serializeEnvio(cabecera, [{ RegistroAlta: alta }]);
     const wrapper = one.match(/<sfLR:RegistroFactura>[\s\S]*?<\/sfLR:RegistroFactura>/)?.[0];

@@ -262,6 +262,7 @@ describe("generated unsigned requests against AEAT XSDs", () => {
       }
       const result = schemaResult(ENVIO_XSD, new XMLSerializer().serializeToString(document));
       expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("RegistroAnulacion");
     },
   );
 

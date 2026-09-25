@@ -1082,6 +1082,8 @@ export function serializeEnvio(
       throw new Error(`${field} must be 31-12-20XX from 2027`);
     }
   }
+  // Run the shared lexical guard after the serializer's stricter control, content, and date rules
+  // so their established errors win; parseEnvio uses this guard without those business policies.
   assertSubmissionHeaderXsd(cabecera);
   registros.forEach((entry, index) => {
     const hasAlta = entry != null && typeof entry === "object" && "RegistroAlta" in entry;
