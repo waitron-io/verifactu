@@ -14,7 +14,7 @@ is accepted. The [source watch](sources/README.md) checks for publication change
 | [QR specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf)               | 0.5.0, 10 December 2025                    | §§2–10 and 12 classified; verifiable QR URL rules checked; printed layout and lookup responses outside library scope       |
 | [Developer FAQ](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/FAQs-Desarrolladores.pdf)                              | 1.3, 4 December 2025                       | Pending entry-by-entry review                                                                                              |
 | [Public FAQ](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes.html)                                 | Pages listed by AEAT on 22 September 2026  | Pending entry-by-entry review                                                                                              |
-| [XSD and WSDL files](schemas/README.md)                                                                                                                            | Versions and checksums in the linked index | Pending element-by-element review                                                                                          |
+| [XSD and WSDL files](schemas/README.md)                                                                                                                            | Versions and checksums in the linked index | Four unsigned generated request shapes checked against XSD; element-by-element review still pending                        |
 
 ## Web-service description coverage map
 
@@ -234,10 +234,15 @@ raw-request, and client tests cover rejected values before network transport. Ot
 code-list values still need an element-by-element check. The raw request parser also rejects
 duplicate `DatosAdicionalesRespuesta` blocks, which otherwise become an array and silently drop
 both option values before the shared guard runs.
-An `xmllint --xpath` extraction of the bundled XSD confirmed exactly `01`–`12` and `S`. A full
-offline `xmllint --schema` check of a consultation request could not compile because the bundled
-common schema imports the external XML-signature schema; these tests do not claim whole-request
-XSD validity.
+An `xmllint --xpath` extraction of the bundled XSD confirmed exactly `01`–`12` and `S`.
+`src/xsd-conformance.test.ts` now checks generated unsigned message bodies against the bundled
+AEAT request schemas. `test/xsd/catalog.xml` resolves the external XML-signature import to a
+local placeholder for its optional `Signature` element; the test refuses signed messages because
+that placeholder does not validate signatures. The four passing request shapes are a minimal
+issuer consulta, a recipient consulta with every filter family, an alta, and a cancellation. A
+deliberately invalid consultation year is rejected by the schema, confirming that a failed import
+cannot produce a false green result. These are fixture-level XSD checks, not proof that every
+public input combination or SOAP envelope is schema-valid or accepted by AEAT.
 
 ### Consultation request period — service description §6.4.1 and `sf:YearType`
 

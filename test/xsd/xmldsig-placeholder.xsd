@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schema xmlns="http://www.w3.org/2001/XMLSchema"
+        targetNamespace="http://www.w3.org/2000/09/xmldsig#"
+        elementFormDefault="qualified">
+  <!-- Only unsigned messages are tested; this resolves AEAT's optional Signature reference. -->
+  <element name="Signature" type="anyType"/>
+</schema>

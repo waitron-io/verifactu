@@ -22,5 +22,6 @@ jobs:
       - run: node --test scripts/source-watch.test.mjs
       - run: node --test scripts/live-aeat.test.mjs
       - run: node scripts/pack-smoke.mjs
+      - run: sudo apt-get update && sudo apt-get install -y libxml2-utils
       - run: npm run test:coverage
       - run: npm run mutation
