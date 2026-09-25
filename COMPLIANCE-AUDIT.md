@@ -253,6 +253,28 @@ and continuing pages, malformed flags, missing or repeated elements, and blank i
 This is a response-boundary check, not whole-response XSD validation; AEAT preproduction remains
 the source of actual responses.
 
+### Consultation response fields — service description §6.4.2 and `RespuestaConsultaLR.xsd`
+
+The response schema requires `Cabecera`, `PeriodoImputacion`, `IndicadorPaginacion`, and
+`ResultadoConsulta` in that order. It allows up to 10,000 records followed by an optional
+`ClavePaginacion`. `parseRespuestaConsulta` is a projection of this response, not a complete
+schema validator: it exposes the two flags, a continuation cursor when the flag is `S`, and the
+record list, but it does not expose or validate the echoed header and period or enforce the page
+size. A namespace-qualified fixture follows the schema's wrapper and element order; it has not
+been validated with the full imported schema set.
+
+| Published record field                                    | Parser behavior                                                                                                                                            | Evidence and limit                                                                                 |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `IDFactura`                                               | Returns its three identity fields and rejects an absent, repeated, or incomplete identity                                                                  | `src/xml/parse-consulta.test.ts`; field formats are not fully schema-validated                     |
+| `DatosRegistroFacturacion`                                | Retains the stored subtree and literal string values, including hash and amount fields; a present empty block becomes `{}` and an absent block is rejected | `src/xml/parse-consulta.test.ts`; nested data fields, limits, and combinations are not validated   |
+| `DatosPresentacion`                                       | Returns its three fields when present                                                                                                                      | `src/xml/parse-consulta.test.ts`; the parser does not validate that all three are present together |
+| `EstadoRegistro.TimestampUltimaModificacion`              | Returns the required timestamp literal; rejects a missing or blank value                                                                                   | `src/xml/parse-consulta.test.ts`; date-time syntax is not validated                                |
+| `EstadoRegistro.EstadoRegistro` and optional error detail | Checks the status against `Correcto`, `AceptadoConErrores`, and `Anulado`; converts an error code to a number and returns its description                  | `src/xml/parse-consulta.test.ts`; no rule requires error detail for any one status                 |
+
+The required-block check prevents a malformed response from returning `undefined` where the
+public `RegistroConsultado` type promises an object or timestamp. It does not establish that an
+actual AEAT response contains all fields; that still needs a preproduction observation.
+
 ### Own-record hash validation
 
 Hash specification §2 allows SHA-256, represented by `TipoHuella: "01"` in both builders. Section

@@ -116,7 +116,72 @@ const WITH_ERROR_DETAIL = `<?xml version="1.0" encoding="UTF-8"?>
     </soapenv:Body>
   </soapenv:Envelope>`;
 
+// Follows RespuestaConsultaLR.xsd's required wrapper and element order. The other compact
+// fixtures isolate individual parser behaviours; they are not full response documents.
+const SCHEMA_SHAPED = `<?xml version="1.0" encoding="UTF-8"?>
+  <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"
+      xmlns:rc="https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/RespuestaConsultaLR.xsd"
+      xmlns:sf="https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/SuministroInformacion.xsd">
+    <soap:Body>
+      <rc:RespuestaConsultaFactuSistemaFacturacion>
+        <rc:Cabecera>
+          <sf:IDVersion>1.0</sf:IDVersion>
+          <sf:ObligadoEmision><sf:NombreRazon>Waitron SL</sf:NombreRazon><sf:NIF>89890001K</sf:NIF></sf:ObligadoEmision>
+        </rc:Cabecera>
+        <rc:PeriodoImputacion><rc:Ejercicio>2026</rc:Ejercicio><rc:Periodo>07</rc:Periodo></rc:PeriodoImputacion>
+        <rc:IndicadorPaginacion>S</rc:IndicadorPaginacion>
+        <rc:ResultadoConsulta>ConDatos</rc:ResultadoConsulta>
+        <rc:RegistroRespuestaConsultaFactuSistemaFacturacion>
+          <rc:IDFactura>
+            <sf:IDEmisorFactura>89890001K</sf:IDEmisorFactura>
+            <sf:NumSerieFactura>INV/42</sf:NumSerieFactura>
+            <sf:FechaExpedicionFactura>20-07-2026</sf:FechaExpedicionFactura>
+          </rc:IDFactura>
+          <rc:DatosRegistroFacturacion><rc:TipoHuella>01</rc:TipoHuella><rc:Huella>ABC</rc:Huella></rc:DatosRegistroFacturacion>
+          <rc:DatosPresentacion>
+            <sf:NIFPresentador>89890001K</sf:NIFPresentador>
+            <sf:TimestampPresentacion>2026-07-21T09:00:00+02:00</sf:TimestampPresentacion>
+            <sf:IdPeticion>PET-42</sf:IdPeticion>
+          </rc:DatosPresentacion>
+          <rc:EstadoRegistro>
+            <rc:TimestampUltimaModificacion>2026-07-21T09:10:00+02:00</rc:TimestampUltimaModificacion>
+            <rc:EstadoRegistro>Correcto</rc:EstadoRegistro>
+          </rc:EstadoRegistro>
+        </rc:RegistroRespuestaConsultaFactuSistemaFacturacion>
+        <rc:ClavePaginacion>
+          <sf:IDEmisorFactura>89890001K</sf:IDEmisorFactura>
+          <sf:NumSerieFactura>INV/42</sf:NumSerieFactura>
+          <sf:FechaExpedicionFactura>20-07-2026</sf:FechaExpedicionFactura>
+        </rc:ClavePaginacion>
+      </rc:RespuestaConsultaFactuSistemaFacturacion>
+    </soap:Body>
+  </soap:Envelope>`;
+
 describe("parseRespuestaConsulta", () => {
+  it("reads a namespace-qualified response with the schema's required wrappers and order", () => {
+    const response = parseRespuestaConsulta(SCHEMA_SHAPED);
+    expect(response).toMatchObject({
+      ResultadoConsulta: "ConDatos",
+      IndicadorPaginacion: "S",
+      ClavePaginacion: {
+        IDEmisorFactura: "89890001K",
+        NumSerieFactura: "INV/42",
+        FechaExpedicionFactura: "20-07-2026",
+      },
+    });
+    expect(response.registros[0]).toMatchObject({
+      IDFactura: { NumSerieFactura: "INV/42" },
+      DatosRegistroFacturacion: { Huella: "ABC", TipoHuella: "01" },
+      TimestampUltimaModificacion: "2026-07-21T09:10:00+02:00",
+      EstadoRegistro: "Correcto",
+      DatosPresentacion: {
+        NIFPresentador: "89890001K",
+        TimestampPresentacion: "2026-07-21T09:00:00+02:00",
+        IdPeticion: "PET-42",
+      },
+    });
+  });
+
   it("uses the official masculine consulta-state values", () => {
     expectTypeOf<EstadoRegistroConsulta>().toEqualTypeOf<
       "Correcto" | "AceptadoConErrores" | "Anulado"
@@ -196,6 +261,26 @@ describe("parseRespuestaConsulta", () => {
     // changed.
     const [registro] = parseRespuestaConsulta(RESPONSE).registros;
     expect(registro?.TimestampUltimaModificacion).toBe("2024-06-15T08:45:12+02:00");
+  });
+
+  it("rejects a record missing its required data block or modification timestamp", () => {
+    const dataBlock =
+      "<rc:DatosRegistroFacturacion><rc:TipoHuella>01</rc:TipoHuella><rc:Huella>ABC</rc:Huella></rc:DatosRegistroFacturacion>";
+    expect(() => parseRespuestaConsulta(SCHEMA_SHAPED.replace(dataBlock, ""))).toThrow(
+      "Consulta record is missing DatosRegistroFacturacion",
+    );
+    const timestamp =
+      "<rc:TimestampUltimaModificacion>2026-07-21T09:10:00+02:00</rc:TimestampUltimaModificacion>";
+    expect(() => parseRespuestaConsulta(SCHEMA_SHAPED.replace(timestamp, ""))).toThrow(
+      "Consulta record is missing TimestampUltimaModificacion",
+    );
+  });
+
+  it("represents a present but empty DatosRegistroFacturacion block as an empty object", () => {
+    const dataBlock =
+      "<rc:DatosRegistroFacturacion><rc:TipoHuella>01</rc:TipoHuella><rc:Huella>ABC</rc:Huella></rc:DatosRegistroFacturacion>";
+    const xml = SCHEMA_SHAPED.replace(dataBlock, "<rc:DatosRegistroFacturacion/>");
+    expect(parseRespuestaConsulta(xml).registros[0]?.DatosRegistroFacturacion).toEqual({});
   });
 
   it("uses the consulta enum, which has Anulado and no Incorrecta", () => {
