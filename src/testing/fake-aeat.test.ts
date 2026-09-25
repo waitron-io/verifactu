@@ -484,6 +484,25 @@ describe("fake AEAT — submit", () => {
     },
   );
 
+  it("processes a cancellation before its matching alta in submission order", async () => {
+    const aeat = createFakeAeat();
+    const response = await aeat
+      .client()
+      .submit(cabecera, [
+        { RegistroAnulacion: anulacionFixture("A/ORDERED-ANUL") },
+        { RegistroAlta: altaFixture("A/ORDERED-ANUL") },
+      ]);
+
+    expect(response.EstadoEnvio).toBe("ParcialmenteCorrecto");
+    expect(
+      response.RespuestaLinea.map((line) => [line.EstadoRegistro, line.CodigoErrorRegistro]),
+    ).toEqual([
+      ["Incorrecto", 3002],
+      ["Correcto", undefined],
+    ]);
+    expect(aeat.stored()[0]).toMatchObject({ tipo: "alta", estado: "Correcto" });
+  });
+
   it("accepts an anulación marked SinRegistroPrevio S when AEAT has no record", async () => {
     const aeat = createFakeAeat();
     const cancellation = { ...anulacionFixture("A/NO-PRIOR"), SinRegistroPrevio: "S" as const };
@@ -542,7 +561,12 @@ describe("fake AEAT — submit", () => {
       },
     ]);
 
-    expect(response.RespuestaLinea[0]?.EstadoRegistro).toBe("Incorrecto");
+    expect(response.RespuestaLinea[0]).toMatchObject({
+      EstadoRegistro: "Incorrecto",
+      CodigoErrorRegistro: 3000,
+    });
+    expect(response.RespuestaLinea[0]?.RegistroDuplicado).toBeUndefined();
+    expect(resolveEstadoEfectivo(response.RespuestaLinea[0]!)).toBe("duplicate_unknown");
     expect(aeat.stored()[0]).toMatchObject({ tipo: "alta", estado: "Correcto" });
   });
 
@@ -561,12 +585,37 @@ describe("fake AEAT — submit", () => {
       },
     ]);
 
-    expect(response.RespuestaLinea[0]?.EstadoRegistro).toBe("Incorrecto");
+    expect(response.RespuestaLinea[0]).toMatchObject({
+      EstadoRegistro: "Incorrecto",
+      CodigoErrorRegistro: 3000,
+    });
+    expect(response.RespuestaLinea[0]?.RegistroDuplicado).toBeUndefined();
+    expect(resolveEstadoEfectivo(response.RespuestaLinea[0]!)).toBe("duplicate_unknown");
     expect(aeat.stored()[0]).toMatchObject({
       tipo: "anulacion",
       huella: cancellation.Huella,
     });
   });
+
+  it.each(["X", "s", ""])(
+    "rejects an out-of-domain SinRegistroPrevio value %s instead of treating it as N",
+    async (value) => {
+      const aeat = createFakeAeat();
+      const cancellation = {
+        ...anulacionFixture("A/INVALID-SIN-PREVIO"),
+        SinRegistroPrevio: value as RegistroAnulacion["SinRegistroPrevio"],
+      };
+
+      const response = await aeat.client().submit(cabecera, [{ RegistroAnulacion: cancellation }]);
+
+      expect(response.RespuestaLinea[0]).toMatchObject({
+        EstadoRegistro: "Incorrecto",
+        CodigoErrorRegistro: 1276,
+      });
+      expect(response.EstadoEnvio).toBe("Incorrecto");
+      expect(aeat.stored()).toEqual([]);
+    },
+  );
 
   it("accepts an anulación of a stored alta, then treats its resubmission as a duplicate", async () => {
     const aeat = createFakeAeat();

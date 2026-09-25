@@ -200,6 +200,25 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
         );
         continue;
       }
+      if (
+        !forced &&
+        anulacion?.SinRegistroPrevio !== undefined &&
+        anulacion.SinRegistroPrevio !== "S" &&
+        anulacion.SinRegistroPrevio !== "N"
+      ) {
+        rejectedCount += 1;
+        lineas.push(
+          lineaXml(
+            idf,
+            "Incorrecto",
+            1276,
+            "Valor incorrecto campo SinRegistroPrevio",
+            ref,
+            operacion,
+          ),
+        );
+        continue;
+      }
       // A normal cancellation needs a stored record; SinRegistroPrevio=S is the no-prior path.
       if (!forced && !existing && anulacion && anulacion.SinRegistroPrevio !== "S") {
         rejectedCount += 1;
@@ -208,11 +227,17 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
         );
         continue;
       }
+      if (!forced && existing && anulacion?.SinRegistroPrevio === "S") {
+        // The stored record is not an accepted instance of this refused cancellation.
+        rejectedCount += 1;
+        lineas.push(duplicadoLineaXml(idf, undefined, ref, operacion, undefined));
+        continue;
+      }
       if (
         existing &&
         !(
-          anulacion &&
-          anulacion.SinRegistroPrevio !== "S" &&
+          tipo === "anulacion" &&
+          anulacion?.SinRegistroPrevio !== "S" &&
           existing.tipo === "alta" &&
           existing.estado !== "Anulado"
         ) &&

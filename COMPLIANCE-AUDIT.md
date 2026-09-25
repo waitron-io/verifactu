@@ -332,6 +332,16 @@ ordinary cancellation with no prior record using `3002`, accepts the special no-
 and refuses that path against an existing alta. Focused fake-AEAT tests cover each state and
 preserve the stored record on rejection. Existing standalone-cancellation fixtures now carry
 the published `S` indicator rather than relying on an invalid ordinary cancellation.
+The fake also refuses that path against an existing cancellation, returning `3000` without
+duplicate details in either existing-record case so `resolveEstadoEfectivo` cannot mistake the
+refused operation for an accepted one. Out-of-domain `SinRegistroPrevio` values return the
+[published `1276` invalid-field code](https://prewww2.aeat.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1.0/cont/ws/errores.properties)
+instead of being treated as `N`. Submission order matters: an ordinary cancellation placed
+before its matching alta in one batch is rejected before that alta is stored.
+
+Annex §6.2 names the allowed and forbidden states but not their numeric error codes. The fake
+uses the published general `3000`/`3002` code meanings for these cases; the exact AEAT response
+code and duplicate-detail shape for each state remain a preproduction check.
 
 This is not full annex §6 fidelity. The fake still does not track the history needed for
 `RechazoPrevio: "S"` after a rejected subsanación or cancellation, and it does not yet

@@ -26,15 +26,23 @@ line is correct, `ParcialmenteCorrecto` if a line is accepted with errors or acc
 lines are mixed, and `Incorrecto` if every line is rejected. An all-rejected batch has no `CSV`.
 A duplicate-only retry is also rejected as a submission even when the original record was accepted;
 use `resolveEstadoEfectivo` on its response line to distinguish that case from a record that was
-never registered.
+never registered. If it returns `duplicate_unknown`, use a consulta to check the stored record;
+do not treat the attempted operation as accepted.
 
 For an alta correction, `Subsanacion: "S"` with `RechazoPrevio` omitted or `N` replaces an
 existing fake record, including one that was annulled. Without that prior record, the fake
 returns error `3002`; use `RechazoPrevio: "X"` for the published no-prior-record path. The fake
 also requires an existing record for an ordinary cancellation. If none exists, set
 `SinRegistroPrevio: "S"`; without it, the fake returns `3002`. It rejects that special path
-when a record already exists. The fake does not track rejected correction attempts or implement
-every cancellation state in
+when a record already exists. That refusal returns `3000` without duplicate details, so
+`resolveEstadoEfectivo` returns `duplicate_unknown`, not `accepted`. An invalid
+`SinRegistroPrevio` value returns `1276`. If you put a cancellation before its matching alta in
+one batch, the fake rejects the cancellation first; submission order matters.
+
+The fake uses published error-code meanings, but the annex does not assign numeric codes to
+these cancellation-table outcomes. Do not assume that AEAT returns the same code for each case.
+The fake does not track rejected correction or cancellation attempts or implement every
+cancellation state in
 [AEAT's annex §6](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Validaciones_Errores_Veri-Factu.pdf).
 Check those workflows in AEAT preproduction.
 
