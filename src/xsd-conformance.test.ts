@@ -1,15 +1,18 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
 import { describe, expect, it } from "vitest";
 import { CABECERA, ALTA_INPUT, SISTEMA } from "../test/fixtures.js";
 import { buildAltaRecord, buildAnulacionRecord } from "./records.js";
+import { AEAT_COUNTRY_TYPE2_CODES, isValidConsultaCountryCode } from "./xml/consulta-country.js";
 import { NS_LRC, NS_SF, serializeConsulta, serializeEnvio } from "./xml/serialize.js";
 
 const SOAP_NS = "http://schemas.xmlsoap.org/soap/envelope/";
 const SIGNATURE_NS = "http://www.w3.org/2000/09/xmldsig#";
 const CATALOG = fileURLToPath(new URL("../test/xsd/catalog.xml", import.meta.url));
 const CONSULTA_XSD = fileURLToPath(new URL("../schemas/ConsultaLR.xsd", import.meta.url));
+const INFO_XSD = fileURLToPath(new URL("../schemas/SuministroInformacion.xsd", import.meta.url));
 const ENVIO_XSD = fileURLToPath(new URL("../schemas/SuministroLR.xsd", import.meta.url));
 
 function soapBodyElement(xml: string): string {
@@ -374,6 +377,26 @@ describe("generated unsigned requests against AEAT XSDs", () => {
     },
   );
 
+  it("rejects an eight-character pagination issuer NIF under the request XSD", () => {
+    const body = soapBodyElement(
+      serializeConsulta(CABECERA, {
+        Ejercicio: "2026",
+        Periodo: "07",
+        ClavePaginacion: {
+          IDEmisorFactura: CABECERA.ObligadoEmision.NIF,
+          NumSerieFactura: "INV/41",
+          FechaExpedicionFactura: "20-07-2026",
+        },
+      }),
+    );
+    const document = new DOMParser().parseFromString(body, "text/xml");
+    const leaf = document.getElementsByTagNameNS(NS_SF, "IDEmisorFactura").item(0);
+    if (!leaf) throw new Error("Consulta fixture has no pagination issuer NIF");
+    leaf.textContent = "12345678";
+    const result = schemaResult(CONSULTA_XSD, new XMLSerializer().serializeToString(document));
+    expect(result.status, result.stderr).not.toBe(0);
+  });
+
   it.each([
     [
       "exact date",
@@ -446,6 +469,175 @@ describe("generated unsigned requests against AEAT XSDs", () => {
     if (!leaf) throw new Error("Consulta fixture has no exact date");
     leaf.textContent = "٢٠-٠٧-٢٠٢٦";
     const result = schemaResult(CONSULTA_XSD, new XMLSerializer().serializeToString(document));
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it.each([
+    ["counterpart name", "Contraparte", "NombreRazon", "X".repeat(121)],
+    ["counterpart NIF", "Contraparte", "NIF", "12345678"],
+    ["software ID", "SistemaInformatico", "IdSistemaInformatico", "ABC"],
+    ["software installation", "SistemaInformatico", "NumeroInstalacion", "X".repeat(101)],
+    ["software flag", "SistemaInformatico", "TipoUsoPosibleMultiOT", "X"],
+  ] as const)("rejects an XSD-invalid consultation %s", (_case, parentName, leafName, invalid) => {
+    const body = soapBodyElement(
+      serializeConsulta(CABECERA, {
+        Ejercicio: "2026",
+        Periodo: "07",
+        Contraparte: { NombreRazon: "Buyer", NIF: "11111111H" },
+        SistemaInformatico: {
+          NombreRazon: "Software",
+          NIF: "89890001K",
+          IdSistemaInformatico: "AB",
+          NumeroInstalacion: "1",
+          TipoUsoPosibleMultiOT: "S",
+        },
+      }),
+    );
+    expect(schemaResult(CONSULTA_XSD, body).status).toBe(0);
+    const document = new DOMParser().parseFromString(body, "text/xml");
+    const parent = document.getElementsByTagNameNS(NS_LRC, parentName).item(0);
+    const leaf = parent?.getElementsByTagNameNS(NS_SF, leafName).item(0);
+    if (!leaf) throw new Error(`Consulta fixture has no ${parentName}.${leafName}`);
+    leaf.textContent = invalid;
+    const result = schemaResult(CONSULTA_XSD, new XMLSerializer().serializeToString(document));
+    expect(result.status, result.stderr).not.toBe(0);
+  });
+
+  it.each(["missing", "both"] as const)(
+    "rejects a consultation counterpart with %s identity branches in the XSD",
+    (caseName) => {
+      const body = soapBodyElement(
+        serializeConsulta(CABECERA, {
+          Ejercicio: "2026",
+          Periodo: "07",
+          Contraparte: { NombreRazon: "Buyer", NIF: "11111111H" },
+        }),
+      );
+      const document = new DOMParser().parseFromString(body, "text/xml");
+      const counterpart = document.getElementsByTagNameNS(NS_LRC, "Contraparte").item(0);
+      const nif = counterpart?.getElementsByTagNameNS(NS_SF, "NIF").item(0);
+      if (!counterpart || !nif) throw new Error("Consulta fixture has no counterpart NIF");
+      if (caseName === "missing") {
+        counterpart.removeChild(nif);
+      } else {
+        const other = document.createElementNS(NS_SF, "sf:IDOtro");
+        const type = document.createElementNS(NS_SF, "sf:IDType");
+        const id = document.createElementNS(NS_SF, "sf:ID");
+        type.textContent = "03";
+        id.textContent = "FR123";
+        other.appendChild(type);
+        other.appendChild(id);
+        counterpart.appendChild(other);
+      }
+      const result = schemaResult(CONSULTA_XSD, new XMLSerializer().serializeToString(document));
+      expect(result.status, result.stderr).not.toBe(0);
+    },
+  );
+
+  it("counts Unicode code points in consultation identity text limits", () => {
+    const body = soapBodyElement(
+      serializeConsulta(CABECERA, {
+        Ejercicio: "2026",
+        Periodo: "07",
+        Contraparte: { NombreRazon: "😀".repeat(120), NIF: "11111111H" },
+      }),
+    );
+    const result = schemaResult(CONSULTA_XSD, body);
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it("rejects both consultation header identities in the XSD", () => {
+    const body = soapBodyElement(serializeConsulta(CABECERA, { Ejercicio: "2026", Periodo: "07" }));
+    const document = new DOMParser().parseFromString(body, "text/xml");
+    const header = document.getElementsByTagNameNS(NS_LRC, "Cabecera").item(0);
+    if (!header) throw new Error("Consulta fixture has no Cabecera");
+    const recipient = document.createElementNS(NS_SF, "sf:Destinatario");
+    const name = document.createElementNS(NS_SF, "sf:NombreRazon");
+    const nif = document.createElementNS(NS_SF, "sf:NIF");
+    name.textContent = "Buyer";
+    nif.textContent = "11111111H";
+    recipient.appendChild(name);
+    recipient.appendChild(nif);
+    header.appendChild(recipient);
+    const result = schemaResult(CONSULTA_XSD, new XMLSerializer().serializeToString(document));
+    expect(result.status, result.stderr).not.toBe(0);
+  });
+
+  it("keeps the consultation country-code guard equal to AEAT CountryType2", () => {
+    const schema = new DOMParser().parseFromString(readFileSync(INFO_XSD, "utf8"), "text/xml");
+    const namespace = "http://www.w3.org/2001/XMLSchema";
+    const countryType = Array.from(schema.getElementsByTagNameNS(namespace, "simpleType")).find(
+      (element) => element.getAttribute("name") === "CountryType2",
+    );
+    if (!countryType) throw new Error("AEAT schema has no CountryType2");
+    const expected = new Set(
+      Array.from(countryType.getElementsByTagNameNS(namespace, "enumeration"), (element) =>
+        element.getAttribute("value"),
+      ),
+    );
+    expect([...AEAT_COUNTRY_TYPE2_CODES].sort()).toEqual([...expected].sort());
+    for (const code of AEAT_COUNTRY_TYPE2_CODES) {
+      expect(isValidConsultaCountryCode(code)).toBe(true);
+    }
+    for (const code of ["", "fr", "FRA", "ZZ", " AA", "A1"]) {
+      expect(isValidConsultaCountryCode(code)).toBe(false);
+    }
+  });
+
+  it("accepts QU but rejects ZZ under AEAT CountryType2", () => {
+    const body = soapBodyElement(
+      serializeConsulta(CABECERA, {
+        Ejercicio: "2026",
+        Periodo: "07",
+        Contraparte: {
+          NombreRazon: "Foreign",
+          IDOtro: { CodigoPais: "QU", IDType: "03", ID: "X" },
+        },
+      }),
+    );
+    expect(schemaResult(CONSULTA_XSD, body).status).toBe(0);
+    const document = new DOMParser().parseFromString(body, "text/xml");
+    const country = document.getElementsByTagNameNS(NS_SF, "CodigoPais").item(0);
+    if (!country) throw new Error("Consulta fixture has no CodigoPais");
+    country.textContent = "ZZ";
+    const result = schemaResult(CONSULTA_XSD, new XMLSerializer().serializeToString(document));
+    expect(result.status, result.stderr).not.toBe(0);
+  });
+
+  it.each([
+    ["IDType", "01"],
+    ["ID", "X".repeat(21)],
+  ] as const)("rejects an XSD-invalid consultation IDOtro.%s", (field, invalid) => {
+    const body = soapBodyElement(
+      serializeConsulta(CABECERA, {
+        Ejercicio: "2026",
+        Periodo: "07",
+        Contraparte: { NombreRazon: "Foreign", IDOtro: { IDType: "03", ID: "FR123" } },
+      }),
+    );
+    const document = new DOMParser().parseFromString(body, "text/xml");
+    const leaf = document.getElementsByTagNameNS(NS_SF, field).item(0);
+    if (!leaf) throw new Error(`Consulta fixture has no ${field}`);
+    leaf.textContent = invalid;
+    const result = schemaResult(CONSULTA_XSD, new XMLSerializer().serializeToString(document));
+    expect(result.status, result.stderr).not.toBe(0);
+  });
+
+  it("allows empty values in required max-length consultation text elements", () => {
+    const body = soapBodyElement(
+      serializeConsulta(CABECERA, {
+        Ejercicio: "2026",
+        Periodo: "07",
+        Contraparte: { NombreRazon: "", IDOtro: { IDType: "03", ID: "" } },
+        SistemaInformatico: {
+          NombreRazon: "",
+          NIF: "89890001K",
+          IdSistemaInformatico: "",
+          NumeroInstalacion: "",
+        },
+      }),
+    );
+    const result = schemaResult(CONSULTA_XSD, body);
     expect(result.status, result.stderr).toBe(0);
   });
 });

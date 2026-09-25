@@ -1,5 +1,8 @@
 import { asArray, parser } from "./parse-common.js";
 import {
+  assertConsultaHeaderPersona,
+  assertConsultaNif,
+  assertConsultaPersona,
   assertConsultaResponseOptions,
   isValidConsultaEjercicio,
   isValidConsultaFecha,
@@ -154,7 +157,13 @@ function cabeceraOf(raw: RawCabecera): Cabecera {
 }
 
 function cabeceraConsultaOf(raw: RawCabecera): CabeceraConsulta {
+  if (raw.ObligadoEmision !== undefined && raw.Destinatario !== undefined) {
+    throw new Error(
+      "Consulta Cabecera must contain exactly one of ObligadoEmision or Destinatario",
+    );
+  }
   if (raw.ObligadoEmision) {
+    assertConsultaHeaderPersona("ObligadoEmision", raw.ObligadoEmision);
     if (raw.IndicadorRepresentante !== undefined && raw.IndicadorRepresentante !== "S") {
       throw new Error("Consulta IndicadorRepresentante must be S");
     }
@@ -168,7 +177,10 @@ function cabeceraConsultaOf(raw: RawCabecera): CabeceraConsulta {
   if (raw.IndicadorRepresentante !== undefined) {
     throw new Error("Consulta IndicadorRepresentante requires ObligadoEmision");
   }
-  if (raw.Destinatario) return { Destinatario: { ...raw.Destinatario } };
+  if (raw.Destinatario) {
+    assertConsultaHeaderPersona("Destinatario", raw.Destinatario);
+    return { Destinatario: { ...raw.Destinatario } };
+  }
   throw new Error("Consulta Cabecera does not identify an issuer or recipient");
 }
 
@@ -368,6 +380,9 @@ export function parseConsulta(xml: string): { cabecera: CabeceraConsulta; filtro
   if (!isValidConsultaPeriodo(f.PeriodoImputacion.Periodo)) {
     throw new Error("Consulta Periodo must be 01 through 12");
   }
+  for (const field of ["Contraparte", "SistemaInformatico"] as const) {
+    if (f[field] !== undefined) assertConsultaPersona(field, f[field]);
+  }
   if (f.NumSerieFactura !== undefined && !isValidConsultaNumSerieFactura(f.NumSerieFactura)) {
     throw new Error("Consulta NumSerieFactura must contain 1 to 60 characters");
   }
@@ -420,6 +435,9 @@ export function parseConsulta(xml: string): { cabecera: CabeceraConsulta; filtro
     throw new Error(
       "Consulta ClavePaginacion.NumSerieFactura must be present and contain 1 to 60 characters",
     );
+  }
+  if (f.ClavePaginacion !== undefined) {
+    assertConsultaNif("ClavePaginacion.IDEmisorFactura", f.ClavePaginacion.IDEmisorFactura);
   }
   if (
     f.ClavePaginacion !== undefined &&

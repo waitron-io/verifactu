@@ -65,11 +65,16 @@ Usa entre 1 y 60 caracteres para `NumSerieFactura`. Usa `RefExterna` si guardast
 propia en el registro; puede estar vacío, pero no superar los 60 caracteres. El cliente comprueba
 estos límites, incluido el número de factura de `ClavePaginacion`, antes del envío porque el
 esquema de AEAT rechaza valores más largos.
+`ClavePaginacion.IDEmisorFactura` debe contener un NIF de nueve caracteres; el cliente comprueba
+su longitud antes del envío.
 
 Usa `Contraparte` con `NombreRazon` y el `NIF` o `IDOtro` del cliente para buscar sus facturas.
 `SistemaInformatico` limita el resultado a una instalación. Indica `NombreRazon`, `NIF` o
 `IDOtro`, `IdSistemaInformatico` y `NumeroInstalacion`. El nombre del software, la versión y los
 indicadores de uso son opcionales.
+El cliente comprueba estas identidades y los límites de texto del esquema antes del envío. Para
+`IDOtro`, usa un código de país admitido por la AEAT y un tipo de identificación entre `02` y
+`07`. Indica emisor o destinatario en la cabecera de consulta, nunca ambos.
 
 Pide `DatosAdicionalesRespuesta` solo cuando necesites el nombre del emisor o los datos del
 software en cada resultado. `ConsultaLR.xsd` de la AEAT indica que estos campos pueden ralentizar

@@ -62,12 +62,17 @@ Keep `NumSerieFactura` between 1 and 60 characters. Use `RefExterna` when you st
 reference on the record; it may be empty but cannot exceed 60 characters. The client checks these
 limits, including the invoice number in `ClavePaginacion`, before sending because AEAT's request
 schema rejects longer values.
+`ClavePaginacion.IDEmisorFactura` must contain a nine-character NIF; the client checks its length
+before sending.
 
 Use `Contraparte` with the customer's `NombreRazon` and either `NIF` or `IDOtro` when you need
 that customer's records.
 `SistemaInformatico` narrows the result to one software installation. Supply `NombreRazon`, either
 `NIF` or `IDOtro`, `IdSistemaInformatico`, and `NumeroInstalacion`. The software name, version, and
 use flags are optional.
+The client checks these identities and the schema's text lengths before sending. For `IDOtro`,
+use an AEAT country code and an identifier type from `02` to `07`. Supply either issuer or
+recipient in the consultation header, never both.
 
 Request `DatosAdicionalesRespuesta` only when you need the issuer's name or software details in
 each result. AEAT's `ConsultaLR.xsd` says these fields can slow its response. The same schema

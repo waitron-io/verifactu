@@ -556,6 +556,24 @@ describe("parseConsulta full header and date choice", () => {
     );
   });
 
+  it("rejects a parsed pagination key with an XSD-invalid issuer NIF", () => {
+    const valid = serializeConsulta(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      ClavePaginacion: {
+        IDEmisorFactura: "89890001K",
+        NumSerieFactura: "INV/41",
+        FechaExpedicionFactura: "01-07-2026",
+      },
+    });
+    const xml = valid.replace(
+      "<sf:IDEmisorFactura>89890001K</sf:IDEmisorFactura>",
+      "<sf:IDEmisorFactura>X</sf:IDEmisorFactura>",
+    );
+    expect(xml).not.toBe(valid);
+    expect(() => parseConsulta(xml)).toThrow("Consulta ClavePaginacion.IDEmisorFactura");
+  });
+
   it("round-trips a recipient header and date range", () => {
     const consultaCabecera = {
       Destinatario: { NombreRazon: "Cliente Uno", NIF: "11111111H" },
@@ -856,6 +874,87 @@ describe("parseConsulta full header and date choice", () => {
       "Consulta Cabecera does not identify an issuer or recipient",
     );
   });
+
+  it("rejects a consulta header with both issuer and recipient", () => {
+    const xml = serializeConsulta(cabecera, { Ejercicio: "2026", Periodo: "07" }).replace(
+      "</sf:ObligadoEmision>",
+      "</sf:ObligadoEmision><sf:Destinatario><sf:NombreRazon>Buyer</sf:NombreRazon><sf:NIF>11111111H</sf:NIF></sf:Destinatario>",
+    );
+    expect(() => parseConsulta(xml)).toThrow(
+      "Consulta Cabecera must contain exactly one of ObligadoEmision or Destinatario",
+    );
+  });
+
+  it("checks the parsed recipient header identity", () => {
+    const valid = serializeConsulta(
+      { Destinatario: { NombreRazon: "Buyer", NIF: "11111111H" } },
+      { Ejercicio: "2026", Periodo: "07" },
+    );
+    const xml = valid.replace("<sf:NIF>11111111H</sf:NIF>", "<sf:NIF>12345678</sf:NIF>");
+    expect(() => parseConsulta(xml)).toThrow("Consulta Destinatario.NIF");
+  });
+
+  it("names a repeated consultation header identity", () => {
+    const valid = serializeConsulta(cabecera, { Ejercicio: "2026", Periodo: "07" });
+    const identity =
+      "<sf:ObligadoEmision><sf:NombreRazon>Waitron SL</sf:NombreRazon><sf:NIF>89890001K</sf:NIF></sf:ObligadoEmision>";
+    const xml = valid.replace(identity, identity + identity);
+    expect(xml).not.toBe(valid);
+    expect(() => parseConsulta(xml)).toThrow("Consulta ObligadoEmision must appear once");
+  });
+
+  it("names a repeated counterpart block or identity element", () => {
+    const valid = serializeConsulta(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      Contraparte: { NombreRazon: "Buyer", NIF: "11111111H" },
+    });
+    const counterpart =
+      "<sfLRC:Contraparte><sf:NombreRazon>Buyer</sf:NombreRazon><sf:NIF>11111111H</sf:NIF></sfLRC:Contraparte>";
+    const nif = "<sf:NIF>11111111H</sf:NIF>";
+    expect(() => parseConsulta(valid.replace(counterpart, counterpart + counterpart))).toThrow(
+      "Consulta Contraparte must appear once",
+    );
+    expect(() => parseConsulta(valid.replace(nif, nif + nif))).toThrow(
+      "Consulta Contraparte.NIF must appear once",
+    );
+    const name = "<sf:NombreRazon>Buyer</sf:NombreRazon>";
+    expect(() => parseConsulta(valid.replace(name, name + name))).toThrow(
+      "Consulta Contraparte.NombreRazon must appear once",
+    );
+  });
+
+  it("names a repeated counterpart IDOtro block", () => {
+    const valid = serializeConsulta(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      Contraparte: { NombreRazon: "Foreign", IDOtro: { IDType: "03", ID: "FR123" } },
+    });
+    const other = "<sf:IDOtro><sf:IDType>03</sf:IDType><sf:ID>FR123</sf:ID></sf:IDOtro>";
+    const xml = valid.replace(other, other + other);
+    expect(xml).not.toBe(valid);
+    expect(() => parseConsulta(xml)).toThrow("Consulta Contraparte.IDOtro must appear once");
+  });
+
+  it("names repeated fields inside a counterpart IDOtro block", () => {
+    const valid = serializeConsulta(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      Contraparte: {
+        NombreRazon: "Foreign",
+        IDOtro: { CodigoPais: "FR", IDType: "03", ID: "FR123" },
+      },
+    });
+    for (const [name, value] of [
+      ["CodigoPais", "FR"],
+      ["IDType", "03"],
+    ]) {
+      const leaf = `<sf:${name}>${value}</sf:${name}>`;
+      expect(() => parseConsulta(valid.replace(leaf, leaf + leaf))).toThrow(
+        `Consulta Contraparte.IDOtro.${name} must appear once`,
+      );
+    }
+  });
 });
 
 describe("parseConsulta", () => {
@@ -945,6 +1044,131 @@ describe("parseConsulta", () => {
       DatosAdicionalesRespuesta: {},
     };
     expect(parseConsulta(serializeConsulta(cabecera, filtro))).toStrictEqual({ cabecera, filtro });
+  });
+
+  it.each(["Contraparte", "SistemaInformatico"] as const)(
+    "rejects a parsed %s without exactly one identity branch",
+    (field) => {
+      const person = { NombreRazon: "Buyer", NIF: "11111111H" };
+      const filtro: ConsultaFiltro = {
+        Ejercicio: "2026",
+        Periodo: "07",
+        ...(field === "Contraparte"
+          ? { Contraparte: person }
+          : {
+              SistemaInformatico: {
+                ...person,
+                IdSistemaInformatico: "SX",
+                NumeroInstalacion: "1",
+              },
+            }),
+      };
+      const valid = serializeConsulta(cabecera, filtro);
+      const marker =
+        `<sfLRC:${field}><sf:NombreRazon>Buyer</sf:NombreRazon>` + "<sf:NIF>11111111H</sf:NIF>";
+      for (const replacement of [
+        `<sfLRC:${field}><sf:NombreRazon>Buyer</sf:NombreRazon>`,
+        marker + "<sf:IDOtro><sf:IDType>02</sf:IDType><sf:ID>FR123</sf:ID></sf:IDOtro>",
+      ]) {
+        const xml = valid.replace(marker, replacement);
+        expect(xml).not.toBe(valid);
+        expect(() => parseConsulta(xml)).toThrow(
+          `Consulta ${field} must contain exactly one of NIF or IDOtro`,
+        );
+      }
+    },
+  );
+
+  it.each([
+    [
+      "header name",
+      "<sf:NombreRazon>Waitron SL</sf:NombreRazon>",
+      `<sf:NombreRazon>${"X".repeat(121)}</sf:NombreRazon>`,
+      "ObligadoEmision.NombreRazon",
+    ],
+    [
+      "header NIF",
+      "<sf:NIF>89890001K</sf:NIF>",
+      "<sf:NIF>12345678</sf:NIF>",
+      "ObligadoEmision.NIF",
+    ],
+    [
+      "counterpart name",
+      "<sf:NombreRazon>Buyer</sf:NombreRazon>",
+      `<sf:NombreRazon>${"X".repeat(121)}</sf:NombreRazon>`,
+      "Contraparte.NombreRazon",
+    ],
+    [
+      "counterpart NIF",
+      "<sf:NIF>11111111H</sf:NIF>",
+      "<sf:NIF>12345678</sf:NIF>",
+      "Contraparte.NIF",
+    ],
+    [
+      "software ID",
+      "<sf:IdSistemaInformatico>AB</sf:IdSistemaInformatico>",
+      "<sf:IdSistemaInformatico>ABC</sf:IdSistemaInformatico>",
+      "SistemaInformatico.IdSistemaInformatico",
+    ],
+    [
+      "software installation",
+      "<sf:NumeroInstalacion>1</sf:NumeroInstalacion>",
+      "",
+      "SistemaInformatico.NumeroInstalacion",
+    ],
+    [
+      "software flag",
+      "<sf:TipoUsoPosibleMultiOT>S</sf:TipoUsoPosibleMultiOT>",
+      "<sf:TipoUsoPosibleMultiOT>X</sf:TipoUsoPosibleMultiOT>",
+      "SistemaInformatico.TipoUsoPosibleMultiOT",
+    ],
+  ] as const)("rejects a parsed XSD-invalid %s", (_case, source, replacement, field) => {
+    const valid = serializeConsulta(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      Contraparte: { NombreRazon: "Buyer", NIF: "11111111H" },
+      SistemaInformatico: {
+        NombreRazon: "Software",
+        NIF: "89890001K",
+        IdSistemaInformatico: "AB",
+        NumeroInstalacion: "1",
+        TipoUsoPosibleMultiOT: "S",
+      },
+    });
+    const xml = valid.replace(source, replacement);
+    expect(xml).not.toBe(valid);
+    expect(() => parseConsulta(xml)).toThrow(`Consulta ${field}`);
+  });
+
+  it.each([
+    ["IDType", "<sf:IDType>02</sf:IDType>", "<sf:IDType>01</sf:IDType>"],
+    ["ID", "<sf:ID>FR123</sf:ID>", `<sf:ID>${"X".repeat(21)}</sf:ID>`],
+  ] as const)("rejects a parsed XSD-invalid other %s", (field, source, replacement) => {
+    const valid = serializeConsulta(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      Contraparte: { NombreRazon: "Buyer", IDOtro: { IDType: "02", ID: "FR123" } },
+    });
+    const xml = valid.replace(source, replacement);
+    expect(xml).not.toBe(valid);
+    expect(() => parseConsulta(xml)).toThrow(`Consulta Contraparte.IDOtro.${field}`);
+  });
+
+  it("rejects a parsed country code outside AEAT CountryType2", () => {
+    const valid = serializeConsulta(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      Contraparte: {
+        NombreRazon: "Foreign",
+        IDOtro: { CodigoPais: "FR", IDType: "03", ID: "FR123" },
+      },
+    });
+    const xml = valid.replace(
+      "<sf:CodigoPais>FR</sf:CodigoPais>",
+      "<sf:CodigoPais>ZZ</sf:CodigoPais>",
+    );
+    expect(xml).not.toBe(valid);
+    expect(() => parseConsulta(xml)).toThrow("Consulta Contraparte.IDOtro.CodigoPais");
   });
 
   it("drops unknown fields inside a consulta counterpart's IDOtro", () => {
