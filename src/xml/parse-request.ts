@@ -393,6 +393,9 @@ export function parseConsulta(xml: string): { cabecera: CabeceraConsulta; filtro
   if (f.ClavePaginacion !== undefined) filtro.ClavePaginacion = f.ClavePaginacion;
   if (body.DatosAdicionalesRespuesta !== undefined) {
     const raw = body.DatosAdicionalesRespuesta;
+    if (Array.isArray(raw)) {
+      throw new Error("Consulta DatosAdicionalesRespuesta must occur at most once");
+    }
     const options: DatosAdicionalesRespuesta = {};
     if (typeof raw === "object") {
       if (raw.MostrarNombreRazonEmisor !== undefined)

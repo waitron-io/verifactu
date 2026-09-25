@@ -231,7 +231,9 @@ allowed forms. The two response options are both `S`/`N` enumerations in
 `SuministroInformacion.xsd`; the shared serializer/parser guard now rejects other runtime values
 for issuer and recipient queries, preserving the stricter recipient rule. Focused serializer,
 raw-request, and client tests cover rejected values before network transport. Other consultation
-code-list values still need an element-by-element check.
+code-list values still need an element-by-element check. The raw request parser also rejects
+duplicate `DatosAdicionalesRespuesta` blocks, which otherwise become an array and silently drop
+both option values before the shared guard runs.
 An `xmllint --xpath` extraction of the bundled XSD confirmed exactly `01`–`12` and `S`. A full
 offline `xmllint --schema` check of a consultation request could not compile because the bundled
 common schema imports the external XML-signature schema; these tests do not claim whole-request
