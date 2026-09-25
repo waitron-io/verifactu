@@ -65,8 +65,13 @@ describe("generated unsigned requests against AEAT XSDs", () => {
           SistemaInformatico: {
             NombreRazon: SISTEMA.NombreRazon,
             NIF: SISTEMA.NIF,
+            NombreSistemaInformatico: SISTEMA.NombreSistemaInformatico,
             IdSistemaInformatico: SISTEMA.IdSistemaInformatico,
+            Version: SISTEMA.Version,
             NumeroInstalacion: SISTEMA.NumeroInstalacion,
+            TipoUsoPosibleSoloVerifactu: SISTEMA.TipoUsoPosibleSoloVerifactu,
+            TipoUsoPosibleMultiOT: SISTEMA.TipoUsoPosibleMultiOT,
+            IndicadorMultiplesOT: SISTEMA.IndicadorMultiplesOT,
           },
           RefExterna: "REF-42",
           ClavePaginacion: {
@@ -83,6 +88,77 @@ describe("generated unsigned requests against AEAT XSDs", () => {
     );
     const result = schemaResult(CONSULTA_XSD, body);
     expect(result.status, result.stderr).toBe(0);
+  });
+
+  it.each(["missing", "unfamiliar", "repeated"] as const)(
+    "rejects a %s consultation header version under the XSD",
+    (invalid) => {
+      const body = soapBodyElement(
+        serializeConsulta(CABECERA, { Ejercicio: "2026", Periodo: "07" }),
+      );
+      const document = new DOMParser().parseFromString(body, "text/xml");
+      const header = document.getElementsByTagNameNS(NS_LRC, "Cabecera").item(0);
+      const version = document.getElementsByTagNameNS(NS_SF, "IDVersion").item(0);
+      if (!header || !version) throw new Error("Consultation fixture has no header version");
+      if (invalid === "missing") header.removeChild(version);
+      else if (invalid === "unfamiliar") version.textContent = "2.0";
+      else header.insertBefore(version.cloneNode(true), version.nextSibling);
+      const result = schemaResult(CONSULTA_XSD, new XMLSerializer().serializeToString(document));
+      expect(result.status, result.stderr).not.toBe(0);
+      expect(result.stderr).toContain("IDVersion");
+    },
+  );
+
+  it("shows the XSD permits an empty header identity choice while the library requires one", () => {
+    const body = soapBodyElement(serializeConsulta(CABECERA, { Ejercicio: "2026", Periodo: "07" }));
+    const document = new DOMParser().parseFromString(body, "text/xml");
+    const header = document.getElementsByTagNameNS(NS_LRC, "Cabecera").item(0);
+    const issuer = document.getElementsByTagNameNS(NS_SF, "ObligadoEmision").item(0);
+    if (!header || !issuer) throw new Error("Consultation fixture has no issuer header");
+    header.removeChild(issuer);
+    const result = schemaResult(CONSULTA_XSD, new XMLSerializer().serializeToString(document));
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it.each([
+    "repeated header",
+    "repeated filter",
+    "repeated response options",
+    "header after filter",
+    "filter field out of order",
+  ] as const)("rejects a consultation with %s under the request sequence", (invalid) => {
+    const body = soapBodyElement(
+      serializeConsulta(CABECERA, {
+        Ejercicio: "2026",
+        Periodo: "07",
+        Contraparte: { NombreRazon: "Buyer", NIF: "11111111H" },
+        SistemaInformatico: {
+          NombreRazon: SISTEMA.NombreRazon,
+          NIF: SISTEMA.NIF,
+          IdSistemaInformatico: SISTEMA.IdSistemaInformatico,
+          NumeroInstalacion: SISTEMA.NumeroInstalacion,
+        },
+        RefExterna: "REF-42",
+        DatosAdicionalesRespuesta: { MostrarNombreRazonEmisor: "S" },
+      }),
+    );
+    const document = new DOMParser().parseFromString(body, "text/xml");
+    const root = document.documentElement;
+    const header = document.getElementsByTagNameNS(NS_LRC, "Cabecera").item(0);
+    const filter = document.getElementsByTagNameNS(NS_LRC, "FiltroConsulta").item(0);
+    const options = document.getElementsByTagNameNS(NS_LRC, "DatosAdicionalesRespuesta").item(0);
+    const counterpart = document.getElementsByTagNameNS(NS_LRC, "Contraparte").item(0);
+    const reference = document.getElementsByTagNameNS(NS_LRC, "RefExterna").item(0);
+    if (!root || !header || !filter || !options || !counterpart || !reference) {
+      throw new Error("Consultation fixture is incomplete");
+    }
+    if (invalid === "repeated header") root.insertBefore(header.cloneNode(true), filter);
+    else if (invalid === "repeated filter") root.insertBefore(filter.cloneNode(true), options);
+    else if (invalid === "repeated response options") root.appendChild(options.cloneNode(true));
+    else if (invalid === "header after filter") root.insertBefore(filter, header);
+    else filter.insertBefore(counterpart, reference.nextSibling);
+    const result = schemaResult(CONSULTA_XSD, new XMLSerializer().serializeToString(document));
+    expect(result.status, result.stderr).not.toBe(0);
   });
 
   it.each(["both date alternatives", "repeated date wrapper"] as const)(
