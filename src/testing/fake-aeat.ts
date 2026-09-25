@@ -187,6 +187,7 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
       const forced = rejections.get(key);
       const future = fechaToDate(fecha).getTime() > serverNow.getTime();
       const alta = "RegistroAlta" in entry ? entry.RegistroAlta : undefined;
+      const anulacion = "RegistroAnulacion" in entry ? entry.RegistroAnulacion : undefined;
       const isNormalSubsanacion =
         alta?.Subsanacion === "S" &&
         (alta.RechazoPrevio === undefined || alta.RechazoPrevio === "N");
@@ -200,8 +201,46 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
         continue;
       }
       if (
+        !forced &&
+        anulacion?.SinRegistroPrevio !== undefined &&
+        anulacion.SinRegistroPrevio !== "S" &&
+        anulacion.SinRegistroPrevio !== "N"
+      ) {
+        rejectedCount += 1;
+        lineas.push(
+          lineaXml(
+            idf,
+            "Incorrecto",
+            1276,
+            "Valor incorrecto campo SinRegistroPrevio",
+            ref,
+            operacion,
+          ),
+        );
+        continue;
+      }
+      // A normal cancellation needs a stored record; SinRegistroPrevio=S is the no-prior path.
+      if (!forced && !existing && anulacion && anulacion.SinRegistroPrevio !== "S") {
+        rejectedCount += 1;
+        lineas.push(
+          lineaXml(idf, "Incorrecto", 3002, "No existe el registro de facturación", ref, operacion),
+        );
+        continue;
+      }
+      if (!forced && existing && anulacion?.SinRegistroPrevio === "S") {
+        // The stored record is not an accepted instance of this refused cancellation.
+        rejectedCount += 1;
+        lineas.push(duplicadoLineaXml(idf, undefined, ref, operacion, undefined));
+        continue;
+      }
+      if (
         existing &&
-        !(tipo === "anulacion" && existing.tipo === "alta" && existing.estado !== "Anulado") &&
+        !(
+          tipo === "anulacion" &&
+          anulacion?.SinRegistroPrevio !== "S" &&
+          existing.tipo === "alta" &&
+          existing.estado !== "Anulado"
+        ) &&
         !replacesExistingAlta
       ) {
         // Only an allowed cancellation or subsanación can replace stored state. A duplicate
