@@ -4,6 +4,7 @@ import {
   assertConsultaNif,
   assertConsultaPersona,
   assertConsultaResponseOptions,
+  assertFilingRecordXsd,
   isValidConsultaEjercicio,
   isValidConsultaFecha,
   isValidConsultaNumSerieFactura,
@@ -197,18 +198,26 @@ function encadenamientoOf(raw: RawRecord): Encadenamiento {
     PrimerRegistro?: string;
     RegistroAnterior?: Record<string, string>;
   };
+  const result = {} as {
+    PrimerRegistro?: string;
+    RegistroAnterior?: {
+      IDEmisorFactura: string;
+      NumSerieFactura: string;
+      FechaExpedicionFactura: string;
+      Huella: string;
+    };
+  };
+  if (enc.PrimerRegistro !== undefined) result.PrimerRegistro = enc.PrimerRegistro;
   if (enc.RegistroAnterior !== undefined) {
     const a = enc.RegistroAnterior;
-    return {
-      RegistroAnterior: {
-        IDEmisorFactura: a.IDEmisorFactura,
-        NumSerieFactura: a.NumSerieFactura,
-        FechaExpedicionFactura: a.FechaExpedicionFactura,
-        Huella: a.Huella,
-      },
+    result.RegistroAnterior = {
+      IDEmisorFactura: a.IDEmisorFactura,
+      NumSerieFactura: a.NumSerieFactura,
+      FechaExpedicionFactura: a.FechaExpedicionFactura,
+      Huella: a.Huella,
     };
   }
-  return { PrimerRegistro: "S" };
+  return result as Encadenamiento;
 }
 
 function detalleOf(raw: RawRecord): DetalleDesglose {
@@ -241,13 +250,15 @@ function idFacturaArOf(raw: RawRecord): IDFacturaAR {
 // back, so `toEqual` against the original record holds (cf. the `pick` note above).
 function destinatarioOf(raw: RawRecord): Destinatario {
   const NombreRazon = raw.NombreRazon as string;
-  if (raw.NIF !== undefined) {
-    return { NombreRazon, NIF: raw.NIF as string };
+  const result: Record<string, unknown> = { NombreRazon };
+  if (raw.NIF !== undefined) result.NIF = raw.NIF as string;
+  if (raw.IDOtro !== undefined) {
+    const rawOtro = raw.IDOtro as Record<string, string>;
+    const idOtro: IDOtro = { IDType: rawOtro.IDType, ID: rawOtro.ID };
+    if (rawOtro.CodigoPais !== undefined) idOtro.CodigoPais = rawOtro.CodigoPais;
+    result.IDOtro = idOtro;
   }
-  const rawOtro = raw.IDOtro as Record<string, string>;
-  const idOtro: IDOtro = { IDType: rawOtro.IDType, ID: rawOtro.ID };
-  if (rawOtro.CodigoPais !== undefined) idOtro.CodigoPais = rawOtro.CodigoPais;
-  return { NombreRazon, IDOtro: idOtro };
+  return result as Destinatario;
 }
 
 function altaOf(raw: RawRecord): RegistroAlta {
@@ -358,9 +369,14 @@ export function parseEnvio(xml: string): { cabecera: Cabecera; registros: EnvioR
         `RegistroFactura[${index}] must contain exactly one of RegistroAlta or RegistroAnulacion`,
       );
     }
-    return "RegistroAlta" in entry
-      ? { RegistroAlta: altaOf(entry.RegistroAlta) }
-      : { RegistroAnulacion: anulacionOf(entry.RegistroAnulacion) };
+    if ("RegistroAlta" in entry) {
+      const record = altaOf(entry.RegistroAlta);
+      assertFilingRecordXsd(record, `RegistroAlta[${index}]`);
+      return { RegistroAlta: record };
+    }
+    const record = anulacionOf(entry.RegistroAnulacion);
+    assertFilingRecordXsd(record, `RegistroAnulacion[${index}]`);
+    return { RegistroAnulacion: record };
   });
   if (registros.length === 0)
     throw new Error("Envio does not contain at least one RegistroFactura");

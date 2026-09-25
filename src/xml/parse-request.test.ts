@@ -82,6 +82,127 @@ describe("parseEnvio", () => {
     expect(parseEnvio(maximum).registros).toHaveLength(1000);
   });
 
+  it.each([
+    ["IDVersion", "1.0", "Z"],
+    ["TipoHuella", "01", "Z"],
+    ["FacturaSimplificadaArt7273", undefined, "Z"],
+    ["Subsanacion", undefined, "Z"],
+    ["TipoUsoPosibleSoloVerifactu", "S", "Z"],
+  ] as const)("rejects an XSD-invalid parsed %s literal", (field, original, invalid) => {
+    let xml = serializeEnvio(cabecera, [{ RegistroAlta: alta }]);
+    xml =
+      original === undefined
+        ? xml.replace(
+            "<sf:DescripcionOperacion>",
+            `<sf:${field}>${invalid}</sf:${field}><sf:DescripcionOperacion>`,
+          )
+        : xml.replace(
+            `<sf:${field}>${original}</sf:${field}>`,
+            `<sf:${field}>${invalid}</sf:${field}>`,
+          );
+    expect(() => parseEnvio(xml)).toThrow(
+      `RegistroAlta[0].${field === "TipoUsoPosibleSoloVerifactu" ? `SistemaInformatico.${field}` : field}`,
+    );
+  });
+
+  it("rejects an XSD-invalid parsed invoice number", () => {
+    const xml = serializeEnvio(cabecera, [{ RegistroAlta: alta }]).replace(
+      `<sf:NumSerieFactura>${alta.IDFactura.NumSerieFactura}</sf:NumSerieFactura>`,
+      `<sf:NumSerieFactura>${"X".repeat(61)}</sf:NumSerieFactura>`,
+    );
+    expect(() => parseEnvio(xml)).toThrow(
+      "RegistroAlta[0].IDFactura.NumSerieFactura must contain 1 to 60 characters",
+    );
+  });
+
+  it("rejects an XSD-invalid parsed generation timestamp", () => {
+    const xml = serializeEnvio(cabecera, [{ RegistroAlta: alta }]).replace(
+      alta.FechaHoraHusoGenRegistro,
+      "not-a-dateTime",
+    );
+    expect(() => parseEnvio(xml)).toThrow(
+      "RegistroAlta[0].FechaHoraHusoGenRegistro must be an XML Schema dateTime",
+    );
+  });
+
+  it("counts Unicode code points in parsed filing text limits", () => {
+    const boundary = serializeEnvio(cabecera, [{ RegistroAlta: alta }]).replace(
+      alta.RefExterna!,
+      "😀".repeat(60),
+    );
+    expect(parseEnvio(boundary).registros).toHaveLength(1);
+
+    const over = boundary.replace("😀".repeat(60), "😀".repeat(61));
+    expect(() => parseEnvio(over)).toThrow(
+      "RegistroAlta[0].RefExterna must contain at most 60 characters",
+    );
+  });
+
+  it("enforces the 1000-recipient XSD maximum while parsing", () => {
+    const withRecipient: RegistroAlta = {
+      ...alta,
+      TipoFactura: "F1",
+      Destinatarios: {
+        IDDestinatario: [{ NombreRazon: "Buyer", NIF: "B99999997" }],
+      },
+    };
+    const one = serializeEnvio(cabecera, [{ RegistroAlta: withRecipient }]);
+    const recipient = one.match(/<sf:IDDestinatario>[\s\S]*?<\/sf:IDDestinatario>/)?.[0];
+    if (!recipient) throw new Error("missing recipient fixture");
+    const maximum = one.replace(recipient, recipient.repeat(1000));
+    expect(
+      (parseEnvio(maximum).registros[0] as { RegistroAlta: RegistroAlta }).RegistroAlta
+        .Destinatarios?.IDDestinatario,
+    ).toHaveLength(1000);
+    const tooMany = one.replace(recipient, recipient.repeat(1001));
+    expect(() => parseEnvio(tooMany)).toThrow(
+      "RegistroAlta[0].Destinatarios.IDDestinatario may contain at most 1000 entries",
+    );
+  });
+
+  it.each([
+    "both chain branches",
+    "both recipient identity branches",
+    "both detail branches",
+  ] as const)("rejects a parsed record with %s", (kind) => {
+    const withRecipient: RegistroAlta = {
+      ...alta,
+      TipoFactura: "F1",
+      Destinatarios: {
+        IDDestinatario: [{ NombreRazon: "Buyer", NIF: "B99999997" }],
+      },
+    };
+    let xml = serializeEnvio(cabecera, [{ RegistroAlta: withRecipient }]);
+    let expected: string;
+    if (kind === "both chain branches") {
+      xml = xml.replace(
+        "<sf:PrimerRegistro>S</sf:PrimerRegistro>",
+        "<sf:PrimerRegistro>S</sf:PrimerRegistro><sf:RegistroAnterior>" +
+          "<sf:IDEmisorFactura>89890001K</sf:IDEmisorFactura>" +
+          "<sf:NumSerieFactura>PREV</sf:NumSerieFactura>" +
+          "<sf:FechaExpedicionFactura>19-07-2026</sf:FechaExpedicionFactura>" +
+          "<sf:Huella>PREV</sf:Huella></sf:RegistroAnterior>",
+      );
+      expected =
+        "RegistroAlta[0].Encadenamiento must contain exactly PrimerRegistro S or RegistroAnterior";
+    } else if (kind === "both recipient identity branches") {
+      xml = xml.replace(
+        "<sf:NIF>B99999997</sf:NIF>",
+        "<sf:NIF>B99999997</sf:NIF><sf:IDOtro><sf:IDType>03</sf:IDType><sf:ID>X-1</sf:ID></sf:IDOtro>",
+      );
+      expected =
+        "RegistroAlta[0].Destinatarios.IDDestinatario[0] must contain exactly one of NIF or IDOtro";
+    } else {
+      xml = xml.replace(
+        "<sf:CalificacionOperacion>S1</sf:CalificacionOperacion>",
+        "<sf:CalificacionOperacion>S1</sf:CalificacionOperacion><sf:OperacionExenta>E1</sf:OperacionExenta>",
+      );
+      expected =
+        "RegistroAlta[0].Desglose[0] must contain exactly one of CalificacionOperacion or OperacionExenta";
+    }
+    expect(() => parseEnvio(xml)).toThrow(expected);
+  });
+
   it("round-trips a foreign software producer on alta and cancellation records", () => {
     const foreignSystem = {
       NombreRazon: "Software France SAS",

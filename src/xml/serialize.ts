@@ -564,6 +564,325 @@ function assertPreviousInvoiceNumberXsd(field: string, value: unknown): void {
   }
 }
 
+function assertFilingText(field: string, value: unknown, max: number, optional = false): void {
+  if (value === undefined && optional) return;
+  if (typeof value !== "string" || Array.from(value).length > max) {
+    throw new Error(`${field} must contain at most ${max} characters`);
+  }
+}
+
+function assertFilingLiteral(
+  field: string,
+  value: unknown,
+  allowed: readonly string[],
+  description: string,
+  optional = false,
+): void {
+  if (value === undefined && optional) return;
+  if (typeof value !== "string" || !allowed.includes(value)) {
+    throw new Error(`${field} must be ${description}`);
+  }
+}
+
+function assertFilingIdOtroShape(field: string, other: IDOtro | undefined): void {
+  if (other?.CodigoPais !== undefined && !isValidCountryType2(other.CodigoPais)) {
+    throw new Error(`${field}.IDOtro.CodigoPais must be an AEAT CountryType2 code`);
+  }
+  if (other !== undefined && (typeof other.IDType !== "string" || !/^0[2-7]$/.test(other.IDType))) {
+    throw new Error(`${field}.IDOtro.IDType must be 02 through 07`);
+  }
+  if (other !== undefined && (typeof other.ID !== "string" || Array.from(other.ID).length > 20)) {
+    throw new Error(`${field}.IDOtro.ID must be present and contain at most 20 characters`);
+  }
+}
+
+function assertFilingPersona(field: string, value: PersonaFisicaJuridica): void {
+  const hasNif = value?.NIF !== undefined;
+  const hasOther = value?.IDOtro !== undefined;
+  if (hasNif === hasOther) {
+    throw new Error(`${field} must contain exactly one of NIF or IDOtro`);
+  }
+  assertFilingText(`${field}.NombreRazon`, value.NombreRazon, 120);
+  assertFilingIdOtroShape(field, value.IDOtro);
+}
+
+function assertFilingOccurrence(field: string, child: string, values: readonly unknown[]): void {
+  if (values.length > 1000) {
+    throw new Error(`${field}.${child} may contain at most 1000 entries`);
+  }
+}
+
+function assertFilingDateTime(field: string, value: unknown): void {
+  const match =
+    typeof value === "string"
+      ? /^(\d{4,})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(?:(Z)|([+-])(\d{2}):(\d{2}))?$/.exec(
+          value,
+        )
+      : null;
+  if (match) {
+    const [
+      ,
+      yearText,
+      monthText,
+      dayText,
+      hourText,
+      minuteText,
+      secondText,
+      fraction,
+      zulu,
+      ,
+      zoneHourText,
+      zoneMinuteText,
+    ] = match;
+    const year = BigInt(yearText!);
+    const month = Number(monthText);
+    const day = Number(dayText);
+    const hour = Number(hourText);
+    const minute = Number(minuteText);
+    const second = Number(secondText);
+    const leap = year % 4n === 0n && (year % 100n !== 0n || year % 400n === 0n);
+    const daysInMonth = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    const dateValid =
+      year !== 0n && month >= 1 && month <= 12 && day >= 1 && day <= daysInMonth[month - 1]!;
+    const midnight24 =
+      hour === 24 && minute === 0 && second === 0 && (!fraction || /^0+$/.test(fraction));
+    const timeValid = (hour < 24 && minute < 60 && second < 60) || midnight24;
+    const zoneHour = Number(zoneHourText);
+    const zoneMinute = Number(zoneMinuteText);
+    const zoneValid =
+      zulu !== undefined ||
+      zoneHourText === undefined ||
+      (zoneHour <= 14 && zoneMinute < 60 && (zoneHour < 14 || zoneMinute === 0));
+    if (dateValid && timeValid && zoneValid) return;
+  }
+  throw new Error(`${field} must be an XML Schema dateTime`);
+}
+
+const FILING_REGIME_CODES = [
+  "01",
+  "02",
+  "03",
+  "04",
+  "05",
+  "06",
+  "07",
+  "08",
+  "09",
+  "10",
+  "11",
+  "14",
+  "15",
+  "17",
+  "18",
+  "19",
+  "20",
+  "21",
+] as const;
+
+/** Guards the filing-record constraints that TypeScript alone cannot protect at runtime. */
+export function assertFilingRecordXsd(
+  record: RegistroAlta | RegistroAnulacion,
+  field: string,
+): void {
+  assertFilingLiteral(`${field}.IDVersion`, record.IDVersion, ["1.0"], "1.0");
+  assertFilingText(`${field}.RefExterna`, record.RefExterna, 60, true);
+
+  const chain = record.Encadenamiento;
+  const hasFirst = chain?.PrimerRegistro !== undefined;
+  const hasPrevious = chain?.RegistroAnterior !== undefined;
+  if (hasFirst === hasPrevious || (hasFirst && chain.PrimerRegistro !== "S")) {
+    throw new Error(
+      `${field}.Encadenamiento must contain exactly PrimerRegistro S or RegistroAnterior`,
+    );
+  }
+  if (chain?.RegistroAnterior !== undefined) {
+    assertPreviousInvoiceNumberXsd(
+      `${field}.Encadenamiento.RegistroAnterior.NumSerieFactura`,
+      chain.RegistroAnterior.NumSerieFactura,
+    );
+  }
+
+  const sistema = record.SistemaInformatico;
+  assertFilingPersona(`${field}.SistemaInformatico`, sistema);
+  assertFilingText(
+    `${field}.SistemaInformatico.NombreSistemaInformatico`,
+    sistema.NombreSistemaInformatico,
+    30,
+  );
+  assertFilingText(
+    `${field}.SistemaInformatico.IdSistemaInformatico`,
+    sistema.IdSistemaInformatico,
+    2,
+  );
+  assertFilingText(`${field}.SistemaInformatico.Version`, sistema.Version, 50);
+  assertFilingText(`${field}.SistemaInformatico.NumeroInstalacion`, sistema.NumeroInstalacion, 100);
+  for (const name of [
+    "TipoUsoPosibleSoloVerifactu",
+    "TipoUsoPosibleMultiOT",
+    "IndicadorMultiplesOT",
+  ] as const) {
+    assertFilingLiteral(`${field}.SistemaInformatico.${name}`, sistema[name], ["S", "N"], "S or N");
+  }
+  assertFilingLiteral(`${field}.TipoHuella`, record.TipoHuella, ["01"], "01");
+  assertFilingText(`${field}.Huella`, record.Huella, 64);
+  assertFilingDateTime(`${field}.FechaHoraHusoGenRegistro`, record.FechaHoraHusoGenRegistro);
+
+  if (!("TipoFactura" in record)) {
+    assertInvoiceNumberXsd(
+      `${field}.IDFactura.NumSerieFacturaAnulada`,
+      record.IDFactura.NumSerieFacturaAnulada,
+    );
+    assertFilingLiteral(
+      `${field}.SinRegistroPrevio`,
+      record.SinRegistroPrevio,
+      ["S", "N"],
+      "S or N",
+      true,
+    );
+    assertFilingLiteral(`${field}.RechazoPrevio`, record.RechazoPrevio, ["S", "N"], "S or N", true);
+    assertFilingLiteral(
+      `${field}.GeneradoPor`,
+      record.GeneradoPor,
+      ["E", "D", "T"],
+      "E, D or T",
+      true,
+    );
+    if (record.Generador !== undefined) assertFilingPersona(`${field}.Generador`, record.Generador);
+    return;
+  }
+
+  assertInvoiceNumberXsd(`${field}.IDFactura.NumSerieFactura`, record.IDFactura.NumSerieFactura);
+  assertFilingLiteral(`${field}.Subsanacion`, record.Subsanacion, ["S", "N"], "S or N", true);
+  assertFilingLiteral(
+    `${field}.RechazoPrevio`,
+    record.RechazoPrevio,
+    ["N", "S", "X"],
+    "N, S or X",
+    true,
+  );
+  assertFilingLiteral(
+    `${field}.TipoFactura`,
+    record.TipoFactura,
+    ["F1", "F2", "F3", "R1", "R2", "R3", "R4", "R5"],
+    "F1, F2, F3 or R1 through R5",
+  );
+  assertFilingLiteral(
+    `${field}.TipoRectificativa`,
+    record.TipoRectificativa,
+    ["S", "I"],
+    "S or I",
+    true,
+  );
+  assertFilingLiteral(
+    `${field}.EmitidaPorTerceroODestinatario`,
+    record.EmitidaPorTerceroODestinatario,
+    ["D", "T"],
+    "D or T",
+    true,
+  );
+  assertFilingText(`${field}.NombreRazonEmisor`, record.NombreRazonEmisor, 120);
+  assertFilingText(`${field}.DescripcionOperacion`, record.DescripcionOperacion, 500);
+  for (const name of [
+    "FacturaSimplificadaArt7273",
+    "FacturaSinIdentifDestinatarioArt61d",
+    "Macrodato",
+    "Cupon",
+  ] as const) {
+    assertFilingLiteral(`${field}.${name}`, record[name], ["S", "N"], "S or N", true);
+  }
+  assertFilingText(
+    `${field}.NumRegistroAcuerdoFacturacion`,
+    record.NumRegistroAcuerdoFacturacion,
+    15,
+    true,
+  );
+  assertFilingText(
+    `${field}.IdAcuerdoSistemaInformatico`,
+    record.IdAcuerdoSistemaInformatico,
+    16,
+    true,
+  );
+
+  if (record.FacturasRectificadas !== undefined) {
+    assertFilingOccurrence(
+      `${field}.FacturasRectificadas`,
+      "IDFacturaRectificada",
+      record.FacturasRectificadas.IDFacturaRectificada,
+    );
+    record.FacturasRectificadas.IDFacturaRectificada.forEach((reference, index) =>
+      assertInvoiceNumberXsd(
+        `${field}.FacturasRectificadas[${index}].NumSerieFactura`,
+        reference.NumSerieFactura,
+      ),
+    );
+  }
+  if (record.FacturasSustituidas !== undefined) {
+    assertFilingOccurrence(
+      `${field}.FacturasSustituidas`,
+      "IDFacturaSustituida",
+      record.FacturasSustituidas.IDFacturaSustituida,
+    );
+    record.FacturasSustituidas.IDFacturaSustituida.forEach((reference, index) =>
+      assertInvoiceNumberXsd(
+        `${field}.FacturasSustituidas[${index}].NumSerieFactura`,
+        reference.NumSerieFactura,
+      ),
+    );
+  }
+  if (record.Tercero !== undefined) assertFilingPersona(`${field}.Tercero`, record.Tercero);
+  if (record.Destinatarios !== undefined) {
+    assertFilingOccurrence(
+      `${field}.Destinatarios`,
+      "IDDestinatario",
+      record.Destinatarios.IDDestinatario,
+    );
+    record.Destinatarios.IDDestinatario.forEach((recipient, index) =>
+      assertFilingPersona(`${field}.Destinatarios.IDDestinatario[${index}]`, recipient),
+    );
+  }
+  if (record.Desglose.length < 1 || record.Desglose.length > 12) {
+    throw new Error(`${field}.Desglose must contain 1 to 12 DetalleDesglose entries`);
+  }
+  record.Desglose.forEach((detail, index) => {
+    const detailField = `${field}.Desglose[${index}]`;
+    const hasQualification = detail.CalificacionOperacion !== undefined;
+    const hasExemption = detail.OperacionExenta !== undefined;
+    if (hasQualification === hasExemption) {
+      throw new Error(
+        `${detailField} must contain exactly one of CalificacionOperacion or OperacionExenta`,
+      );
+    }
+    assertFilingLiteral(
+      `${detailField}.Impuesto`,
+      detail.Impuesto,
+      ["01", "02", "03", "05"],
+      "01, 02, 03 or 05",
+      true,
+    );
+    assertFilingLiteral(
+      `${detailField}.ClaveRegimen`,
+      detail.ClaveRegimen,
+      FILING_REGIME_CODES,
+      "an AEAT regime code",
+      true,
+    );
+    assertFilingLiteral(
+      `${detailField}.CalificacionOperacion`,
+      detail.CalificacionOperacion,
+      ["S1", "S2", "N1", "N2"],
+      "S1, S2, N1 or N2",
+      true,
+    );
+    assertFilingLiteral(
+      `${detailField}.OperacionExenta`,
+      detail.OperacionExenta,
+      ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8"],
+      "E1 through E8",
+      true,
+    );
+  });
+}
+
 /**
  * Serialises a submission. One Cabecera names the obligado tributario; each
  * record carries its own SistemaInformatico, so a single envio may cover
@@ -647,20 +966,6 @@ export function serializeEnvio(
       throw new Error(`${field} must be 31-12-20XX from 2027`);
     }
   }
-  const assertIdOtroShape = (field: string, other: IDOtro | undefined) => {
-    if (other?.CodigoPais !== undefined && !isValidCountryType2(other.CodigoPais)) {
-      throw new Error(`${field}.IDOtro.CodigoPais must be an AEAT CountryType2 code`);
-    }
-    if (
-      other !== undefined &&
-      (typeof other.IDType !== "string" || !/^0[2-7]$/.test(other.IDType))
-    ) {
-      throw new Error(`${field}.IDOtro.IDType must be 02 through 07`);
-    }
-    if (other !== undefined && (typeof other.ID !== "string" || Array.from(other.ID).length > 20)) {
-      throw new Error(`${field}.IDOtro.ID must be present and contain at most 20 characters`);
-    }
-  };
   registros.forEach((entry, index) => {
     const hasAlta = entry != null && typeof entry === "object" && "RegistroAlta" in entry;
     const hasAnulacion = entry != null && typeof entry === "object" && "RegistroAnulacion" in entry;
@@ -688,10 +993,10 @@ export function serializeEnvio(
     if ("RegistroAlta" in entry) {
       const alta = entry.RegistroAlta;
       const field = `RegistroAlta[${index}]`;
-      assertIdOtroShape(`${field}.SistemaInformatico`, alta.SistemaInformatico?.IDOtro);
-      assertIdOtroShape(`${field}.Tercero`, alta.Tercero?.IDOtro);
+      assertFilingIdOtroShape(`${field}.SistemaInformatico`, alta.SistemaInformatico?.IDOtro);
+      assertFilingIdOtroShape(`${field}.Tercero`, alta.Tercero?.IDOtro);
       alta.Destinatarios?.IDDestinatario.forEach((recipient, recipientIndex) => {
-        assertIdOtroShape(
+        assertFilingIdOtroShape(
           `${field}.Destinatarios.IDDestinatario[${recipientIndex}]`,
           recipient.IDOtro,
         );
@@ -742,11 +1047,15 @@ export function serializeEnvio(
           reference.NumSerieFactura,
         ),
       );
+      assertFilingRecordXsd(alta, field);
     } else if ("RegistroAnulacion" in entry) {
       const cancellation = entry.RegistroAnulacion;
       const field = `RegistroAnulacion[${index}]`;
-      assertIdOtroShape(`${field}.SistemaInformatico`, cancellation.SistemaInformatico?.IDOtro);
-      assertIdOtroShape(`${field}.Generador`, cancellation.Generador?.IDOtro);
+      assertFilingIdOtroShape(
+        `${field}.SistemaInformatico`,
+        cancellation.SistemaInformatico?.IDOtro,
+      );
+      assertFilingIdOtroShape(`${field}.Generador`, cancellation.Generador?.IDOtro);
       for (const [name, value, allowed, description] of [
         ["SinRegistroPrevio", entry.RegistroAnulacion.SinRegistroPrevio, ["S", "N"], "S or N"],
         ["RechazoPrevio", entry.RegistroAnulacion.RechazoPrevio, ["S", "N"], "S or N"],
@@ -766,6 +1075,7 @@ export function serializeEnvio(
         `RegistroAnulacion[${index}].IDFactura.NumSerieFacturaAnulada`,
         entry.RegistroAnulacion.IDFactura.NumSerieFacturaAnulada,
       );
+      assertFilingRecordXsd(cancellation, field);
     }
   });
   const body =
