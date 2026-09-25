@@ -357,9 +357,18 @@ Annex §6.2 names the allowed and forbidden states but not their numeric error c
 uses the published general `3000`/`3002` code meanings for these cases; the exact AEAT response
 code and duplicate-detail shape for each state remain a preproduction check.
 
+For a normal cancellation of an existing cancellation, annex §6.2 marks replacement with new
+data as admissible (OK 8). The fake now replaces the stored hash, external reference, petition
+ID, and consultation software-system metadata when the submitted hash or explicit reference
+differs; exact hash/reference retries keep their prior duplicate behavior. Tests cover a stored
+alta followed by two cancellations, a no-prior cancellation followed by a normal one, a
+reference-only change, consulta of the new snapshot, and the exact retry's petition ID. The
+hash/reference comparison is the fake's limited way to detect new data: it does not compare
+every non-hashed field or establish AEAT's retry behavior for an identical cancellation.
+
 This is not full annex §6 fidelity. The fake still does not track the history needed for
 `RechazoPrevio: "S"` after a rejected subsanación or cancellation, and it does not yet
-implement every §6.2 state (including replacement of an existing cancellation). The library
+implement every §6.2 state. The library
 does not select a correction operation for callers;
 check those flows against AEAT preproduction rather than treating the fake as an authority.
 

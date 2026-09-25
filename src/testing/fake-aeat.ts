@@ -192,6 +192,15 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
         alta?.Subsanacion === "S" &&
         (alta.RechazoPrevio === undefined || alta.RechazoPrevio === "N");
       const replacesExistingAlta = existing !== undefined && isNormalSubsanacion;
+      const isNormalCancellation =
+        anulacion !== undefined &&
+        (anulacion.SinRegistroPrevio === undefined || anulacion.SinRegistroPrevio === "N") &&
+        (anulacion.RechazoPrevio === undefined || anulacion.RechazoPrevio === "N");
+      // A changed hash or reference marks new cancellation data; an exact retry stays a duplicate.
+      const replacesExistingCancellation =
+        existing?.tipo === "anulacion" &&
+        isNormalCancellation &&
+        (existing.huella !== huella || (ref !== undefined && existing.refExterna !== ref));
       // A normal subsanación replaces an AEAT record; only RechazoPrevio=X permits no prior record.
       if (!forced && !existing && alta?.Subsanacion === "S" && alta.RechazoPrevio !== "X") {
         rejectedCount += 1;
@@ -241,7 +250,8 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
           existing.tipo === "alta" &&
           existing.estado !== "Anulado"
         ) &&
-        !replacesExistingAlta
+        !replacesExistingAlta &&
+        !replacesExistingCancellation
       ) {
         // Only an allowed cancellation or subsanación can replace stored state. A duplicate
         // leaves it untouched and reports that state for resolveEstadoEfectivo.
@@ -270,7 +280,7 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
           refExterna: tipo === "anulacion" ? (ref ?? existing?.refExterna) : ref,
         });
         petitionIds.set(key, `PET-${String(csvSequence).padStart(8, "0")}`);
-        if (!existing || replacesExistingAlta) {
+        if (!existing || replacesExistingAlta || replacesExistingCancellation) {
           metadata.set(
             key,
             "RegistroAlta" in entry

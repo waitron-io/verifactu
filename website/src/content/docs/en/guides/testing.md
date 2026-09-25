@@ -39,6 +39,12 @@ when a record already exists. That refusal returns `3000` without duplicate deta
 `SinRegistroPrevio` value returns `1276`. If you put a cancellation before its matching alta in
 one batch, the fake rejects the cancellation first; submission order matters.
 
+An ordinary cancellation can replace a stored cancellation. Change its hash or external
+reference to test that path: the fake stores the new cancellation, petition ID, reference, and
+software-system details. Resending the same hash and reference remains a duplicate in the fake.
+This is a test-double rule, not proof of AEAT's exact retry behavior or of changes to other
+non-hashed fields.
+
 The fake uses published error-code meanings, but the annex does not assign numeric codes to
 these cancellation-table outcomes. Do not assume that AEAT returns the same code for each case.
 The fake does not track rejected correction or cancellation attempts or implement every
