@@ -149,14 +149,17 @@ function parseRegistroConsultado(raw: RawRegistroConsultado): RegistroConsultado
   if (data === undefined || data === null) {
     throw new Error("Consulta record is missing DatosRegistroFacturacion");
   }
+  if (Array.isArray(data)) {
+    throw new Error("DatosRegistroFacturacion must appear once");
+  }
   // An empty required XML element is a present block, not a missing one.
-  const dataBlock = data === "" ? {} : data;
-  if (typeof dataBlock !== "object" || Array.isArray(dataBlock)) {
-    throw new Error("Consulta record has invalid DatosRegistroFacturacion");
+  const dataBlock = typeof data === "string" && data.trim().length === 0 ? {} : data;
+  if (typeof dataBlock !== "object") {
+    throw new Error("DatosRegistroFacturacion must contain a record");
   }
   const state = raw.EstadoRegistro;
   if (!state) {
-    throw new Error("Consulta record is missing TimestampUltimaModificacion");
+    throw new Error("Consulta record is missing EstadoRegistro");
   }
   const timestamp = state.TimestampUltimaModificacion;
   if (typeof timestamp !== "string" || timestamp.trim().length === 0) {

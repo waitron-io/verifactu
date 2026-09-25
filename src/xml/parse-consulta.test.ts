@@ -283,6 +283,50 @@ describe("parseRespuestaConsulta", () => {
     expect(parseRespuestaConsulta(xml).registros[0]?.DatosRegistroFacturacion).toEqual({});
   });
 
+  it("treats a whitespace-only data block as present and empty", () => {
+    const dataBlock =
+      "<rc:DatosRegistroFacturacion><rc:TipoHuella>01</rc:TipoHuella><rc:Huella>ABC</rc:Huella></rc:DatosRegistroFacturacion>";
+    const xml = SCHEMA_SHAPED.replace(
+      dataBlock,
+      "<rc:DatosRegistroFacturacion>\n      </rc:DatosRegistroFacturacion>",
+    );
+    expect(parseRespuestaConsulta(xml).registros[0]?.DatosRegistroFacturacion).toEqual({});
+  });
+
+  it("rejects a repeated or text-only data block", () => {
+    const dataBlock =
+      "<rc:DatosRegistroFacturacion><rc:TipoHuella>01</rc:TipoHuella><rc:Huella>ABC</rc:Huella></rc:DatosRegistroFacturacion>";
+    expect(() =>
+      parseRespuestaConsulta(SCHEMA_SHAPED.replace(dataBlock, dataBlock + dataBlock)),
+    ).toThrow("DatosRegistroFacturacion must appear once");
+    expect(() =>
+      parseRespuestaConsulta(
+        SCHEMA_SHAPED.replace(
+          dataBlock,
+          "<rc:DatosRegistroFacturacion>x</rc:DatosRegistroFacturacion>",
+        ),
+      ),
+    ).toThrow("DatosRegistroFacturacion must contain a record");
+  });
+
+  it("rejects a blank timestamp and reports a missing state wrapper directly", () => {
+    const timestamp =
+      "<rc:TimestampUltimaModificacion>2026-07-21T09:10:00+02:00</rc:TimestampUltimaModificacion>";
+    expect(() =>
+      parseRespuestaConsulta(
+        SCHEMA_SHAPED.replace(
+          timestamp,
+          "<rc:TimestampUltimaModificacion>   </rc:TimestampUltimaModificacion>",
+        ),
+      ),
+    ).toThrow("Consulta record is missing TimestampUltimaModificacion");
+    const stateBlock =
+      "<rc:EstadoRegistro>\n            <rc:TimestampUltimaModificacion>2026-07-21T09:10:00+02:00</rc:TimestampUltimaModificacion>\n            <rc:EstadoRegistro>Correcto</rc:EstadoRegistro>\n          </rc:EstadoRegistro>";
+    expect(() => parseRespuestaConsulta(SCHEMA_SHAPED.replace(stateBlock, ""))).toThrow(
+      "Consulta record is missing EstadoRegistro",
+    );
+  });
+
   it("uses the consulta enum, which has Anulado and no Incorrecta", () => {
     const [registro] = parseRespuestaConsulta(RESPONSE).registros;
     expect(registro?.EstadoRegistro).toBe("Correcto");
