@@ -97,10 +97,13 @@ The response parser checks that `ResultadoConsulta` is `ConDatos` or `SinDatos`,
 invoice-identity fields present and within the schema's NIF, invoice-number, and date-shape bounds.
 It applies those same bounds to each returned invoice identity. It throws if a continuing cursor
 is missing or malformed, so you do not repeat the first page. A final `N` page needs no cursor;
-if the response includes one anyway, the parser ignores it and keeps the page's records.
+if the response includes one anyway, the parser ignores it and keeps the page's records. It also
+rejects a response containing more than the schema's 10,000 records.
 If a record includes `DatosPresentacion`, the parser requires its presenter NIF, presentation
 timestamp, and petition ID elements. The schema allows an empty petition ID. The parser preserves
-the timestamp text without checking its date-time syntax.
+the timestamp text after checking its XML Schema date-time form. It applies the same check to the
+record's required last-modified timestamp. Error codes must use integer text and fit JavaScript's
+exact integer range; error descriptions may contain at most 500 characters.
 If any returned record has a malformed invoice identity, parsing fails for the whole page; you
 do not get its other records or cursor. Capture the raw response in your transport layer if you
 need to diagnose a non-conforming AEAT response.

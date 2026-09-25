@@ -6,15 +6,15 @@ is accepted. The [source watch](sources/README.md) checks for publication change
 
 ## Sources checked through 25 September 2026
 
-| AEAT publication                                                                                                                                                   | Version                                    | Audit status                                                                                                                                                |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Validation rules and errors](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Validaciones_Errores_Veri-Factu.pdf)          | 1.2.2, 8 April 2026                        | In progress; §§3.1.1–3.1.5 substantially checked, §§4–6 partial                                                                                             |
-| [Web service description](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_Descripcion_SWeb.pdf)             | 1.0.3, 28 July 2025                        | In progress; section coverage map below                                                                                                                     |
-| [Hash specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_especificaciones_huella_hash_registros.pdf) | 0.1.2, 27 August 2024                      | §§2–7 checked for alta and cancellation; event records out of scope; decimal-variant comparison pending AEAT preproduction                                  |
-| [QR specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf)               | 0.5.0, 10 December 2025                    | §§2–10 and 12 classified; verifiable QR URL rules checked; printed layout and lookup responses outside library scope                                        |
-| [Developer FAQ](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/FAQs-Desarrolladores.pdf)                              | 1.3, 4 December 2025                       | Pending entry-by-entry review                                                                                                                               |
-| [Public FAQ](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes.html)                                 | Pages listed by AEAT on 22 September 2026  | Pending entry-by-entry review                                                                                                                               |
-| [XSD and WSDL files](schemas/README.md)                                                                                                                            | Versions and checksums in the linked index | Filing record, `SuministroLR.xsd`, `ConsultaLR.xsd`, and `RespuestaSuministro.xsd` inventories complete; consultation response and cross-schema review open |
+| AEAT publication                                                                                                                                                   | Version                                    | Audit status                                                                                                               |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| [Validation rules and errors](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Validaciones_Errores_Veri-Factu.pdf)          | 1.2.2, 8 April 2026                        | In progress; §§3.1.1–3.1.5 substantially checked, §§4–6 partial                                                            |
+| [Web service description](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_Descripcion_SWeb.pdf)             | 1.0.3, 28 July 2025                        | In progress; section coverage map below                                                                                    |
+| [Hash specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_especificaciones_huella_hash_registros.pdf) | 0.1.2, 27 August 2024                      | §§2–7 checked for alta and cancellation; event records out of scope; decimal-variant comparison pending AEAT preproduction |
+| [QR specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf)               | 0.5.0, 10 December 2025                    | §§2–10 and 12 classified; verifiable QR URL rules checked; printed layout and lookup responses outside library scope       |
+| [Developer FAQ](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/FAQs-Desarrolladores.pdf)                              | 1.3, 4 December 2025                       | Pending entry-by-entry review                                                                                              |
+| [Public FAQ](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes.html)                                 | Pages listed by AEAT on 22 September 2026  | Pending entry-by-entry review                                                                                              |
+| [XSD and WSDL files](schemas/README.md)                                                                                                                            | Versions and checksums in the linked index | All five individual XSD inventories complete; WSDL/import and cross-schema reconciliation remains open                     |
 
 ## Web-service description coverage map
 
@@ -514,8 +514,9 @@ the next query. `parseRespuestaConsulta` checks the literal enum values, rejects
 duplicated flag elements, and requires a single cursor with three present, XSD-shaped identity
 fields for `S`. The XSD makes the cursor block optional without a conditional constraint; an unexpected
 cursor on a final `N` page is ignored rather than discarding the page's records. The parser also
-rejects incomplete invoice identities inside returned records. Focused tests cover valid final
-and continuing pages, malformed flags, missing or repeated elements, and blank identity fields.
+rejects incomplete invoice identities inside returned records and pages above the 10,000-record
+schema maximum. Focused tests cover valid empty/final and continuing pages, malformed flags,
+missing or repeated elements, record/cursor order, the page-size boundary, and blank identity fields.
 This is a response-boundary check, not whole-response XSD validation; AEAT preproduction remains
 the source of actual responses.
 
@@ -525,28 +526,34 @@ The response schema requires `Cabecera`, `PeriodoImputacion`, `IndicadorPaginaci
 `ResultadoConsulta` in that order. It allows up to 10,000 records followed by an optional
 `ClavePaginacion`. `parseRespuestaConsulta` is a projection of this response, not a complete
 schema validator: it exposes the two flags, a continuation cursor when the flag is `S`, and the
-record list, but it does not expose or validate the echoed header and period or enforce the page
-size. A minimal response with one record and a continuation cursor passes offline validation
-against the pinned response XSD and its imports; that does not establish every returned field or
-live AEAT behavior.
+record list, but it does not expose or validate the echoed header and period. Offline probes cover
+the four required blocks, their order, both flag values, empty/final and continuing shapes, cursor
+position/cardinality, and the exact record maximum. A maximal fixture containing every direct
+returned-record field passes the pinned response XSD and its imports. Three separately declared
+1,000-entry lists are checked at 1,000 and 1,001; all response-specific enum values are exercised.
+Fields whose types come from `SuministroInformacion.xsd` reuse the completed filing-field inventory,
+while the response-specific optionality and order are checked here. This remains offline structural
+evidence; it does not prove which optional fields AEAT returns for a particular live query.
 
-| Published record field                                    | Parser behavior                                                                                                                                            | Evidence and limit                                                                                                                                      |
-| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `IDFactura`                                               | Returns its three identity fields and rejects an absent, repeated, incomplete, or XSD-invalid NIF length, invoice-number length, or date shape             | Parser tests and offline response-XSD probes; one invalid record aborts the entire parsed page, while calendar validity and NIF control remain separate |
-| `DatosRegistroFacturacion`                                | Retains the stored subtree and literal string values, including hash and amount fields; a present empty block becomes `{}` and an absent block is rejected | `src/xml/parse-consulta.test.ts`; nested data fields, limits, and combinations are not validated                                                        |
-| `DatosPresentacion`                                       | Returns its three fields when present; rejects repeated blocks, missing fields, invalid NIF length, and overlong petition ID                               | Parser tests and offline response-XSD probes; date-time syntax is not validated                                                                         |
-| `EstadoRegistro.TimestampUltimaModificacion`              | Returns the required timestamp literal; rejects a missing or blank value                                                                                   | `src/xml/parse-consulta.test.ts`; date-time syntax is not validated                                                                                     |
-| `EstadoRegistro.EstadoRegistro` and optional error detail | Checks the status against `Correcto`, `AceptadoConErrores`, and `Anulado`; converts an error code to a number and returns its description                  | `src/xml/parse-consulta.test.ts`; the consultation-response audit still needs to apply the response XSD's integer lexical and exact-range checks        |
+| Published record field                                    | Parser behavior                                                                                                                                                      | Evidence and limit                                                                                                                                                             |
+| --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `IDFactura`                                               | Returns its three identity fields and rejects an absent, repeated, incomplete, or XSD-invalid NIF length, invoice-number length, or date shape                       | Parser tests and offline response-XSD probes; one invalid record aborts the entire parsed page, while calendar validity and NIF control remain separate                        |
+| `DatosRegistroFacturacion`                                | Retains the stored subtree and literal string values; a present empty block becomes `{}` and an absent/repeated block is rejected                                    | A maximal XSD fixture covers every direct field, sequence, all direct enums and three 1,000-entry lists. The parser deliberately does not recursively validate this projection |
+| `DatosPresentacion`                                       | Returns its three fields when present; rejects repeated/missing fields, invalid NIF length, overlong petition ID, and an invalid positive-year XML Schema `dateTime` | Parser tests and response-XSD controls; the empty petition ID permitted by `TextMax20Type` remains preserved                                                                   |
+| `EstadoRegistro.TimestampUltimaModificacion`              | Returns the required timestamp literal; rejects absent, repeated, blank, or invalid positive-year XML Schema `dateTime` values                                       | Parser boundary tests plus valid/invalid XSD timestamp controls                                                                                                                |
+| `EstadoRegistro.EstadoRegistro` and optional error detail | Checks all three states; rejects repeated fields, non-integer/unsafe-number codes, and descriptions above 500 Unicode code points                                    | Parser and XSD tests. XML Schema permits arbitrary-size integers, but the public `number` API deliberately refuses values JavaScript cannot represent exactly                  |
 
-The required-block check prevents a malformed response from returning `undefined` where the
-public `RegistroConsultado` type promises an object or timestamp. It does not establish that an
-actual AEAT response contains all fields; that still needs a preproduction observation.
+The required-block and occurrence checks prevent malformed XML from returning `undefined` or an
+array where the public `RegistroConsultado` type promises one object, timestamp, state, code, or
+description. They do not establish that an actual AEAT response contains every optional field;
+that still needs a preproduction observation.
 For a continuing page, `ClavePaginacion` receives the same NIF-length, invoice-number, and date
 shape checks as `IDFactura`, so a malformed cursor fails at the response boundary instead of
 being returned for a later request that would reject it. The parser still ignores an unexpected
 cursor on a final page, preserving its records. The optional `DatosPresentacion` block now requires
-all three XSD fields when present, while retaining literal timestamp text; it does not claim to
-validate the full XML Schema `dateTime` lexical space.
+all three XSD fields when present and retains the checked timestamp literal. The shared timestamp
+guard covers the positive-year XML Schema forms AEAT publishes, including fractions, `Z`, numeric
+offsets through ±14:00, and no timezone; negative years remain outside the operational API.
 Unlike an ignored final-page cursor, a malformed record identity causes parsing to fail for the
 whole response. The API does not return that page's other records or cursor in this case; callers
 who need to diagnose non-conforming AEAT XML must capture the raw response at their transport

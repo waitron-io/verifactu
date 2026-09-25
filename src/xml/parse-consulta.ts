@@ -1,6 +1,7 @@
-import { asArray, asNumber, parser } from "./parse-common.js";
+import { asArray, parser } from "./parse-common.js";
 import {
   assertConsultaNif,
+  assertPositiveYearXmlSchemaDateTime,
   isValidConsultaFecha,
   isValidConsultaNumSerieFactura,
 } from "./serialize.js";
@@ -28,6 +29,19 @@ function estadoRegistroConsultaOf(value: string): EstadoRegistroConsulta {
     default:
       throw new Error(`Unexpected consulta record state: ${value}`);
   }
+}
+
+function integerNumber(value: string | undefined, field: string): number | undefined {
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  if (!/^[+-]?\d+$/.test(trimmed)) {
+    throw new Error(`${field} must be an integer, received ${JSON.stringify(value)}`);
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new Error(`${field} must be a safe integer, received ${JSON.stringify(value)}`);
+  }
+  return parsed;
 }
 
 export interface DatosPresentacionConsulta {
@@ -94,7 +108,7 @@ interface RawDatosPresentacion {
 interface RawRegistroConsultado {
   IDFactura: unknown;
   DatosRegistroFacturacion: unknown;
-  EstadoRegistro: RawEstadoRegistro | undefined;
+  EstadoRegistro: unknown;
   DatosPresentacion?: RawDatosPresentacion;
 }
 
@@ -172,6 +186,7 @@ function datosPresentacionOf(raw: unknown): DatosPresentacionConsulta | undefine
   if (typeof block.TimestampPresentacion !== "string" || !block.TimestampPresentacion.trim()) {
     throw new Error("DatosPresentacion.TimestampPresentacion is required");
   }
+  assertPositiveYearXmlSchemaDateTime("TimestampPresentacion", block.TimestampPresentacion);
   if (typeof block.IdPeticion !== "string" || Array.from(block.IdPeticion).length > 20) {
     throw new Error("DatosPresentacion.IdPeticion must contain at most 20 characters");
   }
@@ -195,20 +210,41 @@ function parseRegistroConsultado(raw: RawRegistroConsultado): RegistroConsultado
   if (typeof dataBlock !== "object") {
     throw new Error("DatosRegistroFacturacion must contain a record");
   }
-  const state = raw.EstadoRegistro;
-  if (!state) {
+  const rawState = raw.EstadoRegistro;
+  if (Array.isArray(rawState)) {
+    throw new Error("EstadoRegistro must appear once");
+  }
+  if (!rawState || typeof rawState !== "object") {
     throw new Error("Consulta record is missing EstadoRegistro");
+  }
+  const state = rawState as RawEstadoRegistro;
+  for (const field of [
+    "TimestampUltimaModificacion",
+    "EstadoRegistro",
+    "CodigoErrorRegistro",
+    "DescripcionErrorRegistro",
+  ] as const) {
+    if (Array.isArray(state[field])) {
+      throw new Error(`EstadoRegistro.${field} must appear once`);
+    }
   }
   const timestamp = state.TimestampUltimaModificacion;
   if (typeof timestamp !== "string" || timestamp.trim().length === 0) {
     throw new Error("Consulta record is missing TimestampUltimaModificacion");
+  }
+  assertPositiveYearXmlSchemaDateTime("TimestampUltimaModificacion", timestamp);
+  if (
+    typeof state.DescripcionErrorRegistro === "string" &&
+    Array.from(state.DescripcionErrorRegistro).length > 500
+  ) {
+    throw new Error("DescripcionErrorRegistro must contain at most 500 characters");
   }
   return {
     IDFactura: invoiceIdentityOf(raw.IDFactura, "IDFactura"),
     DatosRegistroFacturacion: dataBlock as Record<string, unknown>,
     TimestampUltimaModificacion: timestamp,
     EstadoRegistro: estadoRegistroConsultaOf(state.EstadoRegistro),
-    CodigoErrorRegistro: asNumber(state.CodigoErrorRegistro, "CodigoErrorRegistro"),
+    CodigoErrorRegistro: integerNumber(state.CodigoErrorRegistro, "CodigoErrorRegistro"),
     DescripcionErrorRegistro: state.DescripcionErrorRegistro,
     DatosPresentacion: datosPresentacionOf(raw.DatosPresentacion),
   };
@@ -227,14 +263,16 @@ export function parseRespuestaConsulta(xml: string): RespuestaConsulta {
   if (indicadorPaginacion === "S" && rawCursor === undefined) {
     throw new Error("ClavePaginacion is required when IndicadorPaginacion is S");
   }
+  const rawRecords = asArray(body.RegistroRespuestaConsultaFactuSistemaFacturacion);
+  if (rawRecords.length > 10_000) {
+    throw new Error("Consulta response may contain at most 10000 records");
+  }
   return {
     ResultadoConsulta: resultadoConsulta,
     IndicadorPaginacion: indicadorPaginacion,
     // A final page needs no cursor; ignore an unexpected optional block rather than losing its records.
     ClavePaginacion:
       indicadorPaginacion === "S" ? invoiceIdentityOf(rawCursor, "ClavePaginacion") : undefined,
-    registros: asArray(body.RegistroRespuestaConsultaFactuSistemaFacturacion).map(
-      parseRegistroConsultado,
-    ),
+    registros: rawRecords.map(parseRegistroConsultado),
   };
 }

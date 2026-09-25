@@ -673,7 +673,7 @@ function assertFilingOccurrence(field: string, child: string, values: readonly u
   }
 }
 
-function assertFilingDateTime(field: string, value: unknown): void {
+export function assertPositiveYearXmlSchemaDateTime(field: string, value: unknown): void {
   const match =
     typeof value === "string"
       ? /^(\d{4}|[1-9]\d{4,})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(?:(Z)|([+-])(\d{2}):(\d{2}))?$/.exec(
@@ -799,7 +799,10 @@ export function assertFilingRecordXsd(
   }
   assertFilingLiteral(`${field}.TipoHuella`, record.TipoHuella, ["01"], "01");
   assertFilingText(`${field}.Huella`, record.Huella, 64);
-  assertFilingDateTime(`${field}.FechaHoraHusoGenRegistro`, record.FechaHoraHusoGenRegistro);
+  assertPositiveYearXmlSchemaDateTime(
+    `${field}.FechaHoraHusoGenRegistro`,
+    record.FechaHoraHusoGenRegistro,
+  );
 
   if (!("TipoFactura" in record)) {
     assertFilingNif(

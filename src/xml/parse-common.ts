@@ -4,7 +4,7 @@ import { XMLParser } from "fast-xml-parser";
  * Shared parser configuration for every module here that reads XML —
  * parse-suministro.ts, parse-consulta.ts and parse-request.ts. Leaf values
  * stay strings — parseTagValue is off — so each parser converts specific
- * numeric fields explicitly via asNumber below.
+ * numeric fields explicitly at the boundary that knows their schema type.
  *
  * parseTagValue is deliberately off: flipping it to true would turn a literal
  * like "123.40" into the number 123.4 and "0012345678" into 12345678,
@@ -39,24 +39,4 @@ export const parser = new XMLParser({
 export function asArray<T>(value: T | T[] | undefined): T[] {
   if (value === undefined) return [];
   return Array.isArray(value) ? value : [value];
-}
-
-/**
- * Converts a raw string leaf (parseTagValue is off) to a number, preserving
- * undefined for a genuinely absent optional field.
- *
- * Throws rather than returning NaN when the field IS present but its content
- * does not convert to a finite number (e.g. a non-numeric string). Silently
- * propagating NaN would let a malformed response masquerade as a well-typed
- * `number` all the way to the caller — a poisoned value some callers use to
- * schedule follow-up work, where it should instead fail loudly right here at
- * the parse boundary.
- */
-export function asNumber(value: string | undefined, field: string): number | undefined {
-  if (value === undefined) return undefined;
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) {
-    throw new Error(`${field} must be a valid number, received ${JSON.stringify(value)}`);
-  }
-  return parsed;
 }
