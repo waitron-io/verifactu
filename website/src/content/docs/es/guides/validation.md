@@ -121,6 +121,10 @@ Cada destinatario también debe usar exactamente uno de `NIF` e `IDOtro`. En los
 aparecer en `F1`, `F3` o `R1`–`R4`. Esos tipos de factura son también los únicos que admiten
 registros expedidos por el destinatario (`"D"`), porque `F2` y `R5` prohíben `Destinatarios`.
 
+Si indicas `IDOtro.CodigoPais` para el productor del programa, un tercero, un destinatario o el
+generador de una anulación, usa un código de la lista `CountryType2` de la AEAT. Un código como
+`ZZ` se rechaza antes de generar el XML; se admiten códigos especiales de la AEAT como `QU`.
+
 En las líneas de detalle IVA `S1`, `validate` comprueba la lista oficial de tipos y los periodos
 fechados de los tipos temporales del `5`, `2` y `7,5` por ciento. Si incluyes
 `TipoRecargoEquivalencia`, su valor debe corresponder tanto a `TipoImpositivo` como a la fecha

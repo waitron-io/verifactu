@@ -2,6 +2,7 @@ import { MAX_OFFSET_MINUTES, trimValue } from "./format.js";
 import { verifyHuella } from "./huella.js";
 import { hasValidNifControl } from "./nif.js";
 import { isAlta } from "./types.js";
+import { isValidCountryType2 } from "./xml/country-type2.js";
 import type { RegistroAlta, RegistroAnulacion } from "./types.js";
 
 export type ValidationSeverity = "error" | "warning";
@@ -30,6 +31,7 @@ export type ValidationCode =
   | "SISTEMA_ES_IDTYPE"
   | "SISTEMA_IDTYPE_07_FORBIDDEN"
   | "SISTEMA_VAT_ID_FORMAT"
+  | "IDOTRO_COUNTRY_CODE"
   | "CONTROL_CHAR"
   | "HUELLA_ANTERIOR_FORMAT"
   | "HUELLA_ANTERIOR_EQUALS_CURRENT"
@@ -463,6 +465,15 @@ export function validate(
       add("NUMSERIE_LENGTH", field, "NumSerieFactura must be 1 to 60 characters");
     }
   };
+  const checkIdOtroCountry = (field: string, country: string | undefined) => {
+    if (country !== undefined && !isValidCountryType2(country)) {
+      add(
+        "IDOTRO_COUNTRY_CODE",
+        `${field}.IDOtro.CodigoPais`,
+        "CodigoPais must be an AEAT CountryType2 code",
+      );
+    }
+  };
 
   const emisor = isAlta(record)
     ? record.IDFactura.IDEmisorFactura
@@ -599,6 +610,7 @@ export function validate(
   if (sistema.NIF !== undefined) {
     checkNif("SistemaInformatico.NIF", sistema.NIF);
   }
+  checkIdOtroCountry("SistemaInformatico", sistema.IDOtro?.CodigoPais);
   if (sistema.IDOtro?.CodigoPais === "ES" && sistema.IDOtro.IDType !== "03") {
     add(
       "SISTEMA_ES_IDTYPE",
@@ -704,6 +716,7 @@ export function validate(
           );
         }
       }
+      checkIdOtroCountry("Generador", generador.IDOtro?.CodigoPais);
       if (record.GeneradoPor === "E" && !hasNif) {
         add("GENERADOR_E_REQUIRES_NIF", "Generador.NIF", "GeneradoPor E requires Generador.NIF");
       }
@@ -1006,6 +1019,7 @@ export function validate(
         );
       }
     }
+    checkIdOtroCountry("Tercero", tercero.IDOtro?.CodigoPais);
     if (tercero.IDOtro?.CodigoPais === "ES" && tercero.IDOtro.IDType !== "03") {
       add(
         "TERCERO_ES_IDTYPE",
@@ -1072,6 +1086,7 @@ export function validate(
     checkNoControlChars(`${field}.NombreRazon`, destinatario.NombreRazon);
     if (destinatario.NIF !== undefined) checkNif(`${field}.NIF`, destinatario.NIF);
     checkNoControlChars(`${field}.IDOtro.ID`, destinatario.IDOtro?.ID);
+    checkIdOtroCountry(field, destinatario.IDOtro?.CodigoPais);
     if (hasNif === hasIdOtro) {
       add(
         "DESTINATARIO_ID_CHOICE",

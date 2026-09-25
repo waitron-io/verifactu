@@ -112,6 +112,10 @@ requires `CodigoPais: "ES"`; Spanish recipients may use only `IDType: "03"` or `
 These invoice families are also the only ones that can use recipient-issued (`"D"`) records,
 because `F2` and `R5` forbid `Destinatarios`.
 
+When you supply `IDOtro.CodigoPais` for a software producer, third party, recipient, or cancellation
+generator, use a code from AEAT's `CountryType2` list. A plausible-looking code such as `ZZ` is
+rejected locally before it becomes filing XML; AEAT's special codes, including `QU`, are allowed.
+
 For IVA `S1` detail lines, `validate` checks the official rate list and the dated windows for the
 temporary `5`, `2`, and `7.5` percent rates. When you include `TipoRecargoEquivalencia`, its value
 must match both `TipoImpositivo` and the effective operation date. The effective date is

@@ -68,6 +68,40 @@ const codes = (record: RegistroAlta, options?: ValidationOptions) =>
 const anulacionCodes = (record: RegistroAnulacion) => validate(record).map((issue) => issue.code);
 
 describe("validate", () => {
+  it.each(["software", "third party", "recipient", "generator"] as const)(
+    "rejects an XSD-invalid country code on the %s identity",
+    (role) => {
+      const record = role === "generator" ? validAnulacion() : valid();
+      const other = { CodigoPais: "ZZ", IDType: "03", ID: "X-1" };
+      if (role === "software") {
+        record.SistemaInformatico = sistemaWithIdOtro(other);
+      } else if (role === "generator") {
+        const cancellation = record as RegistroAnulacion;
+        cancellation.GeneradoPor = "D";
+        cancellation.Generador = { NombreRazon: "Foreign generator", IDOtro: other };
+      } else if (role === "third party" && "TipoFactura" in record) {
+        record.EmitidaPorTerceroODestinatario = "T";
+        record.Tercero = { NombreRazon: "Foreign issuer", IDOtro: other };
+      } else if (role === "recipient" && "TipoFactura" in record) {
+        record.Destinatarios = {
+          IDDestinatario: [{ NombreRazon: "Foreign buyer", IDOtro: other }],
+        };
+      }
+      const field = {
+        software: "SistemaInformatico.IDOtro.CodigoPais",
+        "third party": "Tercero.IDOtro.CodigoPais",
+        recipient: "Destinatarios.IDDestinatario[0].IDOtro.CodigoPais",
+        generator: "Generador.IDOtro.CodigoPais",
+      }[role];
+      expect(validate(record)).toContainEqual({
+        code: "IDOTRO_COUNTRY_CODE",
+        severity: "error",
+        field,
+        message: "CodigoPais must be an AEAT CountryType2 code",
+      });
+    },
+  );
+
   it("returns no issues for a well-formed record", () => {
     expect(validate(valid())).toEqual([]);
   });
@@ -4179,6 +4213,15 @@ describe("validate — pins the exact field, message and severity for every Vali
   }
 
   const cases = [
+    {
+      description: "IDOTRO_COUNTRY_CODE",
+      code: "IDOTRO_COUNTRY_CODE",
+      field: "SistemaInformatico.IDOtro.CodigoPais",
+      message: "CodigoPais must be an AEAT CountryType2 code",
+      mutate: (r) => {
+        r.SistemaInformatico = sistemaWithIdOtro({ CodigoPais: "ZZ", IDType: "03", ID: "X-1" });
+      },
+    },
     {
       description: "NIF_LENGTH on the emisor NIF",
       code: "NIF_LENGTH",

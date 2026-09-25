@@ -1,6 +1,6 @@
 import { escapeXml } from "./escape.js";
 import { hasValidNifControl } from "../nif.js";
-import { isValidConsultaCountryCode } from "./consulta-country.js";
+import { isValidCountryType2 } from "./country-type2.js";
 import type {
   DesgloseRectificacion,
   Destinatario,
@@ -189,7 +189,7 @@ export function assertConsultaPersona(
     if (Array.isArray(other.CodigoPais)) {
       throw new Error(`Consulta ${field}.IDOtro.CodigoPais must appear once`);
     }
-    if (other.CodigoPais !== undefined && !isValidConsultaCountryCode(other.CodigoPais)) {
+    if (other.CodigoPais !== undefined && !isValidCountryType2(other.CodigoPais)) {
       throw new Error(`Consulta ${field}.IDOtro.CodigoPais must be an AEAT CountryType2 code`);
     }
     if (Array.isArray(other.IDType)) {
@@ -647,6 +647,11 @@ export function serializeEnvio(
       throw new Error(`${field} must be 31-12-20XX from 2027`);
     }
   }
+  const assertIdOtroCountry = (field: string, country: string | undefined) => {
+    if (country !== undefined && !isValidCountryType2(country)) {
+      throw new Error(`${field}.IDOtro.CodigoPais must be an AEAT CountryType2 code`);
+    }
+  };
   registros.forEach((entry, index) => {
     const hasAlta = entry != null && typeof entry === "object" && "RegistroAlta" in entry;
     const hasAnulacion = entry != null && typeof entry === "object" && "RegistroAnulacion" in entry;
@@ -673,6 +678,18 @@ export function serializeEnvio(
     }
     if ("RegistroAlta" in entry) {
       const alta = entry.RegistroAlta;
+      const field = `RegistroAlta[${index}]`;
+      assertIdOtroCountry(
+        `${field}.SistemaInformatico`,
+        alta.SistemaInformatico.IDOtro?.CodigoPais,
+      );
+      assertIdOtroCountry(`${field}.Tercero`, alta.Tercero?.IDOtro?.CodigoPais);
+      alta.Destinatarios?.IDDestinatario.forEach((recipient, recipientIndex) => {
+        assertIdOtroCountry(
+          `${field}.Destinatarios.IDDestinatario[${recipientIndex}]`,
+          recipient.IDOtro?.CodigoPais,
+        );
+      });
       if (alta.Encadenamiento.RegistroAnterior !== undefined) {
         assertPreviousInvoiceNumberXsd(
           `RegistroAlta[${index}].Encadenamiento.RegistroAnterior.NumSerieFactura`,
@@ -696,6 +713,13 @@ export function serializeEnvio(
         ),
       );
     } else if ("RegistroAnulacion" in entry) {
+      const cancellation = entry.RegistroAnulacion;
+      const field = `RegistroAnulacion[${index}]`;
+      assertIdOtroCountry(
+        `${field}.SistemaInformatico`,
+        cancellation.SistemaInformatico.IDOtro?.CodigoPais,
+      );
+      assertIdOtroCountry(`${field}.Generador`, cancellation.Generador?.IDOtro?.CodigoPais);
       if (entry.RegistroAnulacion.Encadenamiento.RegistroAnterior !== undefined) {
         assertPreviousInvoiceNumberXsd(
           `RegistroAnulacion[${index}].Encadenamiento.RegistroAnterior.NumSerieFactura`,

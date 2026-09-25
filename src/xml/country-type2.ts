@@ -22,6 +22,6 @@ export const AEAT_COUNTRY_TYPE2_CODES = Object.freeze(
 
 const COUNTRY_CODES = new Set(AEAT_COUNTRY_TYPE2_CODES);
 
-export function isValidConsultaCountryCode(value: unknown): value is string {
+export function isValidCountryType2(value: unknown): value is string {
   return typeof value === "string" && COUNTRY_CODES.has(value);
 }

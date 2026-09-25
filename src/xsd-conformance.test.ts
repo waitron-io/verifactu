@@ -5,7 +5,7 @@ import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
 import { describe, expect, it } from "vitest";
 import { CABECERA, ALTA_INPUT, SISTEMA } from "../test/fixtures.js";
 import { buildAltaRecord, buildAnulacionRecord } from "./records.js";
-import { AEAT_COUNTRY_TYPE2_CODES, isValidConsultaCountryCode } from "./xml/consulta-country.js";
+import { AEAT_COUNTRY_TYPE2_CODES, isValidCountryType2 } from "./xml/country-type2.js";
 import { NS_LRC, NS_SF, serializeConsulta, serializeEnvio } from "./xml/serialize.js";
 
 const SOAP_NS = "http://schemas.xmlsoap.org/soap/envelope/";
@@ -568,7 +568,7 @@ describe("generated unsigned requests against AEAT XSDs", () => {
     expect(result.status, result.stderr).not.toBe(0);
   });
 
-  it("keeps the consultation country-code guard equal to AEAT CountryType2", () => {
+  it("keeps the shared country-code guard equal to AEAT CountryType2", () => {
     const schema = new DOMParser().parseFromString(readFileSync(INFO_XSD, "utf8"), "text/xml");
     const namespace = "http://www.w3.org/2001/XMLSchema";
     const countryType = Array.from(schema.getElementsByTagNameNS(namespace, "simpleType")).find(
@@ -582,11 +582,31 @@ describe("generated unsigned requests against AEAT XSDs", () => {
     );
     expect([...AEAT_COUNTRY_TYPE2_CODES].sort()).toEqual([...expected].sort());
     for (const code of AEAT_COUNTRY_TYPE2_CODES) {
-      expect(isValidConsultaCountryCode(code)).toBe(true);
+      expect(isValidCountryType2(code)).toBe(true);
     }
     for (const code of ["", "fr", "FRA", "ZZ", " AA", "A1"]) {
-      expect(isValidConsultaCountryCode(code)).toBe(false);
+      expect(isValidCountryType2(code)).toBe(false);
     }
+  });
+
+  it("accepts special filing country QU but rejects ZZ under the filing XSD", () => {
+    const alta = buildAltaRecord({
+      ...ALTA_INPUT,
+      Destinatarios: {
+        IDDestinatario: [
+          { NombreRazon: "Foreign buyer", IDOtro: { CodigoPais: "QU", IDType: "03", ID: "X" } },
+        ],
+      },
+    });
+    const body = soapBodyElement(serializeEnvio(CABECERA, [{ RegistroAlta: alta }]));
+    const valid = schemaResult(ENVIO_XSD, body);
+    expect(valid.status, valid.stderr).toBe(0);
+    const document = new DOMParser().parseFromString(body, "text/xml");
+    const country = document.getElementsByTagNameNS(NS_SF, "CodigoPais").item(0);
+    if (!country) throw new Error("Filing fixture has no CodigoPais");
+    country.textContent = "ZZ";
+    const invalid = schemaResult(ENVIO_XSD, new XMLSerializer().serializeToString(document));
+    expect(invalid.status, invalid.stderr).not.toBe(0);
   });
 
   it("accepts QU but rejects ZZ under AEAT CountryType2", () => {
