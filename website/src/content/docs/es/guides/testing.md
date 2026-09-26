@@ -77,4 +77,5 @@ está publicada, así que compruébala en preproducción si tu flujo depende de 
 En particular, el transporte falso conserva los espacios al principio y al final del texto
 enviado. La AEAT los elimina antes de almacenar y devolver los campos de texto. Si tu prueba
 depende del valor almacenado de un campo como `RefExterna`, confírmalo en la preproducción de la
-AEAT.
+AEAT. La publicación no define qué caracteres de espacio Unicode no ASCII elimina la AEAT, así que
+no deduzcas ese límite del transporte falso ni del comportamiento de `trim()` en JavaScript.

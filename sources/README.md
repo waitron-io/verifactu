@@ -7,7 +7,8 @@ changes or a source becomes unavailable. It never accepts a new fingerprint auto
 
 The watch covers AEAT's technical index, all 18 pages currently linked by its FAQ index,
 the developer FAQ, the service, hash, QR and validation documents, the validation error-code
-list, and the six checked-in schemas. It also watches the current commits of `borjamrd/verifactu-conformance` and
+list, the three schema namespace URLs, and all six WSDL/XSD artifacts at both the test and
+production URLs published in the service description's annexes 7 and 8. It also watches the current commits of `borjamrd/verifactu-conformance` and
 `inoguerols/verifactu`. The first of these is a third-party package of examples from AEAT's
 PDFs, not an AEAT-hosted test suite. The AEAT documents remain authoritative.
 

@@ -11,11 +11,22 @@ const faq = `${aeat}/Sede/iva/sistemas-informaticos-facturacion-verifactu/pregun
 const docs = `${aeat}/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU`;
 const docsLegacy =
   "https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU";
-const schema =
+const namespaceSchema =
   "https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws";
 const preSchema =
   "https://prewww2.aeat.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1.0/cont/ws";
+const productionSchema =
+  "https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1.0/cont/ws";
 const execFileAsync = promisify(execFile);
+
+const annexArtifacts = [
+  "SistemaFacturacion.wsdl",
+  "SuministroInformacion.xsd",
+  "SuministroLR.xsd",
+  "ConsultaLR.xsd",
+  "RespuestaSuministro.xsd",
+  "RespuestaConsultaLR.xsd",
+];
 
 const faqPages = [
   "cuestiones-generales-conceptos-definiciones",
@@ -65,12 +76,19 @@ export const sources = [
   },
   { id: "aeat-error-codes", kind: "binary", url: `${preSchema}/errores.properties` },
   ...["SuministroInformacion.xsd", "SuministroLR.xsd", "ConsultaLR.xsd"].map((name) => ({
-    id: `aeat-${name}`,
+    id: `aeat-namespace-${name}`,
     kind: "binary",
-    url: `${schema}/${name}`,
+    url: `${namespaceSchema}/${name}`,
   })),
-  ...["RespuestaSuministro.xsd", "RespuestaConsultaLR.xsd", "SistemaFacturacion.wsdl"].map(
-    (name) => ({ id: `aeat-${name}`, kind: "binary", url: `${preSchema}/${name}` }),
+  ...[
+    ["preproduction", preSchema],
+    ["production", productionSchema],
+  ].flatMap(([environment, base]) =>
+    annexArtifacts.map((name) => ({
+      id: `aeat-annex-${environment}-${name}`,
+      kind: "binary",
+      url: `${base}/${name}`,
+    })),
   ),
   {
     id: "conformance-fixtures",
