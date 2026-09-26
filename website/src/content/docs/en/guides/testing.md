@@ -24,6 +24,12 @@ Its filing responses use the pinned schema's namespaces, echo the submitted head
 required element order; the offline suite validates accepted, rejected, and duplicate examples
 against `RespuestaSuministro.xsd`. That proves the fake's tested XML shape, not AEAT behavior.
 
+Do not use the fake to prove under-requirement response severity. It accepts a
+`RemisionRequerimiento` header so you can test the request and response XML, but it still applies
+its voluntary Veri*Factu correction and rejection rules. AEAT's separate requirement service
+admits business-rule errors in preserved records, except for NIF or `IDOtro` identity errors.
+Confirm that behavior against preproduction if your workflow depends on it.
+
 Inspect each response line as well as `EstadoEnvio`. The fake returns `Correcto` only when every
 line is correct, `ParcialmenteCorrecto` if a line is accepted with errors or accepted and rejected
 lines are mixed, and `Incorrecto` if every line is rejected. An all-rejected batch has no `CSV`.

@@ -103,7 +103,10 @@ Cuando `IndicadorPaginacion` sea `"S"`, envía la `ClavePaginacion` recibida en 
 siguiente consulta. El analizador comprueba que `ResultadoConsulta` sea `ConDatos` o `SinDatos`,
 que `IndicadorPaginacion` sea `S` o `N`, y que una página `S` lleve una clave con sus tres campos
 de identidad de factura presentes y dentro de los límites del esquema para el NIF, el número de
-factura y el formato de fecha. Aplica los mismos límites a cada identidad de factura devuelta. Si
+factura y el formato de fecha. También sigue los estados almacenados del XSD de respuesta actual:
+`Correcto`, `AceptadoConErrores` y `Anulado`. El ejemplo del PDF de descripción del servicio usa
+`Correcta`, pero ese literal antiguo no pasa el XSD actual y el analizador lo rechaza. Aplica los
+mismos límites a cada identidad de factura devuelta. Si
 falta la clave de continuación o sus datos no son válidos, lanza un error para que no repitas la
 primera página. Una página final `N` no necesita clave; si la respuesta la incluye,
 el analizador la ignora y conserva los registros de esa página. También rechaza una respuesta con

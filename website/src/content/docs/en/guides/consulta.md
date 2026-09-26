@@ -100,6 +100,9 @@ When `IndicadorPaginacion` is `"S"`, send `ClavePaginacion` from the response in
 The response parser checks that `ResultadoConsulta` is `ConDatos` or `SinDatos`, that
 `IndicadorPaginacion` is `S` or `N`, and that a continuing `S` page has one cursor with all three
 invoice-identity fields present and within the schema's NIF, invoice-number, and date-shape bounds.
+It also follows the current response XSD's stored-state values: `Correcto`,
+`AceptadoConErrores`, and `Anulado`. The service-description PDF's worked response says
+`Correcta`, but that older literal does not pass the current XSD and the parser rejects it.
 It applies those same bounds to each returned invoice identity. It throws if a continuing cursor
 is missing or malformed, so you do not repeat the first page. A final `N` page needs no cursor;
 if the response includes one anyway, the parser ignores it and keeps the page's records. It also
