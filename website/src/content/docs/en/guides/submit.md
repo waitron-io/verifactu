@@ -274,6 +274,10 @@ AEAT's stored hash with yours. The under-requirement service has no consulta.
 `PeriodoImputacion` is required even for one invoice. The client takes its `Ejercicio` and
 `Periodo` as a flat `ConsultaFiltro`:
 
+Use the year and month of `FechaOperacion` when the record has one. Otherwise, use the year and
+month of `FechaExpedicionFactura`. The issue date remains a useful narrowing filter, but it does
+not replace the imputation period.
+
 ```ts
 const result = await client.consultar(cabecera, {
   Ejercicio: "2026",

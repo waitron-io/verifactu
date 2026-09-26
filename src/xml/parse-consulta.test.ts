@@ -1,5 +1,9 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
-import { parseRespuestaConsulta, type EstadoRegistroConsulta } from "./parse-consulta.js";
+import {
+  parseRespuestaConsulta,
+  type DatosPresentacionConsulta,
+  type EstadoRegistroConsulta,
+} from "./parse-consulta.js";
 
 const RESPONSE = `<?xml version="1.0" encoding="UTF-8"?>
   <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
@@ -186,6 +190,14 @@ describe("parseRespuestaConsulta", () => {
     expectTypeOf<EstadoRegistroConsulta>().toEqualTypeOf<
       "Correcto" | "AceptadoConErrores" | "Anulado"
     >();
+  });
+
+  it("types every field in a present DatosPresentacion block as required", () => {
+    expectTypeOf<DatosPresentacionConsulta>().toEqualTypeOf<{
+      NIFPresentador: string;
+      TimestampPresentacion: string;
+      IdPeticion: string;
+    }>();
   });
 
   it("reports whether the query returned data", () => {

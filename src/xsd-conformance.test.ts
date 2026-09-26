@@ -1551,8 +1551,8 @@ describe("consultation response identity fields against AEAT XSDs", () => {
       const response = await fake.fetch("https://fake.aeat.test/soap", {
         method: "POST",
         body: serializeConsulta(header, {
-          Ejercicio: "2026",
-          Periodo: "07",
+          Ejercicio: "2024",
+          Periodo: "01",
           DatosAdicionalesRespuesta: {
             MostrarNombreRazonEmisor: "S",
             ...(header === CABECERA ? { MostrarSistemaInformatico: "S" as const } : {}),

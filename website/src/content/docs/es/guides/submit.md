@@ -278,6 +278,10 @@ consultas.
 `PeriodoImputacion` es obligatorio incluso para una sola factura. `ConsultaFiltro` expresa sus
 campos `Ejercicio` y `Periodo` directamente:
 
+Usa el año y el mes de `FechaOperacion` cuando el registro incluya ese campo. En caso contrario,
+usa los de `FechaExpedicionFactura`. La fecha de expedición sigue siendo útil para acotar la
+consulta, pero no sustituye al periodo de imputación.
+
 ```ts
 const result = await client.consultar(cabecera, {
   Ejercicio: "2026",

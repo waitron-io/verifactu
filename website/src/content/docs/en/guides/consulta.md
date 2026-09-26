@@ -7,6 +7,11 @@ Use `consultar` when you need to reconcile your copy with AEAT's stored record, 
 duplicate response with no stored-state detail. The period is mandatory even when you know the
 invoice number.
 
+Use the invoice's imputation period, which is the year and month of `FechaOperacion` when the
+record has one, or `FechaExpedicionFactura` otherwise. This still applies to a lookup narrowed by
+invoice number and issue date. If you send the issue month for a record whose operation belongs to
+another month, AEAT returns no match in that period.
+
 ```ts
 const result = await client.consultar(cabecera, {
   Ejercicio: "2026",

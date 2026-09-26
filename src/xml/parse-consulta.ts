@@ -48,9 +48,9 @@ function integerNumber(value: unknown, field: string): number | undefined {
 }
 
 export interface DatosPresentacionConsulta {
-  NIFPresentador?: string;
-  TimestampPresentacion?: string;
-  IdPeticion?: string;
+  NIFPresentador: string;
+  TimestampPresentacion: string;
+  IdPeticion: string;
 }
 
 export interface RegistroConsultado {
