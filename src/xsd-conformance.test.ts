@@ -1507,6 +1507,64 @@ describe("consultation response identity fields against AEAT XSDs", () => {
       expect(result.status, result.stderr).not.toBe(0);
     }
   });
+
+  it.each([
+    ["issuer", CABECERA],
+    ["recipient", { Destinatario: { NombreRazon: "Buyer", NIF: "11111111H" } }],
+  ] as const)(
+    "keeps an empty fake AEAT %s consulta response schema-valid",
+    async (_kind, header) => {
+      const fake = createFakeAeat();
+      const response = await fake.fetch("https://fake.aeat.test/soap", {
+        method: "POST",
+        body: serializeConsulta(header, { Ejercicio: "2026", Periodo: "07" }),
+      });
+      const body = soapBodyElement(await response.text());
+      const result = schemaResult(RESPUESTA_CONSULTA_XSD, body);
+      expect(result.status, result.stderr).toBe(0);
+    },
+  );
+
+  it.each([
+    ["issuer", CABECERA],
+    ["recipient", { Destinatario: { NombreRazon: "Buyer", NIF: "11111111H" } }],
+  ] as const)(
+    "keeps a populated fake AEAT %s consulta response schema-valid",
+    async (_kind, header) => {
+      const fake = createFakeAeat({ consultaPageSize: 1 });
+      await fake.client().submit(CABECERA, [
+        {
+          RegistroAlta: buildAltaRecord({
+            ...ALTA_INPUT,
+            RefExterna: "EXT-1",
+            Destinatarios: {
+              IDDestinatario: [{ NombreRazon: "Buyer", NIF: "11111111H" }],
+            },
+          }),
+        },
+      ]);
+      await fake.client().submit(CABECERA, [
+        {
+          RegistroAlta: buildAltaRecord({ ...ALTA_INPUT, NumSerieFactura: "SECOND/1" }),
+        },
+      ]);
+      const response = await fake.fetch("https://fake.aeat.test/soap", {
+        method: "POST",
+        body: serializeConsulta(header, {
+          Ejercicio: "2026",
+          Periodo: "07",
+          DatosAdicionalesRespuesta: {
+            MostrarNombreRazonEmisor: "S",
+            ...(header === CABECERA ? { MostrarSistemaInformatico: "S" as const } : {}),
+          },
+        }),
+      });
+      const body = soapBodyElement(await response.text());
+      expect(body).toContain("<sfRC:RefExterna>EXT-1</sfRC:RefExterna>");
+      const result = schemaResult(RESPUESTA_CONSULTA_XSD, body);
+      expect(result.status, result.stderr).toBe(0);
+    },
+  );
 });
 
 describe("filing response fields against AEAT XSDs", () => {
