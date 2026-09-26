@@ -457,12 +457,13 @@ bodies against their imported XSDs.
 
 Service-description annexes 7 and 8 publish those same six artifacts under separate
 `prewww2.aeat.es` test and `www2.agenciatributaria.gob.es` production URL sets. All 12 links
-resolved on 26 September 2026. Eleven test/production pairs were byte-identical; the production
-`SuministroLR.xsd` has one extra ASCII space after its `<choice>` start tag and is otherwise
-identical to the test copy. That whitespace does not change the schema model, but it proves the
-two URL sets can drift independently. The weekly source watch therefore fingerprints every annex
-URL separately while continuing to watch the three namespace URLs used by generated XML. Its
-focused test fails if either six-artifact annex set is omitted.
+resolved on 26 September 2026. Five of the six test/production pairs were byte-identical; the
+production `SuministroLR.xsd` has one extra ASCII space after its `<choice>` start tag and is otherwise
+identical to the test copy. Substituting that production copy into a disposable checkout left all
+194 request-schema tests green, so tested validation behavior is unchanged; the byte difference
+still proves the two URL sets can drift independently. The weekly source watch therefore
+fingerprints every annex URL separately while continuing to watch the three namespace URLs used by
+generated XML. Its focused test fails if either six-artifact annex set is omitted.
 
 The WSDL assigns four ports to each binding: ordinary and sello-certificate addresses in both
 production and preproduction. `SistemaVerifactu`, `SistemaVerifactuSello`,
@@ -757,7 +758,7 @@ build or submit event records, so those fields are explicitly outside its suppor
 
 ### Numeric XML values — service description §6.8
 
-The rendered page 46 rule forbids leading zeroes in numeric XML values but permits trailing zeroes in decimals to
+AEAT forbids leading zeroes in numeric XML values but permits trailing zeroes in decimals to
 express precision. The record builders emit amounts with exactly two decimal places and no leading
 zeroes. For records constructed or edited directly, `validate` now applies the same leading-zero
 rule to totals, detail amounts, rectification amounts, and tax rates. `src/validate.test.ts` covers

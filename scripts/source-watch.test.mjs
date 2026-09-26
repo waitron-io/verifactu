@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import {
   fingerprintSource,
@@ -66,10 +67,15 @@ test("source inspection watches every test and production artifact linked by ann
     "https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1.0/cont/ws/SuministroInformacion.xsd",
     "https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1.0/cont/ws/SuministroLR.xsd",
   ]);
-  assert.deepEqual(
-    results.map(({ status }) => status),
-    Array.from({ length: 12 }, () => "new"),
-  );
+  assert.equal(results.length, 12);
+});
+
+test("the baseline has exactly one fingerprint for every watched source", async () => {
+  const baseline = JSON.parse(
+    await readFile(new URL("../sources/watch-baseline.json", import.meta.url), "utf8"),
+  ).fingerprints;
+
+  assert.deepEqual(Object.keys(baseline).sort(), sources.map(({ id }) => id).sort());
 });
 
 test("rejects an HTML error page served instead of a PDF or schema", async () => {
