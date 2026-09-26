@@ -7,6 +7,11 @@ Usa `consultar` para comparar tu copia con el registro guardado por la AEAT, esp
 de una respuesta de duplicado sin detalle del estado almacenado. El periodo es obligatorio incluso
 si conoces el número de factura.
 
+Usa el periodo de imputación de la factura: el año y mes de `FechaOperacion` cuando el registro
+incluya ese campo y, en caso contrario, los de `FechaExpedicionFactura`. Esta regla también se
+aplica cuando acotas la consulta por número y fecha de expedición. Si indicas el mes de expedición
+para un registro cuya operación pertenece a otro mes, la AEAT no lo devuelve en ese periodo.
+
 ```ts
 const result = await client.consultar(cabecera, {
   Ejercicio: "2026",

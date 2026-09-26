@@ -372,6 +372,10 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
             nombreRazonEmisor: prior?.nombreRazonEmisor ?? cabecera.ObligadoEmision.NombreRazon,
             destinatarios: prior?.destinatarios ?? [],
             sistema: anulacion.SistemaInformatico,
+            // A cancellation names the invoice but has no operation date. Keep the stored alta's
+            // imputation month so cancelling it cannot move it into its later issue month. A
+            // SinRegistroPrevio cancellation has no alta to inherit from, so its issue date is the
+            // only published period input available to the fake.
             periodoImputacion:
               prior?.periodoImputacion ??
               periodoImputacionOf(anulacion.IDFactura.FechaExpedicionFacturaAnulada),

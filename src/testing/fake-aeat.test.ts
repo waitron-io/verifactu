@@ -1697,7 +1697,7 @@ describe("fake AEAT — resubmit (error 3000) and consulta", () => {
   });
 });
 
-describe("fake AEAT — consulta pagination + RefExterna echo + state hooks", () => {
+describe("fake AEAT — consulta imputation period", () => {
   it("filters the imputation period by operation date and falls back to issue date", async () => {
     const aeat = createFakeAeat();
     await aeat.client().submit(cabecera, [
@@ -1727,6 +1727,60 @@ describe("fake AEAT — consulta pagination + RefExterna echo + state hooks", ()
     ]);
   });
 
+  it("keeps an accepted cancellation in the alta operation period", async () => {
+    const aeat = createFakeAeat();
+    await aeat.client().submit(cabecera, [
+      {
+        RegistroAlta: {
+          ...altaFixture("A/CANCELLED-PERIOD", "20-07-2026"),
+          FechaOperacion: "30-06-2026",
+        },
+      },
+    ]);
+    await aeat
+      .client()
+      .submit(cabecera, [{ RegistroAnulacion: anulacionFixture("A/CANCELLED-PERIOD") }]);
+
+    const june = await aeat.client().consultar(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "06",
+    });
+    expect(june.registros.map((record) => record.IDFactura.NumSerieFactura)).toEqual([
+      "A/CANCELLED-PERIOD",
+    ]);
+    expect(june.registros[0]?.EstadoRegistro).toBe("Anulado");
+
+    const july = await aeat.client().consultar(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+    });
+    expect(july.ResultadoConsulta).toBe("SinDatos");
+  });
+
+  it("uses the cancelled invoice issue period when no alta is stored", async () => {
+    const aeat = createFakeAeat();
+    const response = await aeat.client().submit(cabecera, [
+      {
+        RegistroAnulacion: {
+          ...anulacionFixture("A/NO-PRIOR", "20-07-2026"),
+          SinRegistroPrevio: "S",
+        },
+      },
+    ]);
+    expect(response.EstadoEnvio).toBe("Correcto");
+
+    const july = await aeat.client().consultar(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+    });
+    expect(july.registros.map((record) => record.IDFactura.NumSerieFactura)).toEqual([
+      "A/NO-PRIOR",
+    ]);
+    expect(july.registros[0]?.EstadoRegistro).toBe("Anulado");
+  });
+});
+
+describe("fake AEAT — consulta pagination + RefExterna echo + state hooks", () => {
   it("supports issuer date ranges and recipient-side consultas", async () => {
     const aeat = createFakeAeat();
     const recipient = { NombreRazon: "Cliente Uno", NIF: "11111111H" };
