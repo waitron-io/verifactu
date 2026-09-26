@@ -52,10 +52,17 @@ retry behavior or of changes to other non-hashed fields.
 
 The fake uses published error-code meanings, but the annex does not assign numeric codes to
 these cancellation-table outcomes. Do not assume that AEAT returns the same code for each case.
-The fake does not track rejected correction or cancellation attempts or implement every
-cancellation state in
-[AEAT's annex §6](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Validaciones_Errores_Veri-Factu.pdf).
-Check those workflows in AEAT preproduction.
+For `RechazoPrevio: "S"`, the fake requires an earlier rejected operation of the same kind and
+invoice identity. An alta retry still needs an existing record. A cancellation retry needs an
+existing record unless you also set `SinRegistroPrevio: "S"`; that special retry requires no
+stored record. Successful retries consume the fake's rejection marker. This covers the state
+transitions in [AEAT's annex §6](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Validaciones_Errores_Veri-Factu.pdf),
+but not AEAT's retention period or exact error code for each table cell.
+
+The fake returns rejecting code `1112` for a future invoice date. It reserves accepted-with-errors
+code `2004` for a future `FechaHoraHusoGenRegistro`, matching the published list. The fake uses an
+exact local clock comparison; AEAT's live tolerance is not published, so test its boundary in
+preproduction if your workflow depends on it.
 
 In particular, the fake keeps leading and trailing spaces in submitted text. AEAT trims those
 spaces before storing and returning text fields. If your test depends on the stored spelling of

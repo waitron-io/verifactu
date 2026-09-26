@@ -144,6 +144,9 @@ tax. AEAT's [validation glossary](https://www.agenciatributaria.es/static_files/
 §5.2 lists `E1`–`E6` for IVA and IPSI, and `E1`–`E8` for IGIC. Do not treat a successful
 `validate` result as proof that the operation legally qualifies for your chosen code: the
 library checks supported code combinations, not the facts of your transaction.
+In version 1.2.2, IGIC `E1` refers to chapter I and `E7` to article 90 of Decreto Legislativo
+1/2025. Those updated legal references do not change the accepted code values or create a local
+test of legal eligibility.
 
 Regime-specific validation covers the published operation, rate, base-at-cost, invoice-type,
 recipient-identity, and operation-date conditions for IVA/IGIC regimes `02`, `03`, `04`, `06`,

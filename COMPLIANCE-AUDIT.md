@@ -8,7 +8,8 @@ is accepted. The [source watch](sources/README.md) checks for publication change
 
 | AEAT publication                                                                                                                                                   | Version                                    | Audit status                                                                                                               |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| [Validation rules and errors](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Validaciones_Errores_Veri-Factu.pdf)          | 1.2.2, 8 April 2026                        | In progress; §§3.1.1–3.1.5 substantially checked, §§4–6 partial                                                            |
+| [Validation rules and errors](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Validaciones_Errores_Veri-Factu.pdf)          | 1.2.2, 8 April 2026                        | §§4–6 offline inventory complete; §§3.1.1–3.1.5 substantially checked                                                      |
+| [Validation error-code list](https://prewww2.aeat.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1.0/cont/ws/errores.properties)                    | Unversioned; modified 30 July 2026         | All three categories checked; source fingerprint now watched                                                               |
 | [Web service description](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_Descripcion_SWeb.pdf)             | 1.0.3, 28 July 2025                        | In progress; section coverage map below                                                                                    |
 | [Hash specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_especificaciones_huella_hash_registros.pdf) | 0.1.2, 27 August 2024                      | §§2–7 checked for alta and cancellation; event records out of scope; decimal-variant comparison pending AEAT preproduction |
 | [QR specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf)               | 0.5.0, 10 December 2025                    | §§2–10 and 12 classified; verifiable QR URL rules checked; printed layout and lookup responses outside library scope       |
@@ -138,6 +139,11 @@ it does not impose an equivalent local IPSI list check. The English and Spanish 
 guides now explain the choice and this limit. This is a terminology and guidance audit, not
 evidence of an AEAT acceptance result for every tax-code combination.
 
+Version 1.2.2 changed only literal legal references in §5.2.2: IGIC `E1` now cites chapter I and
+`E7` article 90 of Decreto Legislativo 1/2025. The code domains and local validation behavior did
+not change. The guides record those current meanings without turning legal qualification into a
+software assertion.
+
 ### Submission header and record wrappers — validation §3.1.1–2
 
 The public `Cabecera` type preserves the optional voluntary-remittance block or the alternative
@@ -171,6 +177,26 @@ admissible, apart from NIF/`IDOtro` identity errors, which may reject a record. 
 description §10 also requires `FinRequerimiento: "S"` on the final batch. The library has no
 knowledge of which batch is final and does not automate that flag or either correction policy;
 callers must inspect the AEAT response and choose the appropriate workflow.
+
+Sections 4.1–4.4 are accounted for end to end. `Correcto`, `ParcialmenteCorrecto`, and
+`Incorrecto` represent complete acceptance, a mixture that includes a rejected or
+accepted-with-errors line, and complete rejection. Per-record `Correcto`,
+`AceptadoConErrores`, and `Incorrecto` remain separate evidence and must all be inspected. A
+structural request or header syntax failure can instead arrive as a SOAP fault. The independently
+published error-code list groups errors into whole-request rejection, record rejection (or
+whole-request rejection when the error is in the header), and accepted-record errors. Its
+downloaded 30 July 2026 bytes have SHA-256
+`06519ceb23422bd6b0ad3bfb659e3007615050da4920781d12cff536481d5902` and are now part of the
+weekly source watch.
+
+The accepted-record category currently contains codes `2000`–`2009`. Section 4.3.1 names hash,
+recipient census, total, first-record, missing IPSI-regime, and generation-clock cases; it exempts
+the missing IPSI regime and future generation timestamp from correction. The separate list also
+contains predecessor-hash codes `2002`/`2003` and same-as-current hash code `2008`, which the
+section's prose does not enumerate. The parser therefore preserves the numeric code and
+description rather than hard-coding a correction decision. The bilingual submission guides tell
+callers to use the current published category and the response context. Whether a correction is
+legally permissible instead of a rectificativa or cancellation remains a caller decision.
 
 The serializer locally checks issuer and representative NIF form/control, both optional `S`/`N`
 remittance flags, required reference content and its 18-XML-character maximum, and a real `FechaFinVeriFactu` in the current or
@@ -228,7 +254,7 @@ AEAT returns `Correcto` only when every response line is `Correcto`,
 accepted and rejected lines, and `Incorrecto` when every line is rejected. An all-rejected
 response has no CSV; a partially correct response has one. The fake AEAT now follows these
 batch-level rules. `src/testing/fake-aeat.test.ts` covers a wholly accepted batch, a
-future-dated `AceptadoConErrores` line, a mixed batch, an all-rejected two-line batch,
+future-generation-time `AceptadoConErrores` line, a mixed batch, an all-rejected two-line batch,
 and a duplicate-only retry, including CSV presence or absence. The duplicate test also
 checks the raw XML omits `CSV` and that `resolveEstadoEfectivo` finds the previously
 accepted record despite the rejected retry. The real response parser exposes AEAT's global,
@@ -664,6 +690,13 @@ the [published `3002` missing-record code](https://prewww2.aeat.es/static_files/
 `src/testing/fake-aeat.test.ts` covers these states,
 the no-prior `X` path, and refusal to overwrite an existing record with that path.
 
+`RechazoPrevio: "S"` is distinct from both ordinary subsanación and the no-prior `X` path: the
+fake accepts it only after it has rejected an earlier subsanación for the same invoice identity.
+The retry consumes that operation history. Focused controls show that merely setting `S` cannot
+replace a stored alta, while an `X` attempt rejected against an existing record establishes the
+history needed for a subsequent `S` retry. This models the annex's transition, not AEAT's
+unpublished retention period or exact numeric error for a premature retry.
+
 ### Cancellation without a prior record — validation annex §6.2
 
 AEAT's cancellation matrix requires an existing invoice record for an ordinary anulación
@@ -697,11 +730,20 @@ systems, and the exact retry's petition ID. The
 hash/reference comparison is the fake's limited way to detect new data: it does not compare
 every non-hashed field or establish AEAT's retry behavior for an identical cancellation.
 
-This is not full annex §6 fidelity. The fake still does not track the history needed for
-`RechazoPrevio: "S"` after a rejected subsanación or cancellation, and it does not yet
-implement every §6.2 state. The library
-does not select a correction operation for callers;
-check those flows against AEAT preproduction rather than treating the fake as an authority.
+Both cancellation retry rows are now covered. `RechazoPrevio: "S"` requires a previously rejected
+cancellation for the same identity; the ordinary retry still requires an existing AEAT record,
+while the `SinRegistroPrevio: "S"` retry still requires that no record exists. Controls prove the
+same flags are refused without matching rejection history and that successful retries consume it.
+The fake also distinguishes the error tables' date cases: a future invoice date rejects with
+`1112`, while a future `FechaHoraHusoGenRegistro` is stored as `AceptadoConErrores` with `2004`.
+Only AEAT's clock and unpublished tolerance can decide the live boundary.
+
+The offline §6 matrix is complete for the fake's one-record-per-invoice model. It records only
+whether the matching operation kind was rejected, not AEAT's complete attempt history, and its
+`3000`/`3002` choices for matrix errors remain representative because the annex does not assign
+codes to those cells. The library does not select a correction operation for callers; check legal
+eligibility, live error codes, clock tolerance, and long-lived history against AEAT rather than
+treating the fake as an authority.
 
 ## Remaining work
 

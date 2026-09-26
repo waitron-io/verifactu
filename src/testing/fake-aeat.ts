@@ -108,6 +108,7 @@ interface Identity {
   huella: string;
   ref: string | undefined;
   fecha: string;
+  fechaHoraHusoGenRegistro: string;
 }
 
 /**
@@ -125,6 +126,7 @@ function identityOf(entry: EnvioRegistro): Identity {
       huella: r.Huella,
       ref: r.RefExterna,
       fecha: r.IDFactura.FechaExpedicionFactura,
+      fechaHoraHusoGenRegistro: r.FechaHoraHusoGenRegistro,
     };
   }
   const r = entry.RegistroAnulacion;
@@ -139,6 +141,7 @@ function identityOf(entry: EnvioRegistro): Identity {
     huella: r.Huella,
     ref: r.RefExterna,
     fecha: idf.FechaExpedicionFactura,
+    fechaHoraHusoGenRegistro: r.FechaHoraHusoGenRegistro,
   };
 }
 
@@ -166,6 +169,7 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
   const petitionIds = new Map<FacturaKey, string>();
   const metadata = new Map<FacturaKey, StoredMetadata>();
   const rejections = new Map<FacturaKey, { code: number; message: string }>();
+  const rejectedOperations = new Map<FacturaKey, Set<"alta-subsanacion" | "anulacion">>();
   // Keys for which a 3000 response omits the optional duplicate-detail block, leaving the
   // caller to reconcile the unknown stored state through consulta.
   const noDuplicadoDetail = new Set<FacturaKey>();
@@ -187,21 +191,40 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
     // The synthetic petition ID and the CSV for a non-rejected batch share this sequence.
     const csv = `CSV-${String(++csvSequence).padStart(8, "0")}`;
     for (const entry of registros) {
-      const { idf, tipo, huella, ref, fecha } = identityOf(entry);
+      const { idf, tipo, huella, ref, fecha, fechaHoraHusoGenRegistro } = identityOf(entry);
       const operacion = operacionXml(entry);
       const key = keyOfIdentity(idf);
       const existing = store.get(key);
       const forced = rejections.get(key);
-      const future = fechaToDate(fecha).getTime() > serverNow.getTime();
+      const futureInvoiceDate = fechaToDate(fecha).getTime() > serverNow.getTime();
+      const futureGenerationTime = Date.parse(fechaHoraHusoGenRegistro) > serverNow.getTime();
       const alta = "RegistroAlta" in entry ? entry.RegistroAlta : undefined;
       const anulacion = "RegistroAnulacion" in entry ? entry.RegistroAnulacion : undefined;
+      const rejectedOperation =
+        alta?.Subsanacion === "S" ? "alta-subsanacion" : anulacion ? "anulacion" : undefined;
+      const previousRejections = rejectedOperations.get(key);
+      const hasRejectedSubsanacion = previousRejections?.has("alta-subsanacion") ?? false;
+      const hasRejectedCancellation = previousRejections?.has("anulacion") ?? false;
+      const rejectLine = (line: string): void => {
+        rejectedCount += 1;
+        lineas.push(line);
+        if (rejectedOperation !== undefined) {
+          const history = rejectedOperations.get(key) ?? new Set();
+          history.add(rejectedOperation);
+          rejectedOperations.set(key, history);
+        }
+      };
       const isNormalSubsanacion =
         alta?.Subsanacion === "S" &&
-        (alta.RechazoPrevio === undefined || alta.RechazoPrevio === "N");
+        (alta.RechazoPrevio === undefined ||
+          alta.RechazoPrevio === "N" ||
+          (alta.RechazoPrevio === "S" && hasRejectedSubsanacion));
       const replacesExistingAlta = existing !== undefined && isNormalSubsanacion;
       const permitsCancellationReplacement =
         anulacion !== undefined &&
-        (anulacion.RechazoPrevio === undefined || anulacion.RechazoPrevio === "N");
+        (anulacion.RechazoPrevio === undefined ||
+          anulacion.RechazoPrevio === "N" ||
+          (anulacion.RechazoPrevio === "S" && hasRejectedCancellation));
       // A changed hash or reference marks new cancellation data; an exact retry stays a duplicate.
       const replacesExistingCancellation =
         existing?.tipo === "anulacion" &&
@@ -209,9 +232,27 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
         (existing.huella !== huella || (ref !== undefined && existing.refExterna !== ref));
       // A normal subsanación replaces an AEAT record; only RechazoPrevio=X permits no prior record.
       if (!forced && !existing && alta?.Subsanacion === "S" && alta.RechazoPrevio !== "X") {
-        rejectedCount += 1;
-        lineas.push(
+        rejectLine(
           lineaXml(idf, "Incorrecto", 3002, "No existe el registro de facturación", ref, operacion),
+        );
+        continue;
+      }
+      if (!forced && existing && alta?.RechazoPrevio === "S" && !hasRejectedSubsanacion) {
+        rejectLine(duplicadoLineaXml(idf, undefined, ref, operacion, undefined));
+        continue;
+      }
+      if (!forced && anulacion?.RechazoPrevio === "S" && !hasRejectedCancellation) {
+        rejectLine(
+          existing
+            ? duplicadoLineaXml(idf, undefined, ref, operacion, undefined)
+            : lineaXml(
+                idf,
+                "Incorrecto",
+                3002,
+                "No existe el registro de facturación",
+                ref,
+                operacion,
+              ),
         );
         continue;
       }
@@ -221,8 +262,7 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
         anulacion.SinRegistroPrevio !== "S" &&
         anulacion.SinRegistroPrevio !== "N"
       ) {
-        rejectedCount += 1;
-        lineas.push(
+        rejectLine(
           lineaXml(
             idf,
             "Incorrecto",
@@ -236,16 +276,27 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
       }
       // A normal cancellation needs a stored record; SinRegistroPrevio=S is the no-prior path.
       if (!forced && !existing && anulacion && anulacion.SinRegistroPrevio !== "S") {
-        rejectedCount += 1;
-        lineas.push(
+        rejectLine(
           lineaXml(idf, "Incorrecto", 3002, "No existe el registro de facturación", ref, operacion),
         );
         continue;
       }
       if (!forced && existing && anulacion?.SinRegistroPrevio === "S") {
         // The stored record is not an accepted instance of this refused cancellation.
-        rejectedCount += 1;
-        lineas.push(duplicadoLineaXml(idf, undefined, ref, operacion, undefined));
+        rejectLine(duplicadoLineaXml(idf, undefined, ref, operacion, undefined));
+        continue;
+      }
+      if (!forced && futureInvoiceDate) {
+        rejectLine(
+          lineaXml(
+            idf,
+            "Incorrecto",
+            1112,
+            "El valor de FechaExpedicionFactura es superior a la fecha actual",
+            ref,
+            operacion,
+          ),
+        );
         continue;
       }
       if (
@@ -261,21 +312,23 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
       ) {
         // Only an allowed cancellation or subsanación can replace stored state. A duplicate
         // leaves it untouched and reports that state for resolveEstadoEfectivo.
-        rejectedCount += 1;
         const detail = noDuplicadoDetail.has(key) ? undefined : duplicateStateOf(existing.estado);
         const storedPetitionId = petitionIds.get(key);
         if (detail !== undefined && storedPetitionId === undefined) {
           throw new Error(`Fake AEAT has no petition ID for stored record ${key}`);
         }
-        lineas.push(duplicadoLineaXml(idf, detail, ref, operacion, storedPetitionId));
+        rejectLine(duplicadoLineaXml(idf, detail, ref, operacion, storedPetitionId));
         continue;
       }
       if (forced) {
-        rejectedCount += 1;
-        lineas.push(lineaXml(idf, "Incorrecto", forced.code, forced.message, ref, operacion));
+        rejectLine(lineaXml(idf, "Incorrecto", forced.code, forced.message, ref, operacion));
       } else {
         const estado =
-          tipo === "anulacion" ? "Anulado" : future ? "AceptadoConErrores" : "Correcto";
+          tipo === "anulacion"
+            ? "Anulado"
+            : futureGenerationTime
+              ? "AceptadoConErrores"
+              : "Correcto";
         // Consulta exposes the latest record for an invoice identity. This one-row fake therefore
         // replaces an alta snapshot with the accepted anulación's hash, kind, and external reference.
         store.set(key, {
@@ -286,6 +339,9 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
           refExterna: tipo === "anulacion" ? (ref ?? existing?.refExterna) : ref,
         });
         petitionIds.set(key, `PET-${String(csvSequence).padStart(8, "0")}`);
+        if (alta?.RechazoPrevio === "S") previousRejections?.delete("alta-subsanacion");
+        if (anulacion?.RechazoPrevio === "S") previousRejections?.delete("anulacion");
+        if (previousRejections?.size === 0) rejectedOperations.delete(key);
         if (alta) {
           metadata.set(key, {
             nombreRazonEmisor: alta.NombreRazonEmisor,
@@ -301,7 +357,7 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
             sistema: anulacion.SistemaInformatico,
           });
         }
-        if (future) {
+        if (futureGenerationTime) {
           // 2004 is non-rejecting: the record is stored and the line reads AceptadoConErrores.
           anyAcceptedWithErrors = true;
           lineas.push(
@@ -309,7 +365,7 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
               idf,
               "AceptadoConErrores",
               2004,
-              "Fecha de expedición posterior a la fecha del sistema",
+              "FechaHoraHusoGenRegistro posterior a la fecha del sistema de la AEAT",
               ref,
               operacion,
             ),

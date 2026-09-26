@@ -155,6 +155,9 @@ legales distintas según el impuesto. El [glosario de validaciones de la AEAT](h
 §5.2 enumera `E1`–`E6` para IVA e IPSI y `E1`–`E8` para IGIC. Un resultado correcto de
 `validate` no demuestra que la operación cumpla los requisitos legales del código elegido: la
 biblioteca comprueba las combinaciones admitidas, no los hechos de tu operación.
+En la versión 1.2.2, `E1` del IGIC remite al capítulo I y `E7` al artículo 90 del Decreto
+Legislativo 1/2025. Estas referencias legales actualizadas no cambian los códigos admitidos ni
+permiten comprobar localmente si la operación cumple los requisitos legales.
 
 La validación específica de regímenes cubre las condiciones publicadas sobre operación, tipo,
 base a coste, tipo de factura, identificación del destinatario y fecha de operación para los

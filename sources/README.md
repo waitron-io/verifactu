@@ -6,8 +6,8 @@ AEAT can revise a PDF, a schema, or an FAQ page without changing its URL. The we
 changes or a source becomes unavailable. It never accepts a new fingerprint automatically.
 
 The watch covers AEAT's technical index, all 18 pages currently linked by its FAQ index,
-the developer FAQ, the service, hash, QR and validation documents, and the six checked-in
-schemas. It also watches the current commits of `borjamrd/verifactu-conformance` and
+the developer FAQ, the service, hash, QR and validation documents, the validation error-code
+list, and the six checked-in schemas. It also watches the current commits of `borjamrd/verifactu-conformance` and
 `inoguerols/verifactu`. The first of these is a third-party package of examples from AEAT's
 PDFs, not an AEAT-hosted test suite. The AEAT documents remain authoritative.
 
