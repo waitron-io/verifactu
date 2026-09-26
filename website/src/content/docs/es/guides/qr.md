@@ -75,6 +75,12 @@ vertical, colócalo cerca de la parte superior, preferiblemente centrado o a la 
 factura apaisada, colócalo a la izquierda, preferiblemente cerca de la esquina superior o centrado
 verticalmente.
 
+No es obligatorio expedir la factura en papel. En una factura electrónica estructurada, la AEAT
+permite incluir el contenido del QR o la URL de cotejo en el propio formato en lugar de incrustar
+una imagen. Si también produces un PDF o una imagen legible, aplica a esa representación las reglas
+visuales anteriores. El formato y el generador de tu factura deciden esta opción;
+`buildQrPayload` devuelve la misma URL.
+
 Escribe `QR tributario:` encima y `Factura verificable en la sede electrónica de la AEAT` o
 `VERI*FACTU` debajo. Usa un tamaño de letra legible, igual o superior al de los demás datos de la
 factura. Tu generador de facturas, no esta función de URL, debe cumplir estas

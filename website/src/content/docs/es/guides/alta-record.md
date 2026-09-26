@@ -52,6 +52,12 @@ también permite omitir algunos suplidos y recargos financieros, o incluirlos si
 como importes no sujetos o a tipo cero. Tú eliges el tratamiento según la factura; el constructor
 da formato al importe, pero no lo calcula ni lo clasifica.
 
+Para un descuento por pronto pago, decide primero si ya se había concedido cuando se produjo el
+devengo. Si fue así, usa la base imponible reducida. Si no, la FAQ de la AEAT sobre registros de
+alta permite representar el posible descuento como otra línea de `Desglose`. Tu sistema de
+facturación decide el momento y el tratamiento fiscal; el constructor solo conserva los importes
+que le entregas.
+
 En el caso concreto de un décimo de lotería vendido por su valor facial, sin recargo y junto con
 otros bienes, la FAQ 22 para desarrolladores trata su cobro como un suplido y lo omite tanto del
 registro como de `ImporteTotal`. Este caso específico es más estrecho que la opción general

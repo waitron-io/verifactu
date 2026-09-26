@@ -50,6 +50,11 @@ also allows some suplidos and financial surcharges to be omitted, or included wh
 them as non-subject or zero-rate amounts. You choose the treatment from the invoice facts; the
 builder formats the amount but does not calculate or classify it.
 
+For an early-payment discount, first decide whether it was already granted when the taxable event
+occurred. If it was, use the reduced taxable base. If it was not, AEAT's alta-record FAQ allows you
+to represent the possible discount as another line in `Desglose`. Your invoicing system owns that
+timing and tax decision; the builder only preserves the amounts you supply.
+
 For a face-value lottery ticket sold without a premium alongside other goods, developer FAQ 22
 treats the ticket payment like a suplido and omits it from both the record and `ImporteTotal`.
 That specific case remains narrower than the later generic option above. Do not apply it to a
