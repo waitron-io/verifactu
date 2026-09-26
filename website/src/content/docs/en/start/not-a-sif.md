@@ -12,6 +12,19 @@ new identities, store AEAT's responses and CSV on receipt, and provide the requi
 declaración responsable for that installation. The library supplies record and protocol functions;
 you design and operate the surrounding system.
 
+## Decide whether the rules apply before you build records
+
+AEAT treats hardware and software as a SIF when together they accept invoice data, preserve it,
+and process it into tax outputs, wherever those steps run. A word processor or spreadsheet used
+only to enter, print, and keep invoices may fall outside that definition. The same spreadsheet can
+become part of a SIF when a macro turns those invoices into a tax ledger.
+
+This package does not decide whether a taxpayer or operation falls under the RRSIF. SII enrolment,
+foral rules, the taxpayer's territory and tax, exemptions, and whether a document is legally an
+invoice all depend on facts outside a record. Decide that scope before calling the package. A
+missing tax QR is an issuer-compliance question; by itself, it does not decide whether the recipient
+may deduct input VAT.
+
 ## Keep installation and invoice identities permanent
 
 Allocate `NumeroInstalacion` outside this package and never reuse it for the same invoice issuer,
@@ -20,10 +33,12 @@ even after reinstalling the same product. In a multi-tenant service, calculate
 operation configured, including inactive ones. Do not derive it from the service's global customer
 count.
 
-Keep drafts, proformas, and imported invoices outside your own record-building path. An imported
-record remains attributable to its original SIF. Once you issue an invoice, even for training, its
-issuer, serial, and issue-date identity cannot be deleted and reused; cancel it through the normal
-record flow when required.
+Keep drafts, proformas, and imported invoices outside your own record-building path. A draft has no
+tax QR and no alta record. If your deployed SIF creates drafts, keep them linked to the final invoice
+or retain them under your own controls when no invoice follows. An imported record remains
+attributable to its original SIF. Once you issue an invoice, even for training, its issuer, serial,
+and issue-date identity cannot be deleted and reused; cancel it through the normal record flow when
+required.
 
 ## Separate operational storage from the legal mode
 
@@ -38,6 +53,12 @@ This package does not implement NO Veri*Factu signatures, event records, anomaly
 identity screens, invoice rendering, or declarations. If your product needs those features, build
 and certify them in the deployed SIF rather than treating a valid XML record as proof of the whole
 system.
+
+Delegating material invoice issuance does not transfer the issuer's responsibility for compliance.
+When a recipient or third party issues the invoice, your deployment must establish the authority,
+operator identity, and accounting treatment. The package only represents the corresponding record
+fields. Your deployed SIF must also let an inspector reach the relevant tax data without exposing
+unrelated confidential data; an XML serializer cannot provide that access boundary.
 
 Read the repository's [provenance and disclaimer](https://github.com/waitron-io/verifactu/blob/main/PROVENANCE.md)
 before treating any example here as a complete compliance design.

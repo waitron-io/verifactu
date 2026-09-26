@@ -76,6 +76,10 @@ registros conservados. En el último lote indica `FinRequerimiento: "S"` en
 `RemisionRequerimiento`, incluso si solo hay un lote. No puedes consultar esos registros mediante
 el servicio de consulta de los envíos voluntarios.
 
+Un SIF Veri*Factu remite cada alta al expedir la factura. No expidas facturas en un sistema sin
+conexión para copiar sus registros a otro sistema y enviarlos al final del día. Si dos ubicaciones
+funcionan como SIF independientes, cada una mantiene su propia ruta de remisión directa y su cadena.
+
 El serializador comprueba la forma del NIF del obligado y del representante antes del envío.
 También comprueba el límite de 18 caracteres de la referencia y una `FechaFinVeriFactu` indicada:
 su año debe ser el actual o el anterior y, desde el 1 de enero de 2027, la fecha debe tener la
@@ -185,6 +189,9 @@ Guarda certificado y contraseña en el almacén de secretos de tu despliegue y c
 `dispatcher` cuando termine el proceso. El ejemplo comprobable de este sitio ejercita la
 adaptación de `fetch` contra la AEAT falsa; comprueba también tu certificado real en
 preproducción antes de usarlo en producción.
+
+El certificado mTLS autentica la conexión. No es una firma XAdES del registro. Este paquete no
+implementa la firma de registros, que pertenece a la modalidad NO Veri*Factu no admitida aquí.
 
 ## Envía y conserva la respuesta
 
