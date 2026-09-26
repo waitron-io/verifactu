@@ -54,7 +54,10 @@ differ.
 
 That XML field does not grant authority to act for the taxpayer. Your deployment must separately
 hold the applicable social-collaboration agreement and the taxpayer's authorization, and use a
-certificate AEAT accepts for that representation. Local NIF validation proves only the text shape.
+certificate AEAT accepts for that representation. For a software provider using the social-
+collaboration route described by the public FAQ, confirm the current Type 017 census procedure and
+retain the signed authorization evidence in the form AEAT accepts. Local NIF validation proves
+only the text shape; it does not prove that the agreement or authority is active.
 
 For an ordinary voluntary Veri*Factu submission, leave the header's remittance blocks absent.
 You can add `RemisionVoluntaria: { FechaFinVeriFactu, Incidencia }` when those fields apply. If
@@ -188,8 +191,8 @@ transport in this site's example check; a real certificate must also be checked 
 preproduction before you rely on it in production.
 
 The mTLS certificate authenticates the connection. It is not an XAdES signature on a record. This
-package does not implement record signing, which belongs to the NO Veri*Factu surface that it does
-not support.
+package does not implement record signing: it supports neither the signatures required by NO
+Veri*Factu nor the optional signatures that a producer may add to Veri*Factu records.
 
 ## Submit and retain the response
 
@@ -344,6 +347,10 @@ const cancellationResponse = await client.submit(cabecera, [
 
 Handle this response, its CSV, and its wait time the same way as an alta. Schedule the cancellation
 submission after the wait returned by the previous submission.
+
+Keep the issued invoice number, the original alta, and this cancellation together in your durable
+invoice history and listings. A cancellation adds a record; it does not erase the original invoice
+or make its number available for reuse.
 
 Keep `IDEmisorFacturaAnulada` equal to `cabecera.ObligadoEmision.NIF`; the serializer rejects a
 different issuer. When you set `GeneradoPor`, also supply `Generador` with its name and either a

@@ -54,8 +54,10 @@ ambos valores difieren.
 
 Ese campo XML no concede por sí solo autorización para actuar por el obligado. Tu despliegue debe
 contar por separado con el acuerdo de colaboración social aplicable, la autorización del cliente y
-un certificado que la AEAT acepte para esa representación. La validación local del NIF solo prueba
-la forma del texto.
+un certificado que la AEAT acepte para esa representación. Si un proveedor de software usa la vía
+de colaboración social descrita por la FAQ pública, confirma el trámite censal de tipo 017 vigente
+y conserva la autorización firmada en la forma que acepte la AEAT. La validación local del NIF solo
+prueba la forma del texto; no acredita que el acuerdo ni la representación estén vigentes.
 
 Para un envío voluntario VERI*FACTU ordinario, deja ausentes los bloques de remisión de la
 cabecera. Puedes añadir `RemisionVoluntaria: { FechaFinVeriFactu, Incidencia }` cuando proceda.
@@ -191,7 +193,8 @@ adaptación de `fetch` contra la AEAT falsa; comprueba también tu certificado r
 preproducción antes de usarlo en producción.
 
 El certificado mTLS autentica la conexión. No es una firma XAdES del registro. Este paquete no
-implementa la firma de registros, que pertenece a la modalidad NO Veri*Factu no admitida aquí.
+implementa la firma de registros: no admite ni las firmas obligatorias de la modalidad NO
+Veri*Factu ni las firmas opcionales que un productor puede añadir a registros Veri*Factu.
 
 ## Envía y conserva la respuesta
 
@@ -349,6 +352,10 @@ const cancellationResponse = await client.submit(cabecera, [
 
 Conserva el CSV, interpreta cada línea y respeta el tiempo de espera igual que en un alta.
 Programa este envío de anulación para después de la espera indicada por el envío anterior.
+
+Conserva juntos en el historial y los listados duraderos de la factura el número expedido, el alta
+original y esta anulación. Una anulación añade un registro; no borra la factura original ni deja su
+número disponible para reutilizarlo.
 
 Mantén `IDEmisorFacturaAnulada` igual a `cabecera.ObligadoEmision.NIF`: el serializador rechaza
 otro emisor. Si indicas `GeneradoPor`, incluye también `Generador` con su nombre y un NIF o

@@ -74,6 +74,11 @@ show it only once on the first page. On a portrait invoice, keep it near the top
 centered or at the upper left. On a landscape invoice, keep it on the left, preferably near the
 upper left or centered vertically.
 
+An invoice does not have to be issued on paper. For a structured electronic invoice, AEAT allows
+the QR contents or lookup URL to be carried in the format instead of embedding a graphical code.
+If you also render a human-readable PDF or image, apply the visual placement rules above to that
+rendering. Your invoice format and renderer own this choice; `buildQrPayload` returns the same URL.
+
 Print `QR tributario:` above the code and either `Factura verificable en la sede electrónica de
 la AEAT` or `VERI*FACTU` below it. Use a legible font size that is equal to or larger than the
 rest of the invoice data. Your invoice renderer, not this URL helper, must satisfy these
