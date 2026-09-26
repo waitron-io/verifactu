@@ -31,3 +31,13 @@ formato de los campos después.
 
 Numera las facturas y actualiza la cadena en una transacción duradera de tu sistema. La biblioteca
 no mantiene una cadena en memoria porque un fallo del proceso perdería ese estado.
+
+Antes de añadir un registro, inspecciona el antecesor que hayas leído del almacenamiento.
+`validate` comprueba la huella del registro actual y la forma y el formato de la huella del puntero
+al anterior; con un solo registro no puede demostrar que el anterior estuviera bien enlazado con el
+que lo precedía ni comparar la hora de generación de ese antecesor guardado con la nueva
+incorporación. Realiza esas comprobaciones históricas junto a la transacción duradera de la cadena.
+
+La FAQ 15 para desarrolladores de la AEAT describe comprobaciones automáticas y registros de
+eventos adicionales para los SIF NO Veri*Factu. Este paquete crea registros Veri*Factu y no
+implementa firmas NO Veri*Factu, registros de eventos, informes de anomalías ni control del reloj.

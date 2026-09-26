@@ -42,6 +42,10 @@ copying expression.
 ## Disclaimer
 
 This library is a tool for building SIFs. **It is not itself a SIF.** A _sistema informático de
-facturación_ is a deployed system, and its obligations — conservation, inalterability,
-accessibility of records — are properties of a deployment, not of source code. Each deploying
-business issues its own declaración responsable for its own installation.
+facturación_ is a deployed system, and its obligations are properties of the selected operating
+mode and deployment, not of source code. AEAT developer FAQ 13 says local conservation of
+submitted records is not separately regulated for a Veri*Factu SIF because AEAT retains them; the
+deployment still owns durable numbering, chain and retry state, AEAT receipts, complete invoice
+documents, and any storage required by its wider accounting system. The producer that integrates
+this library into a deployed product is responsible for the declaración responsable that applies
+to that product's components and architecture.
