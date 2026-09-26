@@ -68,9 +68,13 @@ percent escapes. Level `M` is the error correction setting in this recipe. The f
 in the test help the decoder; they do not establish the printed margin in millimetres.
 
 When you place the QR on an invoice, use an ISO/IEC 18004:2015 QR with level `M` error correction
-and size it between 30 × 30 and 40 × 40 mm. Leave at least 2 mm
-of blank space on every side; AEAT recommends 6 mm. Keep strong contrast, put it prominently
-before the invoice content, and show it only once on the first page. Print `QR tributario:` above
-it and either `Factura verificable en la sede electrónica de la AEAT` or `VERI*FACTU` below it.
-Make both labels at least as legible as the other invoice data. Your invoice renderer, not this URL
-helper, must satisfy these [AEAT presentation rules](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf).
+and size it between 30 × 30 and 40 × 40 mm. Leave at least 2 mm of blank space on every side;
+AEAT recommends 6 mm. Keep strong contrast, put it prominently before the invoice content, and
+show it only once on the first page. On a portrait invoice, keep it near the top, preferably
+centered or at the upper left. On a landscape invoice, keep it on the left, preferably near the
+upper left or centered vertically.
+
+Print `QR tributario:` above the code and either `Factura verificable en la sede electrónica de
+la AEAT` or `VERI*FACTU` below it. Use a legible font size that is equal to or larger than the
+rest of the invoice data. Your invoice renderer, not this URL helper, must satisfy these
+[AEAT presentation rules](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf).

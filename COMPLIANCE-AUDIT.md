@@ -6,16 +6,16 @@ is accepted. The [source watch](sources/README.md) checks for publication change
 
 ## Sources checked through 26 September 2026
 
-| AEAT publication                                                                                                                                                   | Version                                    | Audit status                                                                                                               |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| [Validation rules and errors](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Validaciones_Errores_Veri-Factu.pdf)          | 1.2.2, 8 April 2026                        | §§4–6 offline inventory complete; §§3.1.1–3.1.5 substantially checked                                                      |
-| [Validation error-code list](https://prewww2.aeat.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1.0/cont/ws/errores.properties)                    | Unversioned; modified 30 July 2026         | All three categories checked; source fingerprint now watched                                                               |
-| [Web service description](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_Descripcion_SWeb.pdf)             | 1.0.3, 28 July 2025                        | §§1–11 offline inventory complete; remaining limits are named below                                                        |
-| [Hash specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_especificaciones_huella_hash_registros.pdf) | 0.1.2, 27 August 2024                      | §§2–7 checked for alta and cancellation; event records out of scope; decimal-variant comparison pending AEAT preproduction |
-| [QR specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf)               | 0.5.0, 10 December 2025                    | §§2–10 and 12 classified; verifiable QR URL rules checked; printed layout and lookup responses outside library scope       |
-| [Developer FAQ](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/FAQs-Desarrolladores.pdf)                              | 1.3, 4 December 2025                       | Pending entry-by-entry review                                                                                              |
-| [Public FAQ](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes.html)                                 | Pages listed by AEAT on 22 September 2026  | Pending entry-by-entry review                                                                                              |
-| [XSD and WSDL files](schemas/README.md)                                                                                                                            | Versions and checksums in the linked index | Offline closure complete for all five XSD inventories, the WSDL graph, and their cross-schema links                        |
+| AEAT publication                                                                                                                                                   | Version                                    | Audit status                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| [Validation rules and errors](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Validaciones_Errores_Veri-Factu.pdf)          | 1.2.2, 8 April 2026                        | §§4–6 offline inventory complete; §§3.1.1–3.1.5 substantially checked                                               |
+| [Validation error-code list](https://prewww2.aeat.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1.0/cont/ws/errores.properties)                    | Unversioned; modified 30 July 2026         | All three categories checked; source fingerprint now watched                                                        |
+| [Web service description](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_Descripcion_SWeb.pdf)             | 1.0.3, 28 July 2025                        | §§1–11 offline inventory complete; remaining limits are named below                                                 |
+| [Hash specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_especificaciones_huella_hash_registros.pdf) | 0.1.2, 27 August 2024                      | §§1–7 offline inventory complete; event records out of scope; decimal-variant comparison pending AEAT preproduction |
+| [QR specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf)               | 0.5.0, 10 December 2025                    | §§1–12 offline inventory complete; print layout and most lookup-response behavior remain outside the public library |
+| [Developer FAQ](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/FAQs-Desarrolladores.pdf)                              | 1.3, 4 December 2025                       | Pending entry-by-entry review                                                                                       |
+| [Public FAQ](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes.html)                                 | Pages listed by AEAT on 22 September 2026  | Pending entry-by-entry review                                                                                       |
+| [XSD and WSDL files](schemas/README.md)                                                                                                                            | Versions and checksums in the linked index | Offline closure complete for all five XSD inventories, the WSDL graph, and their cross-schema links                 |
 
 ## Web-service description coverage map
 
@@ -724,7 +724,12 @@ whole response. The API does not return that page's other records or cursor in t
 who need to diagnose non-conforming AEAT XML must capture the raw response at their transport
 boundary.
 
-### Own-record hash validation
+### Hash generation and validation — hash specification §§1–7 (E13)
+
+The watched 13-page PDF remains version 0.1.2 dated 27 August 2024, with SHA-256
+`f4334c254bb875b417247b54315199f89d75a8c4814dfd1e86efec562653d7de`. Every page was extracted
+and rendered on 26 September 2026, and the live source watch matched its pinned fingerprint.
+Section 1 supplies the legal and implementation context without adding a separate data rule.
 
 Hash specification §2 allows SHA-256, represented by `TipoHuella: "01"` in both builders. Section
 3 lists eight ordered alta fields and five ordered cancellation fields; `buildCadenaAlta` and
@@ -742,8 +747,10 @@ an existing record. `validate` now reports a non-blocking `HUELLA_MISMATCH` for 
 incorrect hash, and `HUELLA_FORMAT` for a value that is not 64 uppercase hexadecimal characters.
 Missing values, values exceeding the XSD's 64-character maximum, and XML control characters remain
 locally blocking. Both record types, the advisory severity, non-throwing `assertValid`, and those
-XML boundaries are covered in `src/validate.test.ts`. The three AEAT examples are checked directly
-in `src/conformance.test.ts` and through third-party fixtures in `src/upstream-conformance.test.ts`.
+XML boundaries are covered in `src/validate.test.ts`. The three AEAT examples are checked directly,
+without changing their published input strings or expected hashes, in `src/conformance.test.ts`
+and through third-party fixtures in `src/upstream-conformance.test.ts`. They cover a first alta,
+a chained alta, and a chained cancellation: every supported record shape in §6.
 Hash specification §7 says AEAT marks a submitted record `Aceptado con errores` when its hash does
 not match AEAT's calculation; the local mismatch issue is therefore advisory, not a substitute
 for the returned status. Section 3 allows numeric values with one or two decimal places and
@@ -754,7 +761,9 @@ submission and read-only consultation remain necessary before claiming they yiel
 hashes or changing local canonicalization. The third-party fixture's prose makes the stronger
 claim but is not an official source; only its three AEAT-derived vectors are used as evidence.
 The specification also defines event-record inputs and `HuellaEvento`. This library does not
-build or submit event records, so those fields are explicitly outside its supported surface.
+build or submit event records, so those fields, their repeated `NIF` key and their predecessor
+chain remain explicitly outside its supported surface. No hash literal, record serializer or
+golden fixture changed during this closure.
 
 ### Numeric XML values — service description §6.8
 
@@ -797,7 +806,12 @@ the placeholder values as accepted AEAT data.
 No fiscal serializer, hash value or golden fixture changed in this audit. The current XSD/WSDL graph
 remains the authority where an older worked example conflicts with it.
 
-### QR URL and printed presentation — QR specification §§2–10, 12
+### QR URL, lookup, and printed presentation — QR specification §§1–12 (E13)
+
+The watched 35-page PDF remains version 0.5.0 dated 10 December 2025, with SHA-256
+`f86b3c260d8a4963dbc18c5007732b53199156c5d1db63242e68db71501b49eb`. Every applicable page,
+including all response screenshots and all twelve annex layouts, was extracted and rendered on
+26 September 2026. The live source watch matched the pinned fingerprint.
 
 The public `buildQrPayload` returns a URL, not a QR image. For a verifiable invoice, it selects the
 published preproduction or production `/ValidarQR` endpoint (§5.1), percent-encodes the record's
@@ -810,17 +824,32 @@ Callers should use a built and validated record; `buildQrPayload` itself does no
 
 Section 7 allows optional `idioma` and `formato=json` on separate service requests, but §6
 restricts the URL _inside the printed QR_ to four parameters and §7 expressly excludes `formato`
-from it. The helper therefore adds neither option. The non-verifiable `/ValidarQRNoVerifactu`
-URLs in §5.2 and §8, and the HTML/JSON lookup responses and errors in §§9–10, are outside this
-library's public QR helper. It does not claim to parse or classify those responses.
+from it. The helper therefore adds neither option. The two verifiable §8 URLs and the §4
+ampersand-encoding example are reproduced byte for byte by `src/upstream-conformance.test.ts`;
+the two `/ValidarQRNoVerifactu` examples are deliberately excluded because this library builds
+Veri*Factu records only. Section 1 states the publication's scope, and §11 cites its legal basis;
+neither adds a separate URL-format rule.
 
-The image requirements in §§2–3 and the printed examples in §12 belong to the invoice renderer:
+Sections 9–10 publish HTML and JSON examples for found (`00`), not found or cancelled (`01`),
+non-verifiable (`02`), missing-parameter and malformed-value outcomes, plus error codes
+`1001`–`1004`, `2001`–`2006`, `3001`, and `3002`. The public package returns the lookup URL but
+does not fetch, parse, localize, or classify those responses. The credentialed preproduction
+harness adds `formato=json` outside the printed payload and checks only a successful `00` response
+against the submitted invoice's four values. Its unit test covers that contract and a `01`
+rejection. Cancelled-invoice lookup, `02`, chained errors, localized text, rate limiting, and the
+remaining error codes require a consumer-owned lookup client or authorised live evidence.
+
+The image requirements in §§2–3 and the twelve printed examples in §12 belong to the invoice renderer:
 ISO/IEC 18004:2015, 30–40 mm square, error-correction level M, at least 2 mm clear space on each side (6 mm
 recommended), prominent placement before content on the first page, `QR tributario:` above, and
 the prescribed verifiable-invoice wording below. The English and Spanish QR guides now state
-these requirements. Their render/decode example proves payload round-tripping, not physical
-dimensions, placement, or print contrast. Section 11 cites the governing law but adds no
-separate URL-format rule.
+these requirements and the portrait/landscape placement preference. Annex examples `a`–`e` cover
+verifiable narrow portrait and landscape invoices, `f`–`g` cover non-verifiable layouts without
+the lower legend, and `h`–`l` cover A4 placement with permitted invoice content beside the QR.
+The guides' render/decode example proves payload round-tripping and error-correction level only.
+It does not prove physical dimensions, millimetre clear space, printed contrast, font size,
+first-page placement, or compatibility with neighboring invoice content; each consuming invoice
+renderer needs a physical render-and-scan check.
 
 ### Correction-state matrix — validation annex §6.1
 
