@@ -10,7 +10,7 @@ is accepted. The [source watch](sources/README.md) checks for publication change
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
 | [Validation rules and errors](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Validaciones_Errores_Veri-Factu.pdf)          | 1.2.2, 8 April 2026                        | §§4–6 offline inventory complete; §§3.1.1–3.1.5 substantially checked                                                      |
 | [Validation error-code list](https://prewww2.aeat.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1.0/cont/ws/errores.properties)                    | Unversioned; modified 30 July 2026         | All three categories checked; source fingerprint now watched                                                               |
-| [Web service description](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_Descripcion_SWeb.pdf)             | 1.0.3, 28 July 2025                        | In progress; section coverage map below                                                                                    |
+| [Web service description](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_Descripcion_SWeb.pdf)             | 1.0.3, 28 July 2025                        | §§1–5 offline inventory complete; §§6–11 remain in the coverage map below                                                  |
 | [Hash specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_especificaciones_huella_hash_registros.pdf) | 0.1.2, 27 August 2024                      | §§2–7 checked for alta and cancellation; event records out of scope; decimal-variant comparison pending AEAT preproduction |
 | [QR specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf)               | 0.5.0, 10 December 2025                    | §§2–10 and 12 classified; verifiable QR URL rules checked; printed layout and lookup responses outside library scope       |
 | [Developer FAQ](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/FAQs-Desarrolladores.pdf)                              | 1.3, 4 December 2025                       | Pending entry-by-entry review                                                                                              |
@@ -22,15 +22,59 @@ is accepted. The [source watch](sources/README.md) checks for publication change
 The 101-page service description is not yet a completed audit. This map distinguishes a checked
 rule from a section whose examples or tables still need line-by-line comparison.
 
-| Section                                                        | Checked here or in earlier branches                                                                  | Still to check                                                                        |
-| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| §§1–2: introduction and revision history                       | Published version and intended voluntary/under-requirement modes identified                          | Reconcile each revision note with the bundled schemas and current behavior            |
-| §3: operating model                                            | Global and per-line statuses, CSV absence on complete rejection, and mode-specific correction advice | Remaining diagram and edge cases against the request/response paths                   |
-| §§4–5: standards, transport, faults                            | SOAP 1.1 document/literal, UTF-8, HTTPS/certificate responsibility, and fault retry guidance         | Real certificate and transport acceptance in AEAT preproduction                       |
-| §§6.1–6.6: messages, consultation, response, code lists, modes | Selected header/wrapper, consulta, response, flow-control, and endpoint rules recorded below         | All remaining message diagrams, field tables, pagination rules, and code-list entries |
-| §§6.7–6.9: text and numeric XML                                | Whitespace, leading-zero, and escaping rules recorded below                                          | AEAT's exact Unicode trim boundary needs a controlled live probe                      |
-| §§7–8: test and production annexes                             | All eight WSDL ports, both bindings, all four messages, five imports, and six global XSD elements    | Remaining annex links and live environment behavior                                   |
-| §§9–11: worked operating flows                                 | Selected voluntary/requirement correction policy and consulta behavior                               | Every worked XML example and remaining flow variant                                   |
+| Section                                                        | Checked here or in earlier branches                                                                                                                | Still to check                                                                        |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| §§1–2: introduction and revision history                       | Complete offline inventory below: every 0.1.0–1.0.3 revision note is mapped to code, schema evidence, or a named limit                             | None; publication changes remain watched                                              |
+| §3: operating model                                            | Complete offline inventory below: synchronous processing, mixed record batches, statuses, CSV behavior, modes, corrections, and 1,000-record limit | Live acceptance and exact validation precedence                                       |
+| §§4–5: standards, transport, faults                            | Complete offline inventory below: SOAP 1.1 document/literal, UTF-8, HTTPS, caller-owned certificates, and all four fault-table outcomes            | Real certificate authorization, network failure, and live transport acceptance        |
+| §§6.1–6.6: messages, consultation, response, code lists, modes | Selected header/wrapper, consulta, response, flow-control, and endpoint rules recorded below                                                       | All remaining message diagrams, field tables, pagination rules, and code-list entries |
+| §§6.7–6.9: text and numeric XML                                | Whitespace, leading-zero, and escaping rules recorded below                                                                                        | AEAT's exact Unicode trim boundary needs a controlled live probe                      |
+| §§7–8: test and production annexes                             | All eight WSDL ports, both bindings, all four messages, five imports, and six global XSD elements                                                  | Remaining annex links and live environment behavior                                   |
+| §§9–11: worked operating flows                                 | Selected voluntary/requirement correction policy and consulta behavior                                                                             | Every worked XML example and remaining flow variant                                   |
+
+### Service model and transport — service description §§1–5 (E9)
+
+The watched 101-page PDF remains version 1.0.3 dated 28 July 2025, with SHA-256
+`b3570f6a308ce98a5f52001a0dc427310ad6cf7bccd60a9ee98720a59e553c02`. Pages 1–2 and
+7–15 were extracted and rendered for this inventory; the live source watch matched every pinned
+fingerprint on 26 September 2026.
+
+Every revision note in §2 is accounted for:
+
+| Revision    | Published change                                                                                           | Repository evidence or limit                                                                                                                                                                                                                                                                                              |
+| ----------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0.1.0       | Initial document                                                                                           | Historical baseline; no behavior to reconcile independently of later revisions                                                                                                                                                                                                                                            |
+| 0.2.0–0.3.0 | Input schemas, Veri*Factu operation, one shared record shape, and mixed alta/anulación batches             | The pinned `SuministroLR.xsd` imports the shared record schema; `EnvioRegistro`, `serializeEnvio`, and `parseEnvio` preserve mixed batches and the 1–1,000 wrapper range in serializer, parser, and XSD tests                                                                                                             |
+| 0.4.0       | Duplicate detail, `Representante`, `FinRequerimiento`, and four tax families                               | The response parser/fake expose `RegistroDuplicado`; both request boundaries preserve the representative and requirement fields; public record types, validation, and XML tests cover IVA, IPSI, IGIC, and `Otros`                                                                                                        |
+| 0.4.1       | Response `Operacion` block                                                                                 | `parseRespuestaSuministro` preserves its four fields and the fake emits it in schema order; parser, fake, and response-XSD tests cover all published codes                                                                                                                                                                |
+| 0.4.2       | Corrected request namespaces and offset-bearing `TimestampPresentacion`                                    | Exact serializer and WSDL tests pin the imported namespaces; response parsing preserves the timestamp literal while the watched response XSD checks XML Schema `dateTime`                                                                                                                                                 |
+| 1.0.0       | Under-requirement service, issuer/recipient consulta, optional response detail, and `RefExterna` filtering | Separate endpoint constants, header unions, consulta request/response types, serializers, parsers, fake behavior, and bilingual guides cover the supported offline shape. Requirement validity, certificate authority, response-detail performance, and live query authorization remain AEAT checks                       |
+| 1.0.1       | Production URLs                                                                                            | `SOAP_ENDPOINTS*` and `src/endpoints.test.ts` pin all eight voluntary/requirement and ordinary/sello production and preproduction URLs from the WSDL                                                                                                                                                                      |
+| 1.0.2       | Partial SIF filter                                                                                         | `SistemaInformaticoConsulta` makes only the identity choice, system ID, and installation number mandatory; request-boundary and XSD tests cover the partial and maximal forms                                                                                                                                             |
+| 1.0.3       | Size erratum for `IdPeticionRegistroDuplicado`                                                             | The revision history does not state a replacement length. The current watched `SuministroInformacion.xsd` still assigns `TextMax20Type`, and the response-XSD suite proves 20 accepted and 21 rejected. The final `100` in the revision table is in its `Páginas` column, so it is not evidence for a 100-character limit |
+
+Section 3's operating model is represented without adding orchestration to this stateless library.
+`serializeEnvio` produces one synchronous request that may mix altas and cancellations and rejects
+zero or more than 1,000 wrappers. `createClient` waits for the HTTP response before parsing it. The
+response boundary keeps the global `Correcto`, `ParcialmenteCorrecto`, or `Incorrecto` value and
+every line's independent `Correcto`, `AceptadoConErrores`, or `Incorrecto` value. The fake's batch
+matrix proves complete, partial, accepted-with-errors, and complete-rejection outcomes, including
+the published absence of `CSV` when every line is rejected. A structural or header rejection can
+instead be a SOAP fault. Voluntary correction and under-requirement preservation are caller
+workflows documented in both submission guides; the library cannot decide whether a rectificativa,
+cancellation, or subsanación is legally appropriate.
+
+Sections 4–5 require UTF-8 XML over HTTPS using SOAP 1.1 document/literal and a qualified client
+certificate. The serializers emit an explicit UTF-8 declaration and SOAP 1.1 envelope; the client
+posts `text/xml; charset=utf-8` with the WSDL's empty `SOAPAction`. The injected `fetch` owns HTTPS
+and mTLS, so the package never reads certificate material. `createClient` detects a SOAP `Fault`
+before the HTTP-status check and includes the HTTP status, `faultcode`, and `faultstring` in its
+error. It does not retry: the caller resends the unchanged message after a `Server` fault, stalled
+transport, or unexpected response, but fixes a `Client` fault before resending. That preserves the
+document's four client outcomes without risking an automatic duplicate submission. Existing client,
+serializer, WSDL, and bilingual guide checks cover this offline contract. Certificate eligibility,
+AEAT's centralized NIF lookup, TLS negotiation, actual network failures, and live service acceptance
+remain preproduction evidence and were not claimed by this audit.
 
 ## Rules checked in this branch
 
