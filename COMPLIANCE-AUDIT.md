@@ -4,7 +4,7 @@ This is the working record for checking this library against AEAT's published ru
 local test confirms the stated library behaviour; only AEAT can confirm that a submitted record
 is accepted. The [source watch](sources/README.md) checks for publication changes each week.
 
-## Sources checked through 26 September 2026
+## Sources checked through 27 September 2026
 
 | AEAT publication                                                                                                                                                   | Version                                    | Audit status                                                                                                          |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
@@ -14,7 +14,7 @@ is accepted. The [source watch](sources/README.md) checks for publication change
 | [Hash specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_especificaciones_huella_hash_registros.pdf) | 0.1.2, 27 August 2024                      | §§1–7 offline inventory complete; event records out of scope; decimal-variant comparison pending AEAT preproduction   |
 | [QR specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf)               | 0.5.0, 10 December 2025                    | §§1–12 offline inventory complete; print layout and most lookup-response behavior remain outside the public library   |
 | [Developer FAQ](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/FAQs-Desarrolladores.pdf)                              | 1.3, 4 December 2025                       | Entries 1–27 and 29 audited below; removed entry 28 accounted for from the revision history                           |
-| [Public FAQ](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes.html)                                 | Updated 21 July 2026; checked 26 September | First 9 of 18 linked pages audited below; remaining 9 pages retain their watched inventory for E18                    |
+| [Public FAQ](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes.html)                                 | Updated 21 July 2026; checked 27 September | All 18 linked pages and 191 inventoried headings have a disposition below                                             |
 | [XSD and WSDL files](schemas/README.md)                                                                                                                            | Versions and checksums in the linked index | Offline closure complete for all five XSD inventories, the WSDL graph, and their cross-schema links                   |
 
 ## Official-document closure map
@@ -120,7 +120,7 @@ history. The current PDF does not preserve entry 28's former wording, so this au
 
 ## Public FAQ coverage map
 
-The public FAQ says it was updated on 21 July 2026. On 26 September 2026 the live source watch
+The public FAQ says it was updated on 21 July 2026. On 27 September 2026 the live source watch
 matched the pinned index and page fingerprints. The index page contains its own _Cuestiones
 generales: objeto_ section, followed by the 18 linked pages below. E17 and E18 use `P1` to `P18` for
 those links in the same order as `faqPages` in `scripts/source-watch.mjs`; the numbers displayed by
@@ -454,6 +454,42 @@ collaboration evidence. Live submission, lookup, certificate acceptance, authori
 declaration, SIF deployment, and legal eligibility remain unverified. All 96 inventoried headings
 now have a disposition, and the matched fingerprints and counts above guard against silent omission
 or reordering.
+
+## FAQ and bilingual guide closure
+
+The FAQ audit is complete for the watched sources. The [developer FAQ](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/FAQs-Desarrolladores.pdf)
+map links its 28 current numbered entries to the E15 and E16 disposition tables and keeps the
+removed entry 28 as a revision-history disposition. The [public FAQ index](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes.html)
+map links all 18 source pages to the P1–P18 tables. Those tables retain all 191 inventoried headings
+in source order: 95 on P1–P9 and 96 on P10–P18, including P17's non-question classification
+heading. The source watch matched the pinned developer PDF, index, and page fingerprints on 27
+September 2026.
+
+The FAQ changes that affect package guidance are present in both languages:
+
+| Concern                                                                 | English guide                                                       | Spanish guide                                                            | Reconciled disposition                                                                                                                                       |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| SIF scope, permanent identities, retention, and delegated issue         | [Package boundary](website/src/content/docs/en/start/not-a-sif.md)  | [Límite del paquete](website/src/content/docs/es/start/not-a-sif.md)     | Both guides separate record-building support from taxpayer scope, deployment controls, and legal responsibility.                                             |
+| Chain boundaries and history checks                                     | [Huella chains](website/src/content/docs/en/guides/huella-chain.md) | [Cadenas de huellas](website/src/content/docs/es/guides/huella-chain.md) | Both guides require one ordered alta/cancellation chain per taxpayer and deployed SIF, with durable history checks owned by the caller.                      |
+| Totals, discounts, lottery payments, and correction workflows           | [Alta records](website/src/content/docs/en/guides/alta-record.md)   | [Registros de alta](website/src/content/docs/es/guides/alta-record.md)   | Both guides keep calculation and legal workflow choices outside the builder while documenting the supported fields.                                          |
+| Tax-code precedence and cross-system mappings                           | [Validation](website/src/content/docs/en/guides/validation.md)      | [Validación](website/src/content/docs/es/guides/validation.md)           | Both guides apply the newer validation publication to IPSI and keep TicketBAI, SII-IGIC, Canary, cash-accounting, and code-15 decisions external.            |
+| Representation, direct remittance, signatures, and cancellation history | [Submission](website/src/content/docs/en/guides/submit.md)          | [Envío](website/src/content/docs/es/guides/submit.md)                    | Both guides distinguish XML identity and mTLS from legal authority or record signatures, and preserve issued identities through correction and cancellation. |
+| Structured electronic invoices and QR presentation                      | [QR codes](website/src/content/docs/en/guides/qr.md)                | [Códigos QR](website/src/content/docs/es/guides/qr.md)                   | Both guides allow structured QR content without a graphic and leave physical or visual rendering to the invoicing system.                                    |
+
+These paired guides use the same source links and package identifiers. Their different prose and
+example messages are translations, not different rules. The documentation checks compile the
+examples, validate the public types, build both language trees, and verify their internal links.
+The 27 September closure receipt is the unchanged live source watch, 5/5 source-watch tests, the
+root format check and build, and the website example, documentation, type, 122-page build, and
+local-link checks.
+
+This closure does not verify the external answers recorded in the disposition tables. Taxpayer
+scope, tax and invoice classification, declaration duties, correction choices, representation
+authority, certificate eligibility, and the sufficiency of retained evidence remain legal or
+operator decisions. Live AEAT availability, authorization, response precedence, timing, lookup
+results, and record acceptance require the service or controlled preproduction evidence. Storage,
+operator screens, invoice rendering, inspection access, and complete SIF controls remain consumer
+responsibilities.
 
 ## Web-service description coverage map
 
@@ -1392,15 +1428,13 @@ hash and QR inventories, and five-XSD/WSDL graph are closed for the supported pa
 source watch can reopen only an affected row when AEAT changes a publication. The remaining limits
 in those rows are explicit external checks, not missing source sections.
 
-### Pending FAQ closure
+### FAQ and guide closure complete
 
 Developer FAQ v1.3 entries 1–27 and 29, plus the revision-history disposition of removed entry 28,
-are reviewed in the coverage map above. E17 inventories all 18 pages currently linked by the public
-FAQ index and closes all 95 questions on the first nine pages. E18 closes all 96 inventoried
-headings on the remaining nine pages with a library behavior, consumer responsibility, or named
-legal/live limit for each. E19 still needs to reconcile these inventories across both language
-guides and close the FAQ backlog entry. That closure does not reopen the completed technical-
-publication ledger.
+have a source-linked disposition above. The 18 public FAQ pages likewise retain all 191 inventoried
+headings with a package behavior, consumer responsibility, or named legal/live limit. The paired
+guide matrix records every FAQ-driven English and Spanish guidance area. This closure does not
+reopen the completed technical-publication ledger or turn an external answer into local evidence.
 
 ### Unresolved external verification
 
