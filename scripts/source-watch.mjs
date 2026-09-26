@@ -63,6 +63,7 @@ export const sources = [
     kind: "pdf",
     url: `${docsLegacy}/Validaciones_Errores_Veri-Factu.pdf`,
   },
+  { id: "aeat-error-codes", kind: "binary", url: `${preSchema}/errores.properties` },
   ...["SuministroInformacion.xsd", "SuministroLR.xsd", "ConsultaLR.xsd"].map((name) => ({
     id: `aeat-${name}`,
     kind: "binary",

@@ -249,6 +249,15 @@ La AEAT exceptúa algunos errores admisibles, como una hora de generación futur
 de subsanar. Ante un requerimiento, no apliques ese proceso de subsanación voluntaria a los
 errores de negocio de los registros conservados.
 
+Interpreta el error por la categoría de la
+[lista de códigos vigente de la AEAT](https://prewww2.aeat.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1.0/cont/ws/errores.properties),
+no por la forma del número. La lista separa el rechazo del envío completo, el rechazo del registro
+y los errores que permiten aceptar el registro. Esta última categoría contiene actualmente los
+códigos `2000`–`2009`; la publicación de validaciones exime expresamente de subsanar el `2004`
+(`FechaHoraHusoGenRegistro` futura) y el `2009` (régimen IPSI ausente durante su transición). El
+analizador conserva el código y la descripción, pero no elige por ti cómo corregirlo. Una fecha de
+expedición futura es distinta: el código `1112` rechaza el registro.
+
 ## Gestiona fallos y resultados inciertos
 
 Si `client.submit` lanza un error, no tienes un resultado por registro ni un CSV analizado que

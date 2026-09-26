@@ -57,10 +57,22 @@ AEAT un reenvío exacto ni los cambios en otros campos no incluidos en la huella
 
 El transporte usa los significados publicados de los códigos de error, pero el anexo no asigna
 códigos numéricos a estos casos de la tabla de anulaciones. No des por hecho que la AEAT devuelve
-el mismo código en cada caso. El transporte falso no conserva el historial de intentos de
-subsanación o anulación rechazados ni implementa todos los estados de anulación del
-[anexo §6 de la AEAT](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Validaciones_Errores_Veri-Factu.pdf).
-Comprueba esas operativas en la preproducción de la AEAT.
+el mismo código en cada caso. Con `RechazoPrevio: "S"`, el transporte exige una operación anterior
+del mismo tipo e identidad que haya sido rechazada. El reintento de un alta sigue necesitando un
+registro existente. Una anulación necesita un registro, salvo que también indiques
+`SinRegistroPrevio: "S"`; ese reintento especial exige que no exista ninguno. Cualquier operación
+aceptada del mismo tipo consume la marca de rechazo del transporte, y `forget()` elimina esa marca
+junto con el rastro almacenado de la factura. Para un reintento bien formado sin historial
+coincidente, el transporte usa el código genérico publicado `1275` de valor incorrecto; un alta con
+`RechazoPrevio: "S"` pero sin `Subsanacion: "S"` devuelve el `1161`. Así se cubren las transiciones del
+[anexo §6 de la AEAT](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Validaciones_Errores_Veri-Factu.pdf),
+pero no el periodo durante el que la AEAT conserva el historial ni el código exacto de las demás
+celdas.
+
+El transporte devuelve el código de rechazo `1112` si la fecha de expedición es futura. Reserva
+el código admisible `2004` para una `FechaHoraHusoGenRegistro` futura, como indica la lista
+publicada. El transporte compara contra su reloj local sin margen; la tolerancia real de la AEAT no
+está publicada, así que compruébala en preproducción si tu flujo depende de ese límite.
 
 En particular, el transporte falso conserva los espacios al principio y al final del texto
 enviado. La AEAT los elimina antes de almacenar y devolver los campos de texto. Si tu prueba

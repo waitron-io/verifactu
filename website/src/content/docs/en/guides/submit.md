@@ -246,6 +246,16 @@ AEAT exempts some admissible errors, including a future generation timestamp, fr
 Under an AEAT requirement, do not apply that voluntary repair flow to business-rule errors in
 the preserved records.
 
+Use the category in AEAT's current
+[error-code list](https://prewww2.aeat.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1.0/cont/ws/errores.properties),
+not the number's shape, to interpret an error. The list separates whole-request rejection,
+record rejection, and errors that still accept the record. Its accepted category currently
+contains `2000`–`2009`; the validation publication specifically exempts `2004` (a future
+`FechaHoraHusoGenRegistro`) and `2009` (a missing IPSI regime during its transition) from the
+need to correct. The parser preserves codes and descriptions but deliberately does not choose a
+repair workflow for you. A future invoice issue date is different: code `1112` rejects the
+record.
+
 ## Handle faults and uncertain results
 
 If `client.submit` throws, you have no parsed per-record result or CSV to store. Keep the original

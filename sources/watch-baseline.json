@@ -1,5 +1,5 @@
 {
-  "checked": "2026-09-22",
+  "checked": "2026-09-26",
   "fingerprints": {
     "aeat-technical-index": "62dff6d06ccde7102a1ec0602a2fbef7e7a850ab594bddcd98807622dbfe3c65",
     "aeat-faq-index": "8524695568ddb9b2bb6891f802a0f69544de12f8e3270551dd277917e27069fe",
@@ -26,6 +26,7 @@
     "aeat-hash-spec": "f4334c254bb875b417247b54315199f89d75a8c4814dfd1e86efec562653d7de",
     "aeat-qr-spec": "f86b3c260d8a4963dbc18c5007732b53199156c5d1db63242e68db71501b49eb",
     "aeat-validation-rules": "426eb926fc098a36a163f66ca5f40d9e0847ca23300bbe5008979832d3513440",
+    "aeat-error-codes": "06519ceb23422bd6b0ad3bfb659e3007615050da4920781d12cff536481d5902",
     "aeat-SuministroInformacion.xsd": "ee4c1655175644de44c4c25055ffeb8e5f4bb4bc3834ce8254d4222ef18c8aa1",
     "aeat-SuministroLR.xsd": "cbdac8d427cc5ab5d77ca48974cab0f35d6bb819c4c66db361681e3710aeba36",
     "aeat-ConsultaLR.xsd": "bf2cdb8fc4b95b291757a72b76d8fffca06a6d30d9329122ca2fd6b2d5f8f1b1",
