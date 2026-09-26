@@ -68,10 +68,14 @@ Los cuatro módulos blancos de la prueba ayudan al lector, pero no demuestran el
 en milímetros.
 
 Al colocar el QR en la factura, usa un QR conforme a ISO/IEC 18004:2015 con nivel `M` de
-corrección de errores y dale un tamaño de entre 30 × 30 y 40 × 40 mm. Deja al menos
-2 mm de espacio vacío a cada lado; la AEAT recomienda 6 mm. Asegura un buen contraste,
-colócalo de forma destacada antes del contenido y muéstralo solo una vez en la primera página.
+corrección de errores y dale un tamaño de entre 30 × 30 y 40 × 40 mm. Deja al menos 2 mm de
+espacio vacío a cada lado; la AEAT recomienda 6 mm. Asegura un buen contraste, colócalo de forma
+destacada antes del contenido y muéstralo solo una vez en la primera página. En una factura
+vertical, colócalo cerca de la parte superior, preferiblemente centrado o a la izquierda. En una
+factura apaisada, colócalo a la izquierda, preferiblemente cerca de la esquina superior o centrado
+verticalmente.
+
 Escribe `QR tributario:` encima y `Factura verificable en la sede electrónica de la AEAT` o
-`VERI*FACTU` debajo. Ambos textos deben ser al menos tan legibles como los demás datos de la
+`VERI*FACTU` debajo. Usa un tamaño de letra legible, igual o superior al de los demás datos de la
 factura. Tu generador de facturas, no esta función de URL, debe cumplir estas
 [reglas de presentación de la AEAT](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf).

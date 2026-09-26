@@ -9,9 +9,9 @@ import type { RegistroAlta } from "./types.js";
  * not settle which applies. This function is shared by all four QR
  * parameters, and the four differ in how (or whether) that ambiguity is
  * actually foreclosed:
- *  - numserie: unreachable by construction — validate() restricts
- *    NumSerieFactura to a charset with no character where the two encodings
- *    differ.
+ *  - numserie: a built and validated record uses a charset with no character
+ *    where the two encodings differ. This helper still encodes direct record
+ *    literals, including AEAT's published ampersand example.
  *  - fecha, importe: unreachable by construction — formatDate/formatAmountExact
  *    are the only producers of these literals and never emit a space or any
  *    other character where the two encodings differ, independent of
