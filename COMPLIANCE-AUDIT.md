@@ -10,7 +10,7 @@ is accepted. The [source watch](sources/README.md) checks for publication change
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
 | [Validation rules and errors](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Validaciones_Errores_Veri-Factu.pdf)          | 1.2.2, 8 April 2026                        | §§4–6 offline inventory complete; §§3.1.1–3.1.5 substantially checked                                                      |
 | [Validation error-code list](https://prewww2.aeat.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1.0/cont/ws/errores.properties)                    | Unversioned; modified 30 July 2026         | All three categories checked; source fingerprint now watched                                                               |
-| [Web service description](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_Descripcion_SWeb.pdf)             | 1.0.3, 28 July 2025                        | §§1–6.6 offline inventory complete; §§6.7–11 remain in the coverage map below                                              |
+| [Web service description](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_Descripcion_SWeb.pdf)             | 1.0.3, 28 July 2025                        | §§1–8 offline inventory complete; §§9–11 remain in the coverage map below                                                  |
 | [Hash specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_especificaciones_huella_hash_registros.pdf) | 0.1.2, 27 August 2024                      | §§2–7 checked for alta and cancellation; event records out of scope; decimal-variant comparison pending AEAT preproduction |
 | [QR specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf)               | 0.5.0, 10 December 2025                    | §§2–10 and 12 classified; verifiable QR URL rules checked; printed layout and lookup responses outside library scope       |
 | [Developer FAQ](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/FAQs-Desarrolladores.pdf)                              | 1.3, 4 December 2025                       | Pending entry-by-entry review                                                                                              |
@@ -28,8 +28,8 @@ rule from a section whose examples or tables still need line-by-line comparison.
 | §3: operating model                                            | Complete offline inventory below: synchronous processing, mixed record batches, statuses, CSV behavior, modes, corrections, and 1,000-record limit | Live acceptance and exact validation precedence                                                        |
 | §§4–5: standards, transport, faults                            | Complete offline inventory below: SOAP 1.1 document/literal, UTF-8, HTTPS, caller-owned certificates, and all four fault-table outcomes            | Real certificate authorization, network failure, and live transport acceptance                         |
 | §§6.1–6.6: messages, consultation, response, code lists, modes | Complete offline inventory below: every diagram, field-table row, pagination rule, code-list entry, and mode distinction is accounted for          | Live authorization, presentation-order behavior, response-detail performance, and two source conflicts |
-| §§6.7–6.9: text and numeric XML                                | Whitespace, leading-zero, and escaping rules recorded below                                                                                        | AEAT's exact Unicode trim boundary needs a controlled live probe                                       |
-| §§7–8: test and production annexes                             | All eight WSDL ports, both bindings, all four messages, five imports, and six global XSD elements                                                  | Remaining annex links and live environment behavior                                                    |
+| §§6.7–6.9: text and numeric XML                                | Complete offline inventory below: edge-space handling, numeric lexical rules, date exception, escaping, and parser preservation are covered        | AEAT's exact Unicode trim boundary needs a controlled live probe                                       |
+| §§7–8: test and production annexes                             | Complete offline inventory below: all 12 published WSDL/XSD links are watched, and their six global elements are mapped to consumers               | Certificate authorization and live service behavior                                                    |
 | §§9–11: worked operating flows                                 | Selected voluntary/requirement correction policy and consulta behavior                                                                             | Every worked XML example and remaining flow variant                                                    |
 
 ### Service model and transport — service description §§1–5 (E9)
@@ -455,6 +455,15 @@ The client sends the matching SOAP 1.1 body and `SOAPAction: ""`; `src/client.te
 wire headers and both methods, while `src/xsd-conformance.test.ts` checks four unsigned request
 bodies against their imported XSDs.
 
+Service-description annexes 7 and 8 publish those same six artifacts under separate
+`prewww2.aeat.es` test and `www2.agenciatributaria.gob.es` production URL sets. All 12 links
+resolved on 26 September 2026. Eleven test/production pairs were byte-identical; the production
+`SuministroLR.xsd` has one extra ASCII space after its `<choice>` start tag and is otherwise
+identical to the test copy. That whitespace does not change the schema model, but it proves the
+two URL sets can drift independently. The weekly source watch therefore fingerprints every annex
+URL separately while continuing to watch the three namespace URLs used by generated XML. Its
+focused test fails if either six-artifact annex set is omitted.
+
 The WSDL assigns four ports to each binding: ordinary and sello-certificate addresses in both
 production and preproduction. `SistemaVerifactu`, `SistemaVerifactuSello`,
 `SistemaVerifactuPruebas`, and `SistemaVerifactuSelloPruebas` match `SOAP_ENDPOINTS` and
@@ -510,6 +519,7 @@ lengths too; its narrower character rule still rejects emoji in the main number.
 
 ### XML text and escaping — service description §§6.7, 6.9
 
+Pages 46–47 of the watched version 1.0.3 PDF were extracted and rendered on 26 September 2026.
 AEAT trims leading and trailing whitespace from XML text fields before storing and returning them.
 `buildCadenaAlta` and `buildCadenaAnulacion` use `trimValue` on each hash-input value; the exact
 U+0020 boundary, preserved interior space, and published alta example are tested in
@@ -747,7 +757,7 @@ build or submit event records, so those fields are explicitly outside its suppor
 
 ### Numeric XML values — service description §6.8
 
-AEAT forbids leading zeroes in numeric XML values but permits trailing zeroes in decimals to
+The rendered page 46 rule forbids leading zeroes in numeric XML values but permits trailing zeroes in decimals to
 express precision. The record builders emit amounts with exactly two decimal places and no leading
 zeroes. For records constructed or edited directly, `validate` now applies the same leading-zero
 rule to totals, detail amounts, rectification amounts, and tax rates. `src/validate.test.ts` covers

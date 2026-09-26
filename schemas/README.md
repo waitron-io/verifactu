@@ -33,13 +33,18 @@ The other three had no URL anywhere in this repository — `PROVENANCE.md` named
 (the URL above) to its "Esquemas de los servicios web" and "WSDL de los servicios web" pages,
 which link all six artefacts; the three not already known link out to AEAT's **preproduction**
 static-files host (`prewww2.aeat.es`, path segment `tikeV1.0`) rather than the production one.
-This is not a guess and not a different revision: the three files also served from that same
-portal that overlap with the production fetch (`SuministroInformacion.xsd`, `SuministroLR.xsd`,
-`ConsultaLR.xsd`) are **byte-identical** to the production copies above (diffed directly at fetch
-time), and `SistemaFacturacion.wsdl`'s own `xmlns:sf` namespace and internal `schemaLocation`
-references match the production `targetNamespace` values and filenames exactly. AEAT simply
-serves its published schema set from both hosts; the portal's own links are the authoritative
-answer to "which URL" for the three that had none.
+This is not a guess and not a different revision: `SistemaFacturacion.wsdl`'s own `xmlns:sf`
+namespace and internal `schemaLocation` references match the production `targetNamespace` values
+and filenames exactly. AEAT simply serves its published schema set from both hosts; the portal's
+own links are the authoritative answer to "which URL" for the three that had none.
+
+The service description's annexes 7 and 8 separately link all six artifacts on the preproduction
+and production hosts. On 26 September 2026 all 12 links resolved. Eleven environment pairs were
+byte-identical; the production-annex `SuministroLR.xsd` had one extra trailing ASCII space after
+its `<choice>` start tag and no schema-model difference. The bundled file retains the preproduction
+and namespace-URL bytes in the checksum table. The source watch fingerprints both complete annex
+sets separately, as well as the three namespace URLs, so a change at only one published location
+still raises an alert.
 
 ## Why the checksums are here
 

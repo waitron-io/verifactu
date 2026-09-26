@@ -69,4 +69,6 @@ preproduction if your workflow depends on it.
 
 In particular, the fake keeps leading and trailing spaces in submitted text. AEAT trims those
 spaces before storing and returning text fields. If your test depends on the stored spelling of
-a value such as `RefExterna`, confirm it in AEAT preproduction.
+a value such as `RefExterna`, confirm it in AEAT preproduction. The publication does not define
+which non-ASCII Unicode whitespace characters AEAT trims, so do not infer that boundary from the
+fake or JavaScript's `trim()` behavior.
