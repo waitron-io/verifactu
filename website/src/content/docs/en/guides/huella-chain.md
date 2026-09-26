@@ -35,6 +35,13 @@ change the record's formatted fields afterwards.
 Sequence invoice numbering and chain updates in your own durable transaction. The library does
 not hold a mutable chain manager because a process crash would lose its state.
 
+Keep one continuous chain for each taxpayer in each deployed SIF. Alta and cancellation records
+share that chain in generation order. A new invoice year or series does not start a new chain, and a
+shop or terminal does not get a separate chain merely because it is in another location. A separate
+chain follows only when you have a different taxpayer or a genuinely separate SIF architecture.
+The package accepts the predecessor you supply; it cannot decide those deployment boundaries for
+you.
+
 Before appending, inspect the predecessor you loaded from storage. `validate` checks the current
 record's own huella and the predecessor pointer's shape and hash format; it cannot prove from one
 record that the predecessor was itself linked correctly to the record before it, or compare that

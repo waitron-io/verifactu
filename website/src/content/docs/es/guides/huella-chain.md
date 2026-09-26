@@ -32,6 +32,13 @@ formato de los campos después.
 Numera las facturas y actualiza la cadena en una transacción duradera de tu sistema. La biblioteca
 no mantiene una cadena en memoria porque un fallo del proceso perdería ese estado.
 
+Mantén una cadena continua para cada obligado en cada SIF desplegado. Los registros de alta y de
+anulación comparten esa cadena según su orden de generación. Un nuevo ejercicio o una nueva serie de
+facturación no inicia otra cadena, y una tienda o un terminal no la separa solo por estar en otra
+ubicación. Solo corresponde otra cadena cuando se trata de otro obligado o de una arquitectura con
+un SIF realmente independiente. El paquete acepta el antecesor que le proporciones; no puede decidir
+por ti esos límites del despliegue.
+
 Antes de añadir un registro, inspecciona el antecesor que hayas leído del almacenamiento.
 `validate` comprueba la huella del registro actual y la forma y el formato de la huella del puntero
 al anterior; con un solo registro no puede demostrar que el anterior estuviera bien enlazado con el

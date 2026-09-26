@@ -14,7 +14,7 @@ is accepted. The [source watch](sources/README.md) checks for publication change
 | [Hash specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_especificaciones_huella_hash_registros.pdf) | 0.1.2, 27 August 2024                      | §§1–7 offline inventory complete; event records out of scope; decimal-variant comparison pending AEAT preproduction   |
 | [QR specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf)               | 0.5.0, 10 December 2025                    | §§1–12 offline inventory complete; print layout and most lookup-response behavior remain outside the public library   |
 | [Developer FAQ](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/FAQs-Desarrolladores.pdf)                              | 1.3, 4 December 2025                       | Entries 1–27 and 29 audited below; removed entry 28 accounted for from the revision history                           |
-| [Public FAQ](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes.html)                                 | Pages listed by AEAT on 22 September 2026  | Pending entry-by-entry review                                                                                         |
+| [Public FAQ](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes.html)                                 | Updated 21 July 2026; checked 26 September | First 9 of 18 linked pages audited below; remaining 9 pages retain their watched inventory for E18                    |
 | [XSD and WSDL files](schemas/README.md)                                                                                                                            | Versions and checksums in the linked index | Offline closure complete for all five XSD inventories, the WSDL graph, and their cross-schema links                   |
 
 ## Official-document closure map
@@ -117,6 +117,190 @@ history. The current PDF does not preserve entry 28's former wording, so this au
 |    27 | `F3`, recipient requirements, and `FacturasSustituidas` are represented and validated. The alta guides now distinguish replacement from rectification and document the FAQ's correction sequence.                                                            | Avoiding duplicate collection and deciding how to correct an underlying invoice belong to the invoicing system; issuing an F3 does not itself cancel the replaced simplified invoices.                                                                 |
 |    28 | Version 1.3's revision history records that version 1.1 removed entry 28 and folded it into entry 17.                                                                                                                                                        | The current official PDF supplies no former wording or paragraph-level mapping, so only the removal and destination are verified.                                                                                                                      |
 |    29 | Validation implements the code `14`/`15` operation-date exceptions and the published code-`14` requirements. The guides record FAQ 29's code-`15` late-payment and advance-payment distinction.                                                              | The FAQ does not name the exact record-correction classification for changing the initial invoice after an advance, so the library does not invent one.                                                                                                |
+
+## Public FAQ coverage map
+
+The public FAQ says it was updated on 21 July 2026. On 26 September 2026 the live source watch
+matched the pinned index and page fingerprints. The index page contains its own _Cuestiones
+generales: objeto_ section, followed by the 18 linked pages below. E17 and E18 use `P1` to `P18` for
+those links in the same order as `faqPages` in `scripts/source-watch.mjs`; the numbers displayed by
+AEAT are therefore one higher. The page counts include blank `h3` elements whose question text
+follows immediately. This preserves malformed headings instead of inventing titles for them.
+
+| ID  | Linked page                                                                                                                                                                                                                              | Questions | Audit state  |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------: | ------------ |
+| P1  | [Concepts and definitions](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes/cuestiones-generales-conceptos-definiciones.html)                                             |         7 | E17 complete |
+| P2  | [Application scope](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes/cuestiones-generales-ambitos-aplicacion.html)                                                        |        38 | E17 complete |
+| P3  | [Compliance and delegation](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes/cuestiones-generales-cumplimiento-delegacion.html)                                           |         7 | E17 complete |
+| P4  | [Resources and multiple use](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes/caracteristicas-requisitos-sistemas-informaticos-facturacion-multiple.html)                 |         6 | E17 complete |
+| P5  | [Communication capacity and certificates](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes/caracteristicas-requisitos-sif-capacidad-remision-etc_.html)                   |         7 | E17 complete |
+| P6  | [Integrity and inalterability](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes/caracteristicas-requisitos-sif-integridad-inalterabilidad.html)                           |         7 | E17 complete |
+| P7  | [Traceability](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes/caracteristicas-requisitos-sif-trazabilidad.html)                                                         |         9 | E17 complete |
+| P8  | [Preservation, accessibility and legibility](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes/caracteristicas-requisitos-sif-conservacion-accesibilidad-legibilidad.html) |         6 | E17 complete |
+| P9  | [Event records](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes/caracteristicas-requisitos-sif-registro-eventos_.html)                                                   |         8 | E17 complete |
+| P10 | [Alta records](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes/registros-facturacion-alta.html)                                                                          |         5 | E18 pending  |
+| P11 | [Cancellation records](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes/registros-facturacion-anulacion.html)                                                             |         2 | E18 pending  |
+| P12 | [Huella or hash](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes/huella-hash.html)                                                                                       |         7 | E18 pending  |
+| P13 | [Signature](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes/firma.html)                                                                                                  |         8 | E18 pending  |
+| P14 | [Certification and declaration](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes/certificacion-sistemas-informaticos-declaracion-responsable.html)                        |        34 | E18 pending  |
+| P15 | [Veri*Factu systems](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes/sistemas-verifactu.html)                                                                            |        20 | E18 pending  |
+| P16 | [Recipient remittance and invoice markings](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes/posibilidad-remision-informacion-factura-parte-receptor.html)                |        10 | E18 pending  |
+| P17 | [Invoicing procedures](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes/procedimientos-facturacion.html)                                                                  |         8 | E18 pending  |
+| P18 | [Social collaboration](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes/colaboracion-social.html)                                                                         |         2 | E18 pending  |
+
+The first nine linked pages contain 95 questions. The disposition tables below retain every entry
+in source order. “Package boundary” means that the repository documents why a complete deployed SIF
+or its operator owns the behavior. “External” means that taxpayer facts, law, authorization, or a
+live AEAT service decides the answer. Neither label claims that the deployment complies.
+
+### P1: concepts and definitions
+
+| Entry | Subject                                       | Disposition                                                                                                                               |
+| ----: | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+|   1.1 | Documents affected                            | The package represents invoice records and QR data; deciding whether a document is an invoice is external.                                |
+|   1.2 | Purchase documents issued for private sellers | REBU qualification and non-invoice evidence are external.                                                                                 |
+|   1.3 | REAGP compensation receipts                   | The receipt is outside the package; its legal classification is external.                                                                 |
+|   1.4 | New invoice and simplified-invoice markings   | `buildVerifactuQrUrl` supplies QR data; the deployed SIF renders the QR and Veri*Factu legend.                                            |
+|   1.5 | Input-VAT deduction without a tax QR          | The QR is an issuer-compliance matter, not a deduction decision; both boundary guides now say so.                                         |
+|   1.6 | Drafts and proformas                          | They stay outside record construction; both boundary guides now require the deployed SIF to link or retain them under its own controls.   |
+|   1.7 | Definition of a SIF                           | Both boundary guides now record AEAT's input, preservation, and derived-tax-output test; the package remains only one possible component. |
+
+### P2: application scope
+
+| Entry | Subject                                                           | Disposition                                                                                                                   |
+| ----: | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+|   2.1 | Who is covered and the four exclusions                            | Both boundary guides direct the caller to decide taxpayer, invoice, SII, foral, and exemption scope before using the package. |
+|   2.2 | Effective dates for adapted systems                               | Dates and taxpayer classification are external; no package API schedules adoption.                                            |
+|   2.3 | A group normally exempt from invoicing                            | Whether an issued document becomes an invoice is external.                                                                    |
+|   2.4 | Basque foral taxpayers                                            | Foral jurisdiction and TicketBAI duties are external and not implemented.                                                     |
+|   2.5 | Navarra                                                           | Foral jurisdiction is external and not implemented.                                                                           |
+|   2.6 | Foral SII recipient issuing a common-territory supplier's invoice | The data shape can represent recipient-issued invoices; the SII/foral exclusion is external.                                  |
+|   2.7 | Non-SII foral recipient issuing that invoice                      | The same data shape is available; whether RRSIF applies is external.                                                          |
+|   2.8 | Domicile in Canarias, Ceuta, or Melilla                           | Territorial and tax applicability are external.                                                                               |
+|   2.9 | Activity in common territory and Canarias                         | Applicability is external; supported IVA and IGIC fields do not prove it.                                                     |
+|  2.10 | SII-IVA entity with non-SII-IGIC Canarian establishment           | The validation guide distinguishes tax-specific SII status; census facts remain external.                                     |
+|  2.11 | Entity in both SII-IVA and SII-IGIC                               | Both scope decisions are external.                                                                                            |
+|  2.12 | SII-IVA entity with Ceuta or Melilla establishment                | The FAQ's different territorial result is recorded here; the package does not infer it.                                       |
+|  2.13 | Individual renting homes and business premises                    | Activity qualification is external.                                                                                           |
+|  2.14 | Business owner also renting a premises                            | Activity qualification is external.                                                                                           |
+|  2.15 | Asset-holding company                                             | Corporate-taxpayer scope is external.                                                                                         |
+|  2.16 | Difference between SII and RRSIF                                  | The package implements Veri*Factu records, not SII books; the boundary guide warns that enrolment is an external decision.    |
+|  2.17 | Voluntary SII election                                            | Modelo 036 election and its effect are external.                                                                              |
+|  2.18 | SII taxpayer voluntarily retaining Veri*Factu                     | Mode eligibility and invoice marking are external.                                                                            |
+|  2.19 | SII taxpayer voluntarily retaining NO Veri*Factu                  | NO Veri*Factu behavior is outside the package.                                                                                |
+|  2.20 | Agriculture, livestock, and fisheries regime                      | Invoice duties and exceptions are external.                                                                                   |
+|  2.21 | Equivalence-surcharge regime                                      | Invoice duties and exceptions are external.                                                                                   |
+|  2.22 | Simplified VAT regime                                             | Invoice duties and exceptions are external.                                                                                   |
+|  2.23 | Non-invoice documents from special-regime tills                   | The package cannot decide whether the document is legally an invoice.                                                         |
+|  2.24 | Pharmacy under equivalence surcharge                              | IRPF method and resulting scope are external.                                                                                 |
+|  2.25 | Daily summary after individual simplified invoices                | Each invoice needs its own alta record; a daily summary cannot replace those record identities.                               |
+|  2.26 | Online shops and OSS                                              | Channel and OSS facts are external; callers may supply the supported regime code and invoice data.                            |
+|  2.27 | Entirely manual invoicing                                         | Manual-versus-SIF classification is external; both boundary guides explain the functional test.                               |
+|  2.28 | FACe or MiFacturae alongside otherwise manual invoices            | The stated exception is external; the package does not implement either service.                                              |
+|  2.29 | Word processors and spreadsheets                                  | Both boundary guides now distinguish entry/printing/storage from producing derived tax outputs.                               |
+|  2.30 | Manual invoices followed by adviser bookkeeping                   | Bookkeeping alone is external; delegated material issuance remains the issuer's responsibility.                               |
+|  2.31 | Exemption from issuing invoices                                   | The exemption or authorization is external.                                                                                   |
+|  2.32 | Whether QR and Veri*Factu markings apply to every taxpayer        | The deployed issuer decides scope; the package only builds data when asked.                                                   |
+|  2.33 | Effective dates for the new invoice markings                      | The current deadlines are watched source facts, not runtime behavior.                                                         |
+|  2.34 | VAT-exempt operations with no invoice duty                        | Invoice duty and exemptions are external.                                                                                     |
+|  2.35 | One shared product used by SII and non-SII group companies        | Shared software does not merge taxpayer scope; the deployment isolates each taxpayer's records and mode.                      |
+|  2.36 | Retail scales and similar devices                                 | Device capability and SIF classification are external.                                                                        |
+|  2.37 | Spanish residents invoicing foreign customers                     | Place, establishment, and invoice-duty facts are external.                                                                    |
+|  2.38 | Non-residents issuing invoices in Spain                           | Permanent-establishment and territorial facts are external.                                                                   |
+
+### P3: compliance and delegation
+
+| Entry | Subject                                                | Disposition                                                                                                                                         |
+| ----: | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+|   3.1 | Requesting total or partial non-application            | The petition and AEAT decision are external.                                                                                                        |
+|   3.2 | Delegating compliance to a third party                 | The boundary guides now state that material work may be delegated but the issuer's responsibility remains.                                          |
+|   3.3 | Recipient-issued invoices and separate books           | `EmitidaPorTerceroODestinatario: "D"` and recipient identity fields represent the record; authorization, operator identity, and books are external. |
+|   3.4 | Modelo 036 notice for self-billing                     | The census notice is external.                                                                                                                      |
+|   3.5 | Registered power for recipient or third-party issue    | The XML fields do not grant authority; the submission and boundary guides say so.                                                                   |
+|   3.6 | Professional representative under social collaboration | Agreement, power, and certificate acceptance are external; `Cabecera.Representante` only carries identity.                                          |
+|   3.7 | Software supplier under social collaboration           | The same separation applies; the package does not create representation rights.                                                                     |
+
+### P4: resources and multiple use
+
+| Entry | Subject                                 | Disposition                                                                                                                           |
+| ----: | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+|   4.1 | Available compliance alternatives       | Choosing a complete SIF, delegation, or AEAT application is external.                                                                 |
+|   4.2 | Options for small businesses            | AEAT application availability and old subsidy dates are external and live.                                                            |
+|   4.3 | Requirements for an adapted SIF         | Hashing, XML, validation, and submission are package features; UI, events, storage, privacy, and declaration are deployed-SIF duties. |
+|   4.4 | One SIF serving several taxpayers       | Each taxpayer needs separate identity, records, chain, and mode; active-taxpayer UI and notices belong to the host.                   |
+|   4.5 | A SIF that can delete generated records | The package creates immutable values but owns no database; deletion controls and evidence belong to the host.                         |
+|   4.6 | AEAT application's invoice-volume limit | This is a live service limit outside the package.                                                                                     |
+
+### P5: communication capacity and certificates
+
+| Entry | Subject                                               | Disposition                                                                                                                             |
+| ----: | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+|   5.1 | AEAT connection for NO Veri*Factu                     | NO Veri*Factu connectivity is outside the package.                                                                                      |
+|   5.2 | Certificates used for record signatures               | The submission guides now distinguish connection mTLS from XAdES record signing; the latter is unsupported.                             |
+|   5.3 | Two disconnected centres and correlated numbering     | Separate SIFs may have separate chains; architecture and numbering policy belong to the deployment.                                     |
+|   5.4 | Veri*Factu at one centre and NO Veri*Factu at another | The package does not orchestrate modes.                                                                                                 |
+|   5.5 | End-of-day transfer to a connected centre             | Both submission guides now say that a Veri*Factu SIF submits at issue; each genuinely separate SIF needs its own direct path and chain. |
+|   5.6 | Data loss after an incident                           | Backup, recovery, and durable chain state belong to the deployed SIF.                                                                   |
+|   5.7 | Disassociated access to tax data                      | Both boundary guides now assign selective inspection access and confidentiality to the deployed SIF.                                    |
+
+### P6: integrity and inalterability
+
+| Entry | Subject                                             | Disposition                                                                                                                    |
+| ----: | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+|   6.1 | Preventing deletion or alteration                   | Hashes expose relevant record changes; storage, event logging, and access control belong to the deployed SIF.                  |
+|   6.2 | Corruption, migration, and restoration              | Restore exact content when possible; otherwise create the legally required later record rather than mutating a prior record.   |
+|   6.3 | Correcting an invoice or record                     | The model supports cancellation, rectification, `Subsanacion`, and `RechazoPrevio`; legal workflow selection remains external. |
+|   6.4 | Drafts before final records                         | Both boundary guides now assign draft linkage and retention to the host, outside the alta path.                                |
+|   6.5 | Point when inalterability begins                    | The host generates the definitive record at issue; the package has no draft-to-issued state machine.                           |
+|   6.6 | Invoice data change that does not affect the record | The package preserves fields it receives; deciding whether another invoice mention requires a new record is external.          |
+|   6.7 | Total loss after malware or another incident        | Consulta can return AEAT-held records, but full invoice recovery and local operating state remain consumer duties.             |
+
+The public FAQ sometimes uses `Sustitutivo` and `SubsanaError`. The current XSD and developer FAQ
+use `Subsanacion` and `RechazoPrevio` without publishing an exact term-to-field mapping. The
+submission guides therefore keep the existing warning rather than inventing one.
+
+### P7: traceability
+
+| Entry | Subject                                         | Disposition                                                                                                                   |
+| ----: | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+|   7.1 | Meaning of traceability                         | Builders and serializers create predecessor links; full-history assurance belongs to durable consumer storage.                |
+|   7.2 | Chain level across taxpayer, shop, and terminal | Both chain guides now state one continuous chain per taxpayer and deployed SIF; a location alone does not create another SIF. |
+|   7.3 | Records generated outside the immediate SIF     | The deployment decides the SIF boundary and preserves imported or generated records; the package accepts explicit identities. |
+|   7.4 | Separate alta and cancellation chains           | Alta and cancellation records share one chain in generation order.                                                            |
+|   7.5 | Date and time in traceability                   | The caller supplies generation time; clock control and NO Veri*Factu anomaly behavior are outside the package.                |
+|   7.6 | New year or invoice series                      | Both chain guides now say neither change resets the chain.                                                                    |
+|   7.7 | Cancellation and correction records             | The next generated record links to the immediately preceding record of either kind; legal correction policy is external.      |
+|   7.8 | Detected chain error                            | NO Veri*Factu detection and event behavior are unsupported; a Veri*Factu record helper does not repair stored history.        |
+|   7.9 | Veri*Factu versus NO Veri*Factu duties          | The boundary and chain guides name the unsupported signature, event, anomaly, and clock-control surfaces.                     |
+
+### P8: preservation, accessibility, and legibility
+
+| Entry | Subject                                 | Disposition                                                                                                                          |
+| ----: | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+|   8.1 | Where records are preserved             | The boundary guides distinguish AEAT's retention of submitted records from the deployment's operational state and complete invoices. |
+|   8.2 | Export as the only removal mechanism    | NO Veri*Factu export and removal are outside the package.                                                                            |
+|   8.3 | Backup versus export                    | Both are host storage functions; the package implements neither.                                                                     |
+|   8.4 | Who is responsible for preservation     | Allocation between taxpayer, SIF operator, and producer is external; the package owns no persistence.                                |
+|   8.5 | Preservation and access period          | The applicable legal period is external and is not encoded as a four- or ten-year constant.                                          |
+|   8.6 | Meaning of accessibility and legibility | XML provides a standard representation; timely secure access, downloads, rendering, and confidentiality belong to the deployed SIF.  |
+
+### P9: event records
+
+| Entry | Subject                                | Disposition                                                                                   |
+| ----: | -------------------------------------- | --------------------------------------------------------------------------------------------- |
+|   9.1 | Meaning of an event record             | Veri*Factu SIFs do not require these records; the package intentionally has no event API.     |
+|   9.2 | Purpose of event records               | This is a NO Veri*Factu security control outside the package.                                 |
+|   9.3 | Event types                            | Event and summary generation are outside the package.                                         |
+|   9.4 | Events for several taxpayers           | The deployed SIF owns taxpayer separation; the package carries record identities only.        |
+|   9.5 | Required event-record properties       | This NO Veri*Factu surface is unsupported.                                                    |
+|   9.6 | Signing event records                  | XAdES event signatures are unsupported.                                                       |
+|   9.7 | Retention period and responsible party | Both are external legal and deployment decisions.                                             |
+|   9.8 | Sending events to AEAT                 | Requirement-driven export or remittance is a live NO Veri*Factu workflow outside the package. |
+
+No first-half FAQ entry establishes a missing record or transport behavior inside this package.
+The actionable gaps were boundary explanations, now aligned in the English and Spanish SIF,
+chain, and submission guides. E18 owns the 96 questions on P10 to P18; their live page fingerprints
+and counts above prevent silent omission or reordering.
 
 ## Web-service description coverage map
 
@@ -1058,8 +1242,9 @@ in those rows are explicit external checks, not missing source sections.
 ### Pending FAQ work
 
 Developer FAQ v1.3 entries 1–27 and 29, plus the revision-history disposition of removed entry 28,
-are reviewed in the coverage map above. The 18 pages currently linked by the public FAQ index
-remain for E17–E18. Each pending public entry must point to library behavior, consumer
+are reviewed in the coverage map above. E17 inventories all 18 pages currently linked by the public
+FAQ index and closes all 95 questions on the first nine pages. E18 owns the 96 inventoried questions
+on the remaining nine pages. Each pending entry must point to library behavior, consumer
 responsibility, or a named legal or live limit, and the English and Spanish guides must remain
 aligned. This FAQ work does not reopen the completed technical-publication ledger.
 

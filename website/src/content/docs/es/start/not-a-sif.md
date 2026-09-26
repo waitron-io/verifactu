@@ -12,6 +12,20 @@ sin crear nuevas identidades, conservar las respuestas y el CSV de la AEAT en cu
 aportar el acceso y la declaración responsable exigidos para esa instalación. La biblioteca
 proporciona funciones para los registros y el protocolo; tú diseñas y operas el sistema completo.
 
+## Decide si se aplica el reglamento antes de crear registros
+
+La AEAT considera SIF al conjunto de hardware y software que admite datos de facturación, los
+conserva y los procesa para obtener resultados tributarios, aunque cada paso se ejecute en un lugar
+distinto. Un procesador de textos o una hoja de cálculo que solo introduce, imprime y conserva
+facturas puede quedar fuera de esa definición. La misma hoja puede formar parte de un SIF si una
+macro convierte esas facturas en un libro tributario.
+
+Este paquete no decide si un obligado o una operación está sujeto al RRSIF. La adscripción al SII,
+las normas forales, el territorio y el impuesto del obligado, las exoneraciones y la naturaleza
+jurídica del documento dependen de hechos ajenos al registro. Decide ese ámbito antes de usar el
+paquete. La ausencia del QR tributario afecta al cumplimiento del emisor; por sí sola, no decide si
+el destinatario puede deducir el IVA soportado.
+
 ## Conserva de forma permanente las identidades de instalación y factura
 
 Asigna `NumeroInstalacion` fuera de este paquete y no lo reutilices nunca para el mismo obligado a
@@ -21,9 +35,12 @@ una facturación configurada, incluidas las inactivas. No lo deduzcas del númer
 del servicio.
 
 Mantén los borradores, las proformas y las facturas importadas fuera de la ruta que construye tus
-propios registros. Un registro importado sigue siendo atribuible a su SIF de origen. Una vez que
-expides una factura, también si es de formación, no puedes borrar y reutilizar su identidad formada
-por emisor, serie/número y fecha de expedición; anúlala mediante el flujo normal cuando corresponda.
+propios registros. Un borrador no lleva QR tributario ni registro de alta. Si tu SIF desplegado crea
+borradores, enlázalos con la factura definitiva o consérvalos bajo tus propios controles cuando no
+llegue a emitirse una factura. Un registro importado sigue siendo atribuible a su SIF de origen. Una
+vez que expides una factura, también si es de formación, no puedes borrar y reutilizar su identidad
+formada por emisor, serie/número y fecha de expedición; anúlala mediante el flujo normal cuando
+corresponda.
 
 ## Distingue el almacenamiento operativo de la obligación de cada modalidad
 
@@ -39,6 +56,13 @@ Este paquete no implementa firmas NO Veri*Factu, registros de eventos, informes 
 pantallas de identidad del operador, impresión de facturas ni declaraciones responsables. Si tu
 producto necesita esas funciones, constrúyelas y certifícalas en el SIF desplegado; un XML válido no
 demuestra por sí solo el cumplimiento del sistema completo.
+
+Delegar la expedición material de una factura no transfiere la responsabilidad del obligado sobre
+el cumplimiento. Cuando el destinatario o un tercero expida la factura, tu despliegue debe acreditar
+la autorización, identificar al operador y aplicar el tratamiento contable correspondiente. El
+paquete solo representa los campos del registro. Tu SIF desplegado también debe permitir que una
+inspección acceda a los datos tributarios pertinentes sin exponer otros datos confidenciales; un
+serializador XML no puede proporcionar esa separación de acceso.
 
 Lee la [procedencia y la advertencia](https://github.com/waitron-io/verifactu/blob/main/PROVENANCE.md)
 antes de tratar cualquier ejemplo como un diseño completo de cumplimiento.

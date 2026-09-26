@@ -74,6 +74,10 @@ each result, but do not correct business-rule errors in the preserved records. O
 batch, set `FinRequerimiento: "S"` in `RemisionRequerimiento`, including when the requirement
 takes only one batch. You cannot query these records through the voluntary consulta service.
 
+A Veri*Factu SIF sends each alta at invoice issue. Do not issue invoices in a disconnected system
+and copy their records to another system for an end-of-day submission. If two locations operate as
+separate SIFs, each one owns its own direct submission path and chain.
+
 The serializer checks the issuer's and representative's NIF form before sending. It also checks
 the requirement reference's 18-character limit and a supplied `FechaFinVeriFactu`: its year must
 be the current or preceding year, and from 1 January 2027 its date must be `31-12-20XX`. AEAT
@@ -182,6 +186,10 @@ Keep the certificate and passphrase in your deployment's secret storage. Close t
 your process shuts down. The dispatcher wrapper above is exercised against the package's fake
 transport in this site's example check; a real certificate must also be checked in AEAT
 preproduction before you rely on it in production.
+
+The mTLS certificate authenticates the connection. It is not an XAdES signature on a record. This
+package does not implement record signing, which belongs to the NO Veri*Factu surface that it does
+not support.
 
 ## Submit and retain the response
 
