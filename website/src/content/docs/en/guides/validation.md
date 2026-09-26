@@ -75,6 +75,36 @@ the numeric offset carried by `FechaHoraHusoGenRegistro`, so midnight follows th
 local date. A malformed timestamp already produces `FECHA_HORA_FORMAT`; in that case the IPSI issue
 stays a warning instead of adding a second date-derived error.
 
+Developer FAQ 26 predates that rule and says to omit `ClaveRegimen` for IPSI. Do not follow that
+part of the FAQ: validation-rules version 1.2.2 is newer and permits IPSI codes `01`, `08`, `11`,
+`18`, `19`, and `20`, with the transition above. The FAQ's separate explanation that each operation
+chooses IVA, IGIC, or IPSI from its own tax and location still applies.
+
+## Keep cross-system tax codes separate
+
+`N1` means that the operation is not subject under the applicable tax's non-subjection rules;
+`N2` means that place-of-supply rules make it non-subject. If you migrate TicketBAI L13 values,
+developer FAQ 21 maps `OT` to `N1` and `RL` or `IE` to `N2`. It does not map `VT` automatically.
+This package accepts the resulting Veri*Factu field; it does not convert TicketBAI records or decide
+which legal category applies.
+
+The same distinction matters for IGIC exemptions. Developer FAQ 25 maps SII-IGIC L10 values `E6`,
+`E7`, and `E8` to `E6` in that cross-system migration. It does not remove `E7` or `E8` from the
+Veri*Factu IGIC record domain: current validation rules still permit IGIC `E1`–`E8`. Keep the source
+system's mapping separate from the code you select for the new record.
+
+For Canary operations, choose the tax and place-of-supply fields from the operation itself. AEAT's
+later [scope FAQ](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes/cuestiones-generales-ambitos-aplicacion.html)
+says to assess SII status separately for IVA and IGIC. SII-IVA alone does not exclude an operation
+of a Canary establishment that is outside SII-IGIC; inclusion in SII-IGIC does. `validate` can
+check an `Impuesto: "03"` IGIC line or an IVA place-of-supply `N2` line with regime `08`, but it
+cannot establish the taxpayer's registrations or where the supply occurs.
+
+Developer FAQ 24 gives cash-accounting examples that combine `N2` with regimes `08` or `01` for
+particular territories and recipients. Treat them as fact-specific examples. The package checks the
+codes you provide; it does not infer cash-accounting eligibility, and the FAQ itself leaves one
+Canary interpretation to the competent tax authority.
+
 Correction fields are checked together. `RechazoPrevio` values `S` and `X` require
 `Subsanacion: "S"`; `FacturasRectificadas` is limited to `R1`–`R5`; `FacturasSustituidas` is limited
 to `F3`; and `ImporteRectificacion` is required for, and allowed only with,
@@ -97,6 +127,13 @@ For a mixed record, every applicable IVA or IGIC line must meet that exception. 
 checks use the numeric offset in `FechaHoraHusoGenRegistro`, rather than the computer's time zone.
 Tests and applications with a controlled clock can pass `{ now }` as the second argument to
 `validate` or `assertValid`.
+
+Those date exceptions do not implement a payment workflow. Developer FAQ 29 says a late payment
+of a code-`15` invoice needs no new invoice and does not change accrual. A payment before accrual
+needs a new invoice and alta for the advance, plus an adjustment to the original invoice's base and
+tax, to zero for a full advance. The FAQ does not identify the exact record-correction type for that
+adjustment, so choose it from the applicable invoicing rules rather than inferring it from a passing
+date check.
 
 The legal-status flags are also cross-checked with `TipoFactura`:
 `FacturaSimplificadaArt7273: "S"` is limited to `F1`, `F3`, and `R1`–`R4`, while

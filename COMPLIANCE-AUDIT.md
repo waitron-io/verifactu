@@ -13,7 +13,7 @@ is accepted. The [source watch](sources/README.md) checks for publication change
 | [Web service description](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_Descripcion_SWeb.pdf)             | 1.0.3, 28 July 2025                        | §§1–11 offline inventory complete; remaining limits are named below                                                   |
 | [Hash specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_especificaciones_huella_hash_registros.pdf) | 0.1.2, 27 August 2024                      | §§1–7 offline inventory complete; event records out of scope; decimal-variant comparison pending AEAT preproduction   |
 | [QR specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf)               | 0.5.0, 10 December 2025                    | §§1–12 offline inventory complete; print layout and most lookup-response behavior remain outside the public library   |
-| [Developer FAQ](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/FAQs-Desarrolladores.pdf)                              | 1.3, 4 December 2025                       | Complete inventory; entries 1–15 audited below, entries 16–27 and 29 pending                                          |
+| [Developer FAQ](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/FAQs-Desarrolladores.pdf)                              | 1.3, 4 December 2025                       | Entries 1–27 and 29 audited below; removed entry 28 accounted for from the revision history                           |
 | [Public FAQ](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes.html)                                 | Pages listed by AEAT on 22 September 2026  | Pending entry-by-entry review                                                                                         |
 | [XSD and WSDL files](schemas/README.md)                                                                                                                            | Versions and checksums in the linked index | Offline closure complete for all five XSD inventories, the WSDL graph, and their cross-schema links                   |
 
@@ -44,39 +44,40 @@ the pinned fingerprint.
 
 Version 1.3 contains entries 1–27 and 29. Its revision history says version 1.1 removed entry 28
 and folded it into entry 17, so the missing number is intentional rather than an inventory gap.
-E15 checks the first numbered half, entries 1–15; E16 owns the rest.
+E15 checks entries 1–15; E16 checks entries 16–27 and 29 and closes entry 28 from that revision
+history. The current PDF does not preserve entry 28's former wording, so this audit does not invent it.
 
-| Entry | Subject                                                     | Audit state                    |
-| ----: | ----------------------------------------------------------- | ------------------------------ |
-|     1 | Transitional period                                         | E15 complete                   |
-|     2 | When an adapted SIF may start being used                    | E15 complete                   |
-|     3 | One SIF product versus a product family                     | E15 complete                   |
-|     4 | SIF, installation, and multi-invoicing identification       | E15 complete                   |
-|     5 | Multi-component SIF architectures                           | E15 complete                   |
-|     6 | Prohibition on duplicate record numbering                   | E15 complete                   |
-|     7 | User identification display in a multi-user SIF             | E15 complete                   |
-|     8 | Input product plus shared submission-service certification  | E15 complete                   |
-|     9 | Software customisation                                      | E15 complete                   |
-|    10 | Importing invoices from another system                      | E15 complete                   |
-|    11 | Drafts, proformas, delivery notes, and test invoices        | E15 complete                   |
-|    12 | Vending machines and RRSIF                                  | E15 complete                   |
-|    13 | Record conservation in Veri*Factu and VAT books             | E15 complete                   |
-|    14 | Manufacturer responsibility when marketing adapted products | E15 complete                   |
-|    15 | Automatic chain checks performed by a SIF                   | E15 complete                   |
-|    16 | Software-company representation of invoice issuers          | E16 pending                    |
-|    17 | Corrections, cancellations, and rectifications              | E16 pending                    |
-|    18 | Responding to requests for non-Veri*Factu records           | E16 pending                    |
-|    19 | Rebates and rectification                                   | E16 pending                    |
-|    20 | Meaning of total amount in a record                         | E16 pending                    |
-|    21 | TicketBAI L13 non-subjection equivalence                    | E16 pending                    |
-|    22 | Lottery-ticket sales                                        | E16 pending                    |
-|    23 | Record breakdown for supplies located in the Canary Islands | E16 pending                    |
-|    24 | Cash accounting and Veri*Factu                              | E16 pending                    |
-|    25 | SII-IGIC exemption list L10                                 | E16 pending                    |
-|    26 | Invoice content for VAT, IGIC, or IPSI                      | E16 pending                    |
-|    27 | Invoices replacing simplified invoices                      | E16 pending                    |
-|    28 | Removed in v1.1 and folded into entry 17                    | Accounted for; review with E16 |
-|    29 | VAT pending-accrual codes 14 and 15                         | E16 pending                    |
+| Entry | Subject                                                     | Audit state  |
+| ----: | ----------------------------------------------------------- | ------------ |
+|     1 | Transitional period                                         | E15 complete |
+|     2 | When an adapted SIF may start being used                    | E15 complete |
+|     3 | One SIF product versus a product family                     | E15 complete |
+|     4 | SIF, installation, and multi-invoicing identification       | E15 complete |
+|     5 | Multi-component SIF architectures                           | E15 complete |
+|     6 | Prohibition on duplicate record numbering                   | E15 complete |
+|     7 | User identification display in a multi-user SIF             | E15 complete |
+|     8 | Input product plus shared submission-service certification  | E15 complete |
+|     9 | Software customisation                                      | E15 complete |
+|    10 | Importing invoices from another system                      | E15 complete |
+|    11 | Drafts, proformas, delivery notes, and test invoices        | E15 complete |
+|    12 | Vending machines and RRSIF                                  | E15 complete |
+|    13 | Record conservation in Veri*Factu and VAT books             | E15 complete |
+|    14 | Manufacturer responsibility when marketing adapted products | E15 complete |
+|    15 | Automatic chain checks performed by a SIF                   | E15 complete |
+|    16 | Software-company representation of invoice issuers          | E16 complete |
+|    17 | Corrections, cancellations, and rectifications              | E16 complete |
+|    18 | Responding to requests for non-Veri*Factu records           | E16 complete |
+|    19 | Rebates and rectification                                   | E16 complete |
+|    20 | Meaning of total amount in a record                         | E16 complete |
+|    21 | TicketBAI L13 non-subjection equivalence                    | E16 complete |
+|    22 | Lottery-ticket sales                                        | E16 complete |
+|    23 | Record breakdown for supplies located in the Canary Islands | E16 complete |
+|    24 | Cash accounting and Veri*Factu                              | E16 complete |
+|    25 | SII-IGIC exemption list L10                                 | E16 complete |
+|    26 | Invoice content for VAT, IGIC, or IPSI                      | E16 complete |
+|    27 | Invoices replacing simplified invoices                      | E16 complete |
+|    28 | Removed in v1.1 and folded into entry 17                    | E16 complete |
+|    29 | VAT pending-accrual codes 14 and 15                         | E16 complete |
 
 ### Developer FAQ entries 1–15 (E15)
 
@@ -97,6 +98,25 @@ E15 checks the first numbered half, entries 1–15; E16 owns the rest.
 |    13 | The client returns AEAT responses and CSV data for the caller to store, and consulta can retrieve records supported by the service.                                                                                                                                                         | The FAQ says local conservation of submitted RFs is not separately regulated for a Veri*Factu SIF because AEAT retains them. The caller still needs durable numbers, chain/retry state and receipts to operate safely, and must conserve complete invoice documents and any records required by its wider accounting system.                                                                                 |
 |    14 | None; the package has no customer contract, maintenance, sales, or support model.                                                                                                                                                                                                           | Support for non-invoicing modules, notices to customers, refusal to update, and manufacturer/user liability are legal and commercial matters.                                                                                                                                                                                                                                                                |
 |    15 | `buildAlta` refuses an omitted predecessor; builders compute the current record's huella; `validate` checks that huella, the predecessor pointer's shape/hash format, and the current record's future timestamp. Focused facade, huella, and validation tests cover those local guarantees. | A single record cannot prove that its stored predecessor was correctly chained to the record before it or compare the predecessor's generation time with the next append. The caller must perform those history checks before its durable append. NO Veri*Factu event logging, anomaly reports, clock control, and the rule to continue invoicing after recording a detected error are outside this package. |
+
+### Developer FAQ entries 16–29 (E16)
+
+| Entry | Package behavior or evidence                                                                                                                                                                                                                                 | Boundary or later-source disposition                                                                                                                                                                                                                   |
+| ----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+|    16 | `Cabecera.Representante` is preserved, and `serializeEnvio` checks its NIF shape. The submission guides now distinguish the XML field from representation authority.                                                                                         | Agreement 017, signed customer authority, certificate eligibility, and census status cannot be proved from a request.                                                                                                                                  |
+|    17 | The record model and validation cover rectificative invoices, `Subsanacion`, `RechazoPrevio`, references, and cancellation records. The guides distinguish invoice correction, accepted-record correction, rejected-first-alta correction, and cancellation. | The caller must choose the legally applicable path. A later public FAQ uses `Sustitutivo` and `SubsanaError`, which do not identify a proven mapping to the published schema fields, so the guides do not equate them.                                 |
+|    18 | Requirement headers, endpoints, preserved-record submission, final-batch flag, and the absence of consulta are documented and covered by serializer/client tests.                                                                                            | The package does not retain the original NO Veri*Factu records, authenticate a requirement, or prove live acceptance.                                                                                                                                  |
+|    19 | `R1`–`R5` and optional `FacturasRectificadas` can represent the FAQ's volume-rebate rectification and its period-based exception.                                                                                                                            | Whether a rebate qualifies, which invoice type applies, and what period is sufficient are caller and legal decisions.                                                                                                                                  |
+|    20 | `ImporteTotal` is preserved, hashed, sent to the QR helper, and compared with the published detail-line calculation using AEAT's tolerance and regime exclusions. The alta guides now explain that it is a record total, not necessarily the amount payable. | The caller calculates the invoice. The later public FAQ says retentions stay outside the record and allows some suplidos or financial surcharges to be represented optionally as non-subject or zero-rate amounts; the package does not classify them. |
+|    21 | Validation accepts caller-selected `N1`/`N2`; the guides record the TicketBAI L13 mapping `OT` to `N1`, `RL`/`IE` to `N2`, and no automatic `VT` mapping.                                                                                                    | TicketBAI and common-territory RRSIF are different regimes. The package does not convert TicketBAI records or infer legal non-subjection.                                                                                                              |
+|    22 | The generic fields can represent the FAQ's lottery-ticket case; the guides record its face-value, no-premium limit and relationship to the later optional-suplido clarification.                                                                             | The library does not decide whether a sale qualifies or suppress an invoice automatically.                                                                                                                                                             |
+|    23 | The tax, regime, and `N2` fields can represent the FAQ's IGIC and IVA place-of-supply examples. The guides record the later public FAQ's separate IVA/IGIC SII-scope test.                                                                                   | Taxpayer SII registration and place-of-supply facts remain caller or tax-authority evidence.                                                                                                                                                           |
+|    24 | Published regime and non-subjection combinations are accepted when supplied; local validation checks their shape and current technical rules.                                                                                                                | The package does not infer cash-accounting eligibility or resolve the FAQ's expressly reserved Canary interpretation.                                                                                                                                  |
+|    25 | Current validation correctly accepts IGIC record exemptions `E1`–`E8`. The guides label FAQ 25's `E6` result as an SII-IGIC L10 migration crosswalk rather than a restriction on Veri*Factu record values.                                                   | Cross-system migration does not prove which exemption applies to a transaction.                                                                                                                                                                        |
+|    26 | `Impuesto` and tax-specific `ClaveRegimen` validation follow validation-rules version 1.2.2.                                                                                                                                                                 | That later source supersedes FAQ 26's instruction to omit `ClaveRegimen` for IPSI: it permits codes `01`, `08`, `11`, `18`, `19`, and `20`, with missing or invalid values accepted with errors through 2026 and rejected from 2027.                   |
+|    27 | `F3`, recipient requirements, and `FacturasSustituidas` are represented and validated. The alta guides now distinguish replacement from rectification and document the FAQ's correction sequence.                                                            | Avoiding duplicate collection and deciding how to correct an underlying invoice belong to the invoicing system; issuing an F3 does not itself cancel the replaced simplified invoices.                                                                 |
+|    28 | Version 1.3's revision history records that version 1.1 removed entry 28 and folded it into entry 17.                                                                                                                                                        | The current official PDF supplies no former wording or paragraph-level mapping, so only the removal and destination are verified.                                                                                                                      |
+|    29 | Validation implements the code `14`/`15` operation-date exceptions and the published code-`14` requirements. The guides record FAQ 29's code-`15` late-payment and advance-payment distinction.                                                              | The FAQ does not name the exact record-correction classification for changing the initial invoice after an advance, so the library does not invent one.                                                                                                |
 
 ## Web-service description coverage map
 
@@ -1037,12 +1057,11 @@ in those rows are explicit external checks, not missing source sections.
 
 ### Pending FAQ work
 
-Developer FAQ v1.3 entries 1–15 are reviewed in the coverage map above. Entries 16–27 and 29
-(including the version-history explanation for removed entry 28) remain for E16. The 18 pages
-currently linked by the public FAQ index remain for E17–E18. Each pending entry must point to
-library behavior, consumer responsibility, or a named legal or live limit, and the English and
-Spanish guides must remain aligned. This FAQ work does not reopen the completed
-technical-publication ledger.
+Developer FAQ v1.3 entries 1–27 and 29, plus the revision-history disposition of removed entry 28,
+are reviewed in the coverage map above. The 18 pages currently linked by the public FAQ index
+remain for E17–E18. Each pending public entry must point to library behavior, consumer
+responsibility, or a named legal or live limit, and the English and Spanish guides must remain
+aligned. This FAQ work does not reopen the completed technical-publication ledger.
 
 ### Unresolved external verification
 

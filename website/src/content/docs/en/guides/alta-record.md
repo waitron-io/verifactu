@@ -40,12 +40,43 @@ If AEAT assigned an agreement ID to the software system used for the invoice, pa
 `IdAcuerdoSistemaInformatico`. The builder and XML round trip preserve this separate, non-hashed
 field. Its maximum length is 16 characters; only AEAT can confirm that the ID exists.
 
+## Supply the record total
+
+Set `ImporteTotal` to the total represented by the record's tax breakdown: bases, charged tax,
+and equivalence surcharge where they apply. It is not necessarily the amount your customer pays.
+For example, a retention reduces the payment but stays outside the record total. AEAT's later
+[alta-record FAQ](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes/registros-facturacion-alta.html)
+also allows some suplidos and financial surcharges to be omitted, or included when you represent
+them as non-subject or zero-rate amounts. You choose the treatment from the invoice facts; the
+builder formats the amount but does not calculate or classify it.
+
+For a face-value lottery ticket sold without a premium alongside other goods, developer FAQ 22
+treats the ticket payment like a suplido and omits it from both the record and `ImporteTotal`.
+That specific case remains narrower than the later generic option above. Do not apply it to a
+different lottery product or fee without confirming the applicable rule.
+
+## Choose the correction workflow first
+
 For a correction, use `FacturasRectificadas` only with `R1`–`R5`. Use `FacturasSustituidas` only
 with `F3`. `ImporteRectificacion` is required for, and allowed only with, a substitution correction
 (`TipoRectificativa: "S"`). When correcting a record after an AEAT rejection, `RechazoPrevio: "S"`
 or `"X"` also requires `Subsanacion: "S"`. A present reference group must contain at least one
 invoice. Local validation checks each referenced Spanish NIF, the invoice number's 1–60-character
 length, and its date; only AEAT can confirm that the NIF belongs to a registered taxpayer.
+
+Choose whether you need a rectificative invoice, a correction to an accepted record, a replacement
+after an initial rejection, or a cancellation before setting those fields. For the rejected-first-
+alta path, use `Subsanacion: "S"` with `RechazoPrevio: "X"` when AEAT has no stored record. A
+volume rebate can use a rectificative invoice and, in the case described by developer FAQ 19, a
+relevant period instead of listing every original invoice. These are invoicing decisions, not
+conclusions that `validate` can draw from one record.
+
+An `F3` replaces simplified invoices but does not cancel them or rectify them. Identify those
+invoices in `FacturasSustituidas` and include the recipient. If an underlying simplified invoice
+is wrong, rectify it first and issue the `F3` for the rectifying invoice. If the simplified
+invoices are right but the `F3` is wrong, developer FAQ 27 describes a negative `F3` for the same
+amount followed by the corrected `F3`. Your invoicing system must also avoid collecting or counting
+the same sale twice; the package only builds each supplied record.
 
 When the recipient issues the invoice, set `EmitidaPorTerceroODestinatario: "D"` and include that
 recipient in `Destinatarios`. Because `F2` and `R5` forbid `Destinatarios`, they cannot use

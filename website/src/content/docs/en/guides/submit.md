@@ -52,6 +52,10 @@ one submission, since each record includes its own `SistemaInformatico`. Every a
 `cabecera.ObligadoEmision.NIF` in `IDEmisorFactura`; the serializer stops before sending if they
 differ.
 
+That XML field does not grant authority to act for the taxpayer. Your deployment must separately
+hold the applicable social-collaboration agreement and the taxpayer's authorization, and use a
+certificate AEAT accepts for that representation. Local NIF validation proves only the text shape.
+
 For an ordinary voluntary Veri*Factu submission, leave the header's remittance blocks absent.
 You can add `RemisionVoluntaria: { FechaFinVeriFactu, Incidencia }` when those fields apply. If
 you are submitting non-verifiable records because AEAT required them, use
@@ -245,6 +249,12 @@ a new corrected record. First check whether a rectificativa or cancellation is r
 AEAT exempts some admissible errors, including a future generation timestamp, from correction.
 Under an AEAT requirement, do not apply that voluntary repair flow to business-rule errors in
 the preserved records.
+
+For an initial alta that AEAT rejected and did not store, use the rejected-first-record path
+`Subsanacion: "S"` with `RechazoPrevio: "X"`. Correcting a stored record, issuing a rectificative
+invoice, and cancelling a wholly erroneous invoice are different flows. Do not translate the later
+public FAQ terms `Sustitutivo` or `SubsanaError` into package fields unless AEAT publishes an exact
+schema mapping; the current developer FAQ and XSD use `Subsanacion` and `RechazoPrevio`.
 
 Use the category in AEAT's current
 [error-code list](https://prewww2.aeat.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1.0/cont/ws/errores.properties),

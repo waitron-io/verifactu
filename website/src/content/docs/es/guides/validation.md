@@ -83,6 +83,40 @@ desfase numérico de `FechaHoraHusoGenRegistro`, por lo que la medianoche sigue 
 declarada en el registro. Una marca temporal incorrecta ya genera `FECHA_HORA_FORMAT`; en ese caso,
 el problema del IPSI sigue siendo un aviso para no añadir un segundo error derivado de la fecha.
 
+La FAQ 26 para desarrolladores es anterior a esa regla y dice que omitas `ClaveRegimen` en IPSI.
+No sigas esa parte de la FAQ: la versión 1.2.2 de las validaciones es posterior y permite los códigos
+IPSI `01`, `08`, `11`, `18`, `19` y `20`, con la transición anterior. Sigue siendo válida la
+explicación separada de la FAQ según la cual cada operación elige IVA, IGIC o IPSI por su impuesto y
+localización.
+
+## Separa los códigos de sistemas distintos
+
+`N1` indica que la operación no está sujeta por las reglas de no sujeción del impuesto aplicable;
+`N2` indica que no está sujeta por las reglas de localización. Si migras valores de TicketBAI L13,
+la FAQ 21 para desarrolladores asigna `OT` a `N1` y `RL` o `IE` a `N2`. No asigna `VT`
+automáticamente. El paquete acepta el campo Veri*Factu resultante, pero no convierte registros de
+TicketBAI ni decide qué categoría legal corresponde.
+
+La misma separación importa en las exenciones de IGIC. La FAQ 25 para desarrolladores asigna los
+valores `E6`, `E7` y `E8` de la lista L10 de SII-IGIC a `E6` en esa migración entre sistemas. No
+elimina `E7` ni `E8` del dominio de los registros Veri*Factu de IGIC: las validaciones actuales
+siguen permitiendo `E1`–`E8` para IGIC. Separa la conversión del sistema de origen del código que
+elijas para el registro nuevo.
+
+En las operaciones de Canarias, elige el impuesto y los campos de localización a partir de la
+propia operación. La [FAQ posterior sobre el ámbito](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes/cuestiones-generales-ambitos-aplicacion.html)
+de la AEAT indica que debes analizar por separado la inclusión en SII para IVA e IGIC. Estar en
+SII-IVA no excluye por sí solo una operación de un establecimiento canario que no esté en SII-IGIC;
+estar en SII-IGIC sí la excluye. `validate` puede comprobar una línea IGIC con `Impuesto: "03"` o
+una línea IVA `N2` por localización con régimen `08`, pero no acredita los censos del obligado ni
+dónde se localiza la operación.
+
+La FAQ 24 para desarrolladores ofrece ejemplos de criterio de caja que combinan `N2` con los
+regímenes `08` o `01` para determinados territorios y destinatarios. Trátalos como casos que
+dependen de sus hechos. El paquete comprueba los códigos que indiques, pero no deduce si procede el
+criterio de caja; la propia FAQ reserva una interpretación canaria a la administración tributaria
+competente.
+
 Los campos de rectificación se comprueban en conjunto. Los valores `S` y `X` de `RechazoPrevio`
 exigen `Subsanacion: "S"`; `FacturasRectificadas` solo está permitido en `R1`–`R5`;
 `FacturasSustituidas`, solo en `F3`; e `ImporteRectificacion` es obligatorio, y solo está permitido,
@@ -106,6 +140,13 @@ se limita a los regímenes `14` y `15`. En un registro mixto, cada línea aplica
 cumplir esa excepción. Las comprobaciones de fecha actual usan el desfase numérico de
 `FechaHoraHusoGenRegistro`, no la zona horaria del ordenador. En pruebas o aplicaciones con un reloj
 controlado puedes pasar `{ now }` como segundo argumento de `validate` o `assertValid`.
+
+Estas excepciones de fecha no implementan un flujo de cobros. La FAQ 29 para desarrolladores dice
+que un cobro tardío de una factura con código `15` no exige otra factura ni cambia el devengo. Un
+cobro anterior al devengo exige una factura nueva y su alta por el anticipo, además de ajustar la
+base y la cuota de la factura original, hasta cero si el anticipo es total. La FAQ no identifica el
+tipo exacto de corrección del registro para ese ajuste. Elígelo según las reglas de facturación
+aplicables y no lo deduzcas de una comprobación de fecha superada.
 
 Los indicadores legales también se contrastan con `TipoFactura`:
 `FacturaSimplificadaArt7273: "S"` solo se permite en `F1`, `F3` y `R1`–`R4`, mientras que
