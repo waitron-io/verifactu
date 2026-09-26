@@ -34,3 +34,13 @@ change the record's formatted fields afterwards.
 
 Sequence invoice numbering and chain updates in your own durable transaction. The library does
 not hold a mutable chain manager because a process crash would lose its state.
+
+Before appending, inspect the predecessor you loaded from storage. `validate` checks the current
+record's own huella and the predecessor pointer's shape and hash format; it cannot prove from one
+record that the predecessor was itself linked correctly to the record before it, or compare that
+stored predecessor's generation time with the new append. Those history checks belong beside your
+durable chain transaction.
+
+AEAT developer FAQ 15 describes additional automatic checks and event logging for NO Veri*Factu
+SIFs. This package builds Veri*Factu records and does not implement NO Veri*Factu signatures,
+event records, anomaly reports, or clock control.

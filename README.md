@@ -10,10 +10,10 @@ For a shorter stateless build and submit flow, see the
 [facade guide](https://waitron-io.github.io/verifactu/en/guides/facade/).
 
 > **This library is a tool for building SIFs. It is not itself a SIF.**
-> A _sistema informático de facturación_ is a deployed system, and its obligations —
-> conservation, inalterability and accessibility of records — are properties of a deployment,
-> not of source code. Each deploying business issues its own declaración responsable for its own
-> installation. See [`PROVENANCE.md`](./PROVENANCE.md).
+> A _sistema informático de facturación_ is a deployed system. Its duties vary by operating mode
+> and include choices that source code cannot make: permanent installation identity, invoice
+> numbering, durable chain/retry state, invoice-document retention, operator UI, and the applicable
+> declaración responsable. See [`PROVENANCE.md`](./PROVENANCE.md).
 
 ## Design
 
@@ -21,6 +21,12 @@ Pure and stateless. Every export is a function over plain data. There is no data
 persistence, no ambient state and no I/O except through an injected `fetch`. Chain state,
 ordering, retries and storage belong to the caller — chain append has to join the host's
 transaction, which a stateful library could not do.
+
+Allocate `NumeroInstalacion` durably and never reuse it for the same invoice issuer, including
+after reinstalling the same software. Set `IndicadorMultiplesOT` from the invoicing operations of
+the current SaaS user, not from the software's global tenant count. Drafts and imported invoices
+stay outside the record-building boundary; once you issue an invoice, never delete it and reuse
+its issuer/serial/date identity.
 
 Types mirror AEAT's schema names exactly (`RegistroAlta`, `Encadenamiento`, `DetalleDesglose`);
 functions are named in English.
