@@ -1698,6 +1698,35 @@ describe("fake AEAT — resubmit (error 3000) and consulta", () => {
 });
 
 describe("fake AEAT — consulta pagination + RefExterna echo + state hooks", () => {
+  it("filters the imputation period by operation date and falls back to issue date", async () => {
+    const aeat = createFakeAeat();
+    await aeat.client().submit(cabecera, [
+      {
+        RegistroAlta: {
+          ...altaFixture("A/OPERATION-DATE", "20-07-2026"),
+          FechaOperacion: "30-06-2026",
+        },
+      },
+      { RegistroAlta: altaFixture("A/ISSUE-DATE", "20-07-2026") },
+    ]);
+
+    const june = await aeat.client().consultar(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "06",
+    });
+    expect(june.registros.map((record) => record.IDFactura.NumSerieFactura)).toEqual([
+      "A/OPERATION-DATE",
+    ]);
+
+    const july = await aeat.client().consultar(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+    });
+    expect(july.registros.map((record) => record.IDFactura.NumSerieFactura)).toEqual([
+      "A/ISSUE-DATE",
+    ]);
+  });
+
   it("supports issuer date ranges and recipient-side consultas", async () => {
     const aeat = createFakeAeat();
     const recipient = { NombreRazon: "Cliente Uno", NIF: "11111111H" };

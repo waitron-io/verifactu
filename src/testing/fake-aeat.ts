@@ -42,6 +42,7 @@ interface StoredMetadata {
   nombreRazonEmisor: string;
   destinatarios: Destinatario[];
   sistema: SistemaInformatico;
+  periodoImputacion: string;
 }
 
 function samePersona(left: Destinatario, right: Destinatario): boolean {
@@ -161,6 +162,11 @@ export function keyOf(record: RegistroAlta | RegistroAnulacion): FacturaKey {
 function fechaToDate(ddMmYyyy: string): Date {
   const [dd, mm, yyyy] = ddMmYyyy.split("-");
   return new Date(`${yyyy}-${mm}-${dd}T00:00:00Z`);
+}
+
+function periodoImputacionOf(ddMmYyyy: string): string {
+  const [, month, year] = ddMmYyyy.split("-");
+  return `${year}-${month}`;
 }
 
 export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
@@ -355,6 +361,9 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
             nombreRazonEmisor: alta.NombreRazonEmisor,
             destinatarios: alta.Destinatarios?.IDDestinatario ?? [],
             sistema: alta.SistemaInformatico,
+            periodoImputacion: periodoImputacionOf(
+              alta.FechaOperacion ?? alta.IDFactura.FechaExpedicionFactura,
+            ),
           });
         } else if (anulacion) {
           // Cancellation has no buyer list; preserve any previously stored issuer and recipients.
@@ -363,6 +372,9 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
             nombreRazonEmisor: prior?.nombreRazonEmisor ?? cabecera.ObligadoEmision.NombreRazon,
             destinatarios: prior?.destinatarios ?? [],
             sistema: anulacion.SistemaInformatico,
+            periodoImputacion:
+              prior?.periodoImputacion ??
+              periodoImputacionOf(anulacion.IDFactura.FechaExpedicionFacturaAnulada),
           });
         }
         if (futureGenerationTime) {
@@ -409,9 +421,7 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
     // return another obligado's records. NumSerieFactura/FechaExpedicionFactura are optional
     // NARROWING filters on top of that: a targeted single-record lookup (Route B) supplies both
     // (and previously required both — 3b widens the same match into a paged period sweep, where
-    // neither is supplied and every in-NIF record is a candidate). All stored records are
-    // in-period for the fake's fixtures, so PeriodoImputacion itself is not re-derived here — the
-    // fixtures control which records exist.
+    // neither is supplied and every in-NIF record is a candidate).
     const queryingIssuer = cabecera.ObligadoEmision;
     let all = [...store.values()].filter((s) => {
       if (queryingIssuer !== undefined) return s.key.split("|")[0] === queryingIssuer.NIF;
@@ -419,6 +429,8 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
         samePersona(recipient, cabecera.Destinatario),
       );
     });
+    const requestedPeriod = `${filtro.Ejercicio}-${filtro.Periodo}`;
+    all = all.filter((s) => metadata.get(s.key)?.periodoImputacion === requestedPeriod);
     if (filtro.NumSerieFactura !== undefined) {
       all = all.filter((s) => s.key.split("|")[1] === filtro.NumSerieFactura);
     }
