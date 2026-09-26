@@ -6,21 +6,40 @@ is accepted. The [source watch](sources/README.md) checks for publication change
 
 ## Sources checked through 26 September 2026
 
-| AEAT publication                                                                                                                                                   | Version                                    | Audit status                                                                                                        |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
-| [Validation rules and errors](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Validaciones_Errores_Veri-Factu.pdf)          | 1.2.2, 8 April 2026                        | §§4–6 offline inventory complete; §§3.1.1–3.1.5 substantially checked                                               |
-| [Validation error-code list](https://prewww2.aeat.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1.0/cont/ws/errores.properties)                    | Unversioned; modified 30 July 2026         | All three categories checked; source fingerprint now watched                                                        |
-| [Web service description](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_Descripcion_SWeb.pdf)             | 1.0.3, 28 July 2025                        | §§1–11 offline inventory complete; remaining limits are named below                                                 |
-| [Hash specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_especificaciones_huella_hash_registros.pdf) | 0.1.2, 27 August 2024                      | §§1–7 offline inventory complete; event records out of scope; decimal-variant comparison pending AEAT preproduction |
-| [QR specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf)               | 0.5.0, 10 December 2025                    | §§1–12 offline inventory complete; print layout and most lookup-response behavior remain outside the public library |
-| [Developer FAQ](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/FAQs-Desarrolladores.pdf)                              | 1.3, 4 December 2025                       | Pending entry-by-entry review                                                                                       |
-| [Public FAQ](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes.html)                                 | Pages listed by AEAT on 22 September 2026  | Pending entry-by-entry review                                                                                       |
-| [XSD and WSDL files](schemas/README.md)                                                                                                                            | Versions and checksums in the linked index | Offline closure complete for all five XSD inventories, the WSDL graph, and their cross-schema links                 |
+| AEAT publication                                                                                                                                                   | Version                                    | Audit status                                                                                                          |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| [Validation rules and errors](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Validaciones_Errores_Veri-Factu.pdf)          | 1.2.2, 8 April 2026                        | §§3.1.1–3.1.5 map to executable evidence or named AEAT, legal, or live limits; §§4–6 offline inventory complete       |
+| [Validation error-code list](https://prewww2.aeat.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1.0/cont/ws/errores.properties)                    | Unversioned; modified 30 July 2026         | Three response categories and dispositions mapped; complete fingerprint watched; per-code live precedence not claimed |
+| [Web service description](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_Descripcion_SWeb.pdf)             | 1.0.3, 28 July 2025                        | §§1–11 offline inventory complete; remaining limits are named below                                                   |
+| [Hash specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Veri-Factu_especificaciones_huella_hash_registros.pdf) | 0.1.2, 27 August 2024                      | §§1–7 offline inventory complete; event records out of scope; decimal-variant comparison pending AEAT preproduction   |
+| [QR specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf)               | 0.5.0, 10 December 2025                    | §§1–12 offline inventory complete; print layout and most lookup-response behavior remain outside the public library   |
+| [Developer FAQ](https://sede.agenciatributaria.gob.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/FAQs-Desarrolladores.pdf)                              | 1.3, 4 December 2025                       | Pending entry-by-entry review                                                                                         |
+| [Public FAQ](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes.html)                                 | Pages listed by AEAT on 22 September 2026  | Pending entry-by-entry review                                                                                         |
+| [XSD and WSDL files](schemas/README.md)                                                                                                                            | Versions and checksums in the linked index | Offline closure complete for all five XSD inventories, the WSDL graph, and their cross-schema links                   |
+
+## Official-document closure map
+
+The offline technical audit is complete for the sources below. Complete means that every numbered
+section or schema family points to executable repository evidence or to a named boundary that this
+package cannot establish locally. It does not mean that AEAT has accepted every possible record,
+certificate, or workflow.
+
+| Source scope                            | Evidence in this ledger                                                                                                                                                                           | Boundary that remains external                                                                                                     |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Validation §§1–2                        | The source table pins version 1.2.2 and the tax-code section records its legal-reference-only revision                                                                                            | Publication changes remain watched                                                                                                 |
+| Validation §3 and §§3.1.1–3.1.5         | The rule table, submission-envelope inventory, cancellation-generator section, and hash section account for every numbered rule group; structural checks cross-reference the five XSD inventories | AEAT registrations, authorization, clock tolerance, legal qualification, and live validation precedence                            |
+| Validation §§4–6                        | The response-policy section, tax-code meanings, and both correction-state matrices account for every status, policy group, legal meaning, and annex state                                         | The caller chooses the legally appropriate correction workflow; AEAT decides unassigned response codes and live state              |
+| Validation error-code list              | The three response categories are mapped below, representative parser and fake-transport behavior is tested, and the complete source fingerprint is watched                                       | The package preserves unfamiliar codes; it does not simulate the meaning or precedence of every rejection code                     |
+| Service description §§1–11              | The coverage map and E9–E12 inventories account for every revision, diagram, field table, annex, and worked flow                                                                                  | Certificates, network behavior, authorization, live ordering, and service acceptance                                               |
+| Hash specification §§1–7                | The E13 inventory covers both supported record shapes and all three published vectors                                                                                                             | Event-record hashing is outside this package; decimal lexical equivalence needs a controlled preproduction check                   |
+| QR specification §§1–12 and annexes a–l | The E13 inventory covers Veri*Factu URL construction, published vectors, response families, and every printed layout                                                                              | Non-Veri*Factu URLs, general lookup-response handling, and physical render-and-scan checks belong to consumers or live integration |
+| Five XSDs and the WSDL                  | E2–E7 account for every schema family, all six global elements, imports, messages, operation edges, bindings, and eight ports                                                                     | Arbitrary incoming XML, signatures, certificate eligibility, and live acceptance are not proved by generated-fixture validation    |
 
 ## Web-service description coverage map
 
-The 101-page service description is not yet a completed audit. This map distinguishes a checked
-rule from a section whose examples or tables still need line-by-line comparison.
+This map closes the offline coverage ledger for the library's supported surface. The limits in each
+row identify consumer-owned, legal, and authorised live checks. They are not unreviewed publication
+sections.
 
 | Section                                                        | Checked here or in earlier branches                                                                                                                | Still to check                                                                                         |
 | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
@@ -305,6 +324,16 @@ description rather than hard-coding a correction decision. The bilingual submiss
 callers to use the current published category and the response context. Whether a correction is
 legally permissible instead of a rectificativa or cancellation remains a caller decision.
 
+The current error list has the following complete category-level disposition. The counts describe
+the watched 30 July 2026 source. They do not claim that the fake transport reproduces every code or
+that local tests establish AEAT's live precedence between them.
+
+| Official category                                               |    Current entries | Local behavior and evidence                                                                                                                                          | Deliberate limit                                                                                  |
+| --------------------------------------------------------------- | -----------------: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Whole-request rejection                                         |                 44 | SOAP-fault and response handling keep the request outcome reportable                                                                                                 | Individual live meanings and precedence are not simulated                                         |
+| Record rejection, or whole-request rejection for a header error |                193 | The response parser preserves integer codes and descriptions; representative fake-transport cases cover both record and header outcomes                              | The package does not hard-code a correction workflow for each code                                |
+| Record accepted with errors                                     | 10 (`2000`–`2009`) | The parser preserves the status, code, and description; validation and fake tests exercise representative hash, total, census, first-record, regime, and clock cases | Codes `2002`, `2003`, and `2008` are absent from §4.3.1's prose, so correction remains contextual |
+
 The serializer locally checks issuer and representative NIF form/control, both optional `S`/`N`
 remittance flags, required reference content and its 18-XML-character maximum, and a real `FechaFinVeriFactu` in the current or
 preceding Madrid calendar year. From 1 January 2027 the supplied date must also be `31-12-20XX`.
@@ -486,8 +515,19 @@ prove certificate authorization or live service acceptance.
 #### Global element coverage index
 
 The WSDL can only dispatch global schema elements, so this index is the boundary between the five
-schema inventories and the client transport. Local types and child fields remain covered by their
-individual inventory sections.
+schema inventories and the client transport. These six globals are exhaustive and asserted by
+`src/wsdl-conformance.test.ts`. The five family inventories account for local named and anonymous
+types and child fields under the filing-record, submission-envelope, consultation-request,
+filing-response, and consultation-response roots.
+
+| Audit item | Source family               | Inventory boundary                                                                                |
+| ---------- | --------------------------- | ------------------------------------------------------------------------------------------------- |
+| E2         | `SuministroInformacion.xsd` | Alta and cancellation records, shared types, choices, lengths, numeric bounds, and XML order      |
+| E3         | `SuministroLR.xsd`          | Submission and requirement headers, record wrappers, occurrence limits, and request order         |
+| E4         | `ConsultaLR.xsd`            | Consultation identities, filters, choices, limits, and request order                              |
+| E5         | `RespuestaSuministro.xsd`   | Filing response header, line identities, states, codes, duplicate details, occurrences, and order |
+| E6         | `RespuestaConsultaLR.xsd`   | Returned records, presentation data, status, cursor, occurrences, lexical forms, and order        |
+| E7         | `SistemaFacturacion.wsdl`   | Imports, messages, operation edges, bindings, ports, addresses, and links to all five XSDs        |
 
 | Source                      | Global element                             | WSDL or library consumer                                                                                                        | Executable evidence                                                                             | External limit                                                                                                  |
 | --------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
@@ -923,13 +963,32 @@ assign codes to every cell. The library does not select a correction operation f
 legal eligibility, live error precedence, clock tolerance, and long-lived history against AEAT
 rather than treating the fake as an authority.
 
-## Remaining work
+## Audit state after the official-document closure
 
-Review every remaining numbered validation rule, service-description section, hash/QR requirement,
-and developer and public FAQ entry. For each rule, add a
-row with the exact source section, implementation, behavioural test, and any intentional scope
-limit. Check the English and Spanish guides against each finding. The audit remains open until
-this review is complete.
+### Completed offline audit
+
+The dated source table, validation ledger, error-category disposition, service-description map,
+hash and QR inventories, and five-XSD/WSDL graph are closed for the supported package surface. The
+source watch can reopen only an affected row when AEAT changes a publication. The remaining limits
+in those rows are explicit external checks, not missing source sections.
+
+### Pending FAQ work
+
+The developer FAQ v1.3 and the 18 pages currently linked by the public FAQ index still need their
+separate entry-by-entry reviews. Each FAQ entry must point to library behavior, consumer
+responsibility, or a named legal or live limit. The English and Spanish guides must remain aligned
+with those dispositions. This pending FAQ work does not reopen the completed technical-publication
+ledger.
+
+### Unresolved external verification
+
+Controlled preproduction or consumer integration is still required for certificate eligibility and
+authorization, real mTLS and network behavior, exact live state and error precedence, AEAT clock
+tolerance, decimal lexical treatment in hash comparison, query authorization and pagination under
+concurrency, the complete QR lookup-response surface, and physical invoice render-and-scan checks.
+Production calls are not required to maintain the offline ledger.
+
+### Existing live evidence
 
 The preproduction workflow's manual `consult` and alta-plus-consulta checks succeeded on
 2026-09-22, including comparison of AEAT's stored hash with the submitted hash. Its monthly schedule
