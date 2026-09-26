@@ -230,6 +230,19 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
         existing?.tipo === "anulacion" &&
         permitsCancellationReplacement &&
         (existing.huella !== huella || (ref !== undefined && existing.refExterna !== ref));
+      if (!forced && alta?.RechazoPrevio === "S" && alta.Subsanacion !== "S") {
+        rejectLine(
+          lineaXml(
+            idf,
+            "Incorrecto",
+            1161,
+            "El valor del campo RechazoPrevio no es válido, no podrá incluirse el campo RechazoPrevio con valor S si no se ha informado del campo Subsanacion o tiene el valor N.",
+            ref,
+            operacion,
+          ),
+        );
+        continue;
+      }
       // A normal subsanación replaces an AEAT record; only RechazoPrevio=X permits no prior record.
       if (!forced && !existing && alta?.Subsanacion === "S" && alta.RechazoPrevio !== "X") {
         rejectLine(
@@ -238,21 +251,14 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
         continue;
       }
       if (!forced && existing && alta?.RechazoPrevio === "S" && !hasRejectedSubsanacion) {
-        rejectLine(duplicadoLineaXml(idf, undefined, ref, operacion, undefined));
+        rejectLine(
+          lineaXml(idf, "Incorrecto", 1275, "Valor incorrecto campo RechazoPrevio", ref, operacion),
+        );
         continue;
       }
       if (!forced && anulacion?.RechazoPrevio === "S" && !hasRejectedCancellation) {
         rejectLine(
-          existing
-            ? duplicadoLineaXml(idf, undefined, ref, operacion, undefined)
-            : lineaXml(
-                idf,
-                "Incorrecto",
-                3002,
-                "No existe el registro de facturación",
-                ref,
-                operacion,
-              ),
+          lineaXml(idf, "Incorrecto", 1275, "Valor incorrecto campo RechazoPrevio", ref, operacion),
         );
         continue;
       }
@@ -286,19 +292,8 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
         rejectLine(duplicadoLineaXml(idf, undefined, ref, operacion, undefined));
         continue;
       }
-      if (!forced && futureInvoiceDate) {
-        rejectLine(
-          lineaXml(
-            idf,
-            "Incorrecto",
-            1112,
-            "El valor de FechaExpedicionFactura es superior a la fecha actual",
-            ref,
-            operacion,
-          ),
-        );
-        continue;
-      }
+      // An already stored identity stays a duplicate if a test moves the fake clock backwards;
+      // keeping duplicate detail lets resolveEstadoEfectivo recover the stored state.
       if (
         existing &&
         !(
@@ -320,6 +315,19 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
         rejectLine(duplicadoLineaXml(idf, detail, ref, operacion, storedPetitionId));
         continue;
       }
+      if (!forced && futureInvoiceDate) {
+        rejectLine(
+          lineaXml(
+            idf,
+            "Incorrecto",
+            1112,
+            "El campo FechaExpedicionFactura es superior a la fecha actual.",
+            ref,
+            operacion,
+          ),
+        );
+        continue;
+      }
       if (forced) {
         rejectLine(lineaXml(idf, "Incorrecto", forced.code, forced.message, ref, operacion));
       } else {
@@ -339,8 +347,8 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
           refExterna: tipo === "anulacion" ? (ref ?? existing?.refExterna) : ref,
         });
         petitionIds.set(key, `PET-${String(csvSequence).padStart(8, "0")}`);
-        if (alta?.RechazoPrevio === "S") previousRejections?.delete("alta-subsanacion");
-        if (anulacion?.RechazoPrevio === "S") previousRejections?.delete("anulacion");
+        if (alta?.Subsanacion === "S") previousRejections?.delete("alta-subsanacion");
+        if (anulacion) previousRejections?.delete("anulacion");
         if (previousRejections?.size === 0) rejectedOperations.delete(key);
         if (alta) {
           metadata.set(key, {
@@ -365,7 +373,7 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
               idf,
               "AceptadoConErrores",
               2004,
-              "FechaHoraHusoGenRegistro posterior a la fecha del sistema de la AEAT",
+              "El valor del campo FechaHoraHusoGenRegistro debe ser la fecha actual del sistema de la AEAT, admitiéndose un margen de error de:",
               ref,
               operacion,
             ),
@@ -520,6 +528,7 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
       store.delete(key);
       petitionIds.delete(key);
       metadata.delete(key);
+      rejectedOperations.delete(key);
     },
   };
 }

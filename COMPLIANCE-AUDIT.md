@@ -692,10 +692,12 @@ the no-prior `X` path, and refusal to overwrite an existing record with that pat
 
 `RechazoPrevio: "S"` is distinct from both ordinary subsanación and the no-prior `X` path: the
 fake accepts it only after it has rejected an earlier subsanación for the same invoice identity.
-The retry consumes that operation history. Focused controls show that merely setting `S` cannot
-replace a stored alta, while an `X` attempt rejected against an existing record establishes the
-history needed for a subsequent `S` retry. This models the annex's transition, not AEAT's
-unpublished retention period or exact numeric error for a premature retry.
+Any accepted subsanación for that identity consumes the operation history. Focused controls show
+that merely setting `S` cannot replace a stored alta, while an `X` attempt rejected against an
+existing record establishes the history needed for a subsequent `S` retry. An alta that sets `S`
+without `Subsanacion: "S"` gets published code `1161`; for a shaped retry without matching history,
+the fake uses the published generic invalid-value code `1275`. This models the annex's transition,
+not AEAT's unpublished retention period.
 
 ### Cancellation without a prior record — validation annex §6.2
 
@@ -733,17 +735,19 @@ every non-hashed field or establish AEAT's retry behavior for an identical cance
 Both cancellation retry rows are now covered. `RechazoPrevio: "S"` requires a previously rejected
 cancellation for the same identity; the ordinary retry still requires an existing AEAT record,
 while the `SinRegistroPrevio: "S"` retry still requires that no record exists. Controls prove the
-same flags are refused without matching rejection history and that successful retries consume it.
+same flags are refused with `1275` without matching rejection history and that any accepted
+cancellation consumes it. The fake's `forget()` control also clears that history with the stored
+invoice trace.
 The fake also distinguishes the error tables' date cases: a future invoice date rejects with
 `1112`, while a future `FechaHoraHusoGenRegistro` is stored as `AceptadoConErrores` with `2004`.
 Only AEAT's clock and unpublished tolerance can decide the live boundary.
 
 The offline §6 matrix is complete for the fake's one-record-per-invoice model. It records only
 whether the matching operation kind was rejected, not AEAT's complete attempt history, and its
-`3000`/`3002` choices for matrix errors remain representative because the annex does not assign
-codes to those cells. The library does not select a correction operation for callers; check legal
-eligibility, live error codes, clock tolerance, and long-lived history against AEAT rather than
-treating the fake as an authority.
+`3000`/`3002` choices for other matrix errors remain representative because the annex does not
+assign codes to every cell. The library does not select a correction operation for callers; check
+legal eligibility, live error precedence, clock tolerance, and long-lived history against AEAT
+rather than treating the fake as an authority.
 
 ## Remaining work
 

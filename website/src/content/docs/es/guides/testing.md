@@ -60,10 +60,14 @@ códigos numéricos a estos casos de la tabla de anulaciones. No des por hecho q
 el mismo código en cada caso. Con `RechazoPrevio: "S"`, el transporte exige una operación anterior
 del mismo tipo e identidad que haya sido rechazada. El reintento de un alta sigue necesitando un
 registro existente. Una anulación necesita un registro, salvo que también indiques
-`SinRegistroPrevio: "S"`; ese reintento especial exige que no exista ninguno. Un reintento
-aceptado consume la marca de rechazo del transporte. Así se cubren las transiciones del
+`SinRegistroPrevio: "S"`; ese reintento especial exige que no exista ninguno. Cualquier operación
+aceptada del mismo tipo consume la marca de rechazo del transporte, y `forget()` elimina esa marca
+junto con el rastro almacenado de la factura. Para un reintento bien formado sin historial
+coincidente, el transporte usa el código genérico publicado `1275` de valor incorrecto; un alta con
+`RechazoPrevio: "S"` pero sin `Subsanacion: "S"` devuelve el `1161`. Así se cubren las transiciones del
 [anexo §6 de la AEAT](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Validaciones_Errores_Veri-Factu.pdf),
-pero no el periodo durante el que la AEAT conserva el historial ni el código exacto de cada celda.
+pero no el periodo durante el que la AEAT conserva el historial ni el código exacto de las demás
+celdas.
 
 El transporte devuelve el código de rechazo `1112` si la fecha de expedición es futura. Reserva
 el código admisible `2004` para una `FechaHoraHusoGenRegistro` futura, como indica la lista

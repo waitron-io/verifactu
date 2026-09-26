@@ -55,9 +55,12 @@ these cancellation-table outcomes. Do not assume that AEAT returns the same code
 For `RechazoPrevio: "S"`, the fake requires an earlier rejected operation of the same kind and
 invoice identity. An alta retry still needs an existing record. A cancellation retry needs an
 existing record unless you also set `SinRegistroPrevio: "S"`; that special retry requires no
-stored record. Successful retries consume the fake's rejection marker. This covers the state
-transitions in [AEAT's annex §6](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Validaciones_Errores_Veri-Factu.pdf),
-but not AEAT's retention period or exact error code for each table cell.
+stored record. Any accepted operation of the same kind consumes the fake's rejection marker, and
+`forget()` clears the marker with the stored invoice trace. For a shaped retry without matching
+history, the fake uses published generic invalid-value code `1275`; an alta that sets
+`RechazoPrevio: "S"` without `Subsanacion: "S"` gets published code `1161`. This covers the state transitions in
+[AEAT's annex §6](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Validaciones_Errores_Veri-Factu.pdf),
+but not AEAT's retention period or exact error code for every other table cell.
 
 The fake returns rejecting code `1112` for a future invoice date. It reserves accepted-with-errors
 code `2004` for a future `FechaHoraHusoGenRegistro`, matching the published list. The fake uses an

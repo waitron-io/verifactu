@@ -202,6 +202,8 @@ describe("fake AEAT — submit", () => {
     expect(response.RespuestaLinea[0]).toMatchObject({
       EstadoRegistro: "AceptadoConErrores",
       CodigoErrorRegistro: 2004,
+      DescripcionErrorRegistro:
+        "El valor del campo FechaHoraHusoGenRegistro debe ser la fecha actual del sistema de la AEAT, admitiéndose un margen de error de:",
     });
     expect(aeat.stored()[0]).toMatchObject({ estado: "AceptadoConErrores", tipo: "alta" });
   });
@@ -215,6 +217,7 @@ describe("fake AEAT — submit", () => {
     expect(response.RespuestaLinea[0]).toMatchObject({
       EstadoRegistro: "Incorrecto",
       CodigoErrorRegistro: 1112,
+      DescripcionErrorRegistro: "El campo FechaExpedicionFactura es superior a la fecha actual.",
     });
     expect(response.EstadoEnvio).toBe("Incorrecto");
     expect(aeat.stored()).toEqual([]);
@@ -434,6 +437,104 @@ describe("fake AEAT — submit", () => {
     ]);
     expect(staleRetry.RespuestaLinea[0]?.EstadoRegistro).toBe("Incorrecto");
     expect(aeat.stored()[0]?.huella).toBe("H-RETRIED-SUB");
+  });
+
+  it("consumes rejected alta history when an ordinary subsanación succeeds", async () => {
+    const aeat = createFakeAeat();
+    const client = aeat.client();
+    await client.submit(cabecera, [{ RegistroAlta: altaFixture("A/ORDINARY-SUB-CONSUMES") }]);
+    await client.submit(cabecera, [
+      {
+        RegistroAlta: {
+          ...altaFixture("A/ORDINARY-SUB-CONSUMES"),
+          Subsanacion: "S",
+          RechazoPrevio: "X",
+        },
+      },
+    ]);
+
+    const ordinary = await client.submit(cabecera, [
+      {
+        RegistroAlta: {
+          ...altaFixture("A/ORDINARY-SUB-CONSUMES"),
+          Subsanacion: "S",
+          RechazoPrevio: "N",
+          Huella: "H-ORDINARY-SUB",
+        },
+      },
+    ]);
+    expect(ordinary.RespuestaLinea[0]?.EstadoRegistro).toBe("Correcto");
+
+    const stale = await client.submit(cabecera, [
+      {
+        RegistroAlta: {
+          ...altaFixture("A/ORDINARY-SUB-CONSUMES"),
+          Subsanacion: "S",
+          RechazoPrevio: "S",
+          Huella: "H-STALE-SUB",
+        },
+      },
+    ]);
+    expect(stale.RespuestaLinea[0]).toMatchObject({
+      EstadoRegistro: "Incorrecto",
+      CodigoErrorRegistro: 1275,
+    });
+    expect(aeat.stored()[0]?.huella).toBe("H-ORDINARY-SUB");
+  });
+
+  it("keeps rejected alta history scoped to its invoice identity", async () => {
+    const aeat = createFakeAeat();
+    const client = aeat.client();
+    await client.submit(cabecera, [
+      { RegistroAlta: altaFixture("A/HISTORY-A") },
+      { RegistroAlta: altaFixture("A/HISTORY-B") },
+    ]);
+    await client.submit(cabecera, [
+      {
+        RegistroAlta: {
+          ...altaFixture("A/HISTORY-A"),
+          Subsanacion: "S",
+          RechazoPrevio: "X",
+        },
+      },
+    ]);
+
+    const otherInvoice = await client.submit(cabecera, [
+      {
+        RegistroAlta: {
+          ...altaFixture("A/HISTORY-B"),
+          Subsanacion: "S",
+          RechazoPrevio: "S",
+          Huella: "H-HISTORY-B",
+        },
+      },
+    ]);
+
+    expect(otherInvoice.RespuestaLinea[0]).toMatchObject({
+      EstadoRegistro: "Incorrecto",
+      CodigoErrorRegistro: 1275,
+    });
+    expect(
+      aeat.stored().find((record) => record.key === keyOf(altaFixture("A/HISTORY-B")))?.huella,
+    ).toBe("H-A/HISTORY-B");
+  });
+
+  it("uses 1161 when RechazoPrevio S appears on an alta without Subsanacion S", async () => {
+    const aeat = createFakeAeat();
+    const response = await aeat.client().submit(cabecera, [
+      {
+        RegistroAlta: {
+          ...altaFixture("A/INVALID-RECHAZO-PREVIO"),
+          RechazoPrevio: "S",
+        },
+      },
+    ]);
+
+    expect(response.RespuestaLinea[0]).toMatchObject({
+      EstadoRegistro: "Incorrecto",
+      CodigoErrorRegistro: 1161,
+    });
+    expect(aeat.stored()).toEqual([]);
   });
 
   it("keeps a forced rejection ahead of the no-prior subsanación check", async () => {
@@ -993,7 +1094,7 @@ describe("fake AEAT — submit", () => {
       },
     ]);
 
-    expect(response.RespuestaLinea[0]?.CodigoErrorRegistro).toBe(3000);
+    expect(response.RespuestaLinea[0]?.CodigoErrorRegistro).toBe(1275);
     expect(aeat.stored()[0]?.huella).toBe("H-ANUL-A/REJECT-HISTORY");
   });
 
@@ -1010,7 +1111,10 @@ describe("fake AEAT — submit", () => {
         },
       },
     ]);
-    expect(premature.RespuestaLinea[0]?.EstadoRegistro).toBe("Incorrecto");
+    expect(premature.RespuestaLinea[0]).toMatchObject({
+      EstadoRegistro: "Incorrecto",
+      CodigoErrorRegistro: 1275,
+    });
     expect(withoutHistory.stored()[0]).toMatchObject({ tipo: "alta" });
 
     const withHistory = createFakeAeat();
@@ -1054,6 +1158,40 @@ describe("fake AEAT — submit", () => {
     expect(withHistory.stored()[0]?.huella).toBe("H-RETRIED-ANUL");
   });
 
+  it("consumes rejected cancellation history when an ordinary cancellation succeeds", async () => {
+    const aeat = createFakeAeat();
+    const client = aeat.client();
+    await client.submit(cabecera, [{ RegistroAlta: altaFixture("A/ORDINARY-ANUL-CONSUMES") }]);
+    await client.submit(cabecera, [
+      {
+        RegistroAnulacion: {
+          ...anulacionFixture("A/ORDINARY-ANUL-CONSUMES"),
+          SinRegistroPrevio: "S",
+        },
+      },
+    ]);
+
+    const ordinary = await client.submit(cabecera, [
+      { RegistroAnulacion: anulacionFixture("A/ORDINARY-ANUL-CONSUMES") },
+    ]);
+    expect(ordinary.RespuestaLinea[0]?.EstadoRegistro).toBe("Correcto");
+
+    const stale = await client.submit(cabecera, [
+      {
+        RegistroAnulacion: {
+          ...anulacionFixture("A/ORDINARY-ANUL-CONSUMES"),
+          RechazoPrevio: "S",
+          Huella: "H-STALE-ANUL",
+        },
+      },
+    ]);
+    expect(stale.RespuestaLinea[0]).toMatchObject({
+      EstadoRegistro: "Incorrecto",
+      CodigoErrorRegistro: 1275,
+    });
+    expect(aeat.stored()[0]?.huella).toBe("H-ANUL-A/ORDINARY-ANUL-CONSUMES");
+  });
+
   it("requires a rejected ordinary cancellation before the no-prior RechazoPrevio S path", async () => {
     const withoutHistory = createFakeAeat();
     const premature = await withoutHistory.client().submit(cabecera, [
@@ -1065,7 +1203,10 @@ describe("fake AEAT — submit", () => {
         },
       },
     ]);
-    expect(premature.RespuestaLinea[0]?.EstadoRegistro).toBe("Incorrecto");
+    expect(premature.RespuestaLinea[0]).toMatchObject({
+      EstadoRegistro: "Incorrecto",
+      CodigoErrorRegistro: 1275,
+    });
     expect(withoutHistory.stored()).toEqual([]);
 
     const withHistory = createFakeAeat();
@@ -1086,6 +1227,58 @@ describe("fake AEAT — submit", () => {
     ]);
     expect(retried.RespuestaLinea[0]?.EstadoRegistro).toBe("Correcto");
     expect(withHistory.stored()[0]).toMatchObject({ tipo: "anulacion" });
+  });
+
+  it("forget removes rejected-operation history with the stored invoice trace", async () => {
+    const aeat = createFakeAeat();
+    const client = aeat.client();
+    const alta = altaFixture("A/FORGET-HISTORY");
+    await client.submit(cabecera, [{ RegistroAlta: alta }]);
+    await client.submit(cabecera, [
+      {
+        RegistroAnulacion: {
+          ...anulacionFixture("A/FORGET-HISTORY"),
+          SinRegistroPrevio: "S",
+        },
+      },
+    ]);
+    aeat.forget(keyOf(alta));
+
+    const stale = await client.submit(cabecera, [
+      {
+        RegistroAnulacion: {
+          ...anulacionFixture("A/FORGET-HISTORY"),
+          SinRegistroPrevio: "S",
+          RechazoPrevio: "S",
+        },
+      },
+    ]);
+
+    expect(stale.RespuestaLinea[0]).toMatchObject({
+      EstadoRegistro: "Incorrecto",
+      CodigoErrorRegistro: 1275,
+    });
+    expect(aeat.stored()).toEqual([]);
+  });
+
+  it("keeps duplicate state details ahead of a future-date check on a stored invoice", async () => {
+    const aeat = createFakeAeat({ serverNow: new Date("2026-07-21T00:00:00Z") });
+    const client = aeat.client();
+    await client.submit(cabecera, [{ RegistroAlta: altaFixture("A/FUTURE-DUP", "20-07-2026") }]);
+    aeat.setServerNow(new Date("2026-07-19T00:00:00Z"));
+
+    const duplicate = await client.submit(cabecera, [
+      { RegistroAlta: altaFixture("A/FUTURE-DUP", "20-07-2026") },
+    ]);
+
+    expect(duplicate.RespuestaLinea[0]).toMatchObject({
+      EstadoRegistro: "Incorrecto",
+      CodigoErrorRegistro: 3000,
+      RegistroDuplicado: {
+        EstadoRegistroDuplicado: "Correcta",
+        IdPeticionRegistroDuplicado: "PET-00000001",
+      },
+    });
   });
 
   it("marks an accepted future-dated cancellation Anulado with its cancellation hash", async () => {
