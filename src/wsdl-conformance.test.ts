@@ -144,30 +144,34 @@ describe("AEAT WSDL and cross-schema contract", () => {
     ]);
 
     expect(
-      children(wsdl, "wsdl:message").map((message) => {
-        const [part] = children(message, "wsdl:part");
-        return [attribute(message, "name"), attribute(part!, "name"), attribute(part!, "element")];
-      }),
+      children(wsdl, "wsdl:message").map((message) => [
+        attribute(message, "name"),
+        children(message, "wsdl:part").map((part) => [
+          attribute(part, "name"),
+          attribute(part, "element"),
+        ]),
+      ]),
     ).toEqual([
       [
         "EntradaRegFactuSistemaFacturacion",
-        "RegFactuSistemaFacturacion",
-        "sfLR:RegFactuSistemaFacturacion",
+        [["RegFactuSistemaFacturacion", "sfLR:RegFactuSistemaFacturacion"]],
       ],
       [
         "EntradaConsultaFactuSistemaFacturacion",
-        "ConsultaFactuSistemaFacturacion",
-        "sfLRC:ConsultaFactuSistemaFacturacion",
+        [["ConsultaFactuSistemaFacturacion", "sfLRC:ConsultaFactuSistemaFacturacion"]],
       ],
       [
         "RespuestaRegFactuSistemaFacturacion",
-        "RespuestaRegFactuSistemaFacturacion",
-        "sfR:RespuestaRegFactuSistemaFacturacion",
+        [["RespuestaRegFactuSistemaFacturacion", "sfR:RespuestaRegFactuSistemaFacturacion"]],
       ],
       [
         "RespuestaConsultaFactuSistemaFacturacion",
-        "RespuestaConsultaFactuSistemaFacturacion",
-        "sfLRRC:RespuestaConsultaFactuSistemaFacturacion",
+        [
+          [
+            "RespuestaConsultaFactuSistemaFacturacion",
+            "sfLRRC:RespuestaConsultaFactuSistemaFacturacion",
+          ],
+        ],
       ],
     ]);
 
@@ -177,11 +181,12 @@ describe("AEAT WSDL and cross-schema contract", () => {
       ),
     );
     for (const message of children(wsdl, "wsdl:message")) {
-      const [part] = children(message, "wsdl:part");
-      const qualifiedElement = attribute(part!, "element");
-      const [prefix, localName] = qualifiedElement.split(":");
-      const namespace = attribute(wsdl, `xmlns:${prefix}`);
-      expect(elementsByNamespace.get(namespace), qualifiedElement).toContain(localName);
+      for (const part of children(message, "wsdl:part")) {
+        const qualifiedElement = attribute(part, "element");
+        const [prefix, localName] = qualifiedElement.split(":");
+        const namespace = attribute(wsdl, `xmlns:${prefix}`);
+        expect(elementsByNamespace.get(namespace), qualifiedElement).toContain(localName);
+      }
     }
   });
 
@@ -233,18 +238,22 @@ describe("AEAT WSDL and cross-schema contract", () => {
           attribute(binding, "type"),
           attribute(soapBinding, "style"),
           attribute(soapBinding, "transport"),
-          children(binding, "wsdl:operation").map((operation) => [
-            attribute(operation, "name"),
-            attribute(record(operation["soap:operation"], "soap:operation"), "soapAction"),
-            attribute(
-              record(children(operation, "wsdl:input")[0]!["soap:body"], "input soap:body"),
-              "use",
-            ),
-            attribute(
-              record(children(operation, "wsdl:output")[0]!["soap:body"], "output soap:body"),
-              "use",
-            ),
-          ]),
+          children(binding, "wsdl:operation").map((operation) => {
+            const soapOperation = record(operation["soap:operation"], "soap:operation");
+            return [
+              attribute(operation, "name"),
+              attribute(soapOperation, "soapAction"),
+              soapOperation.style,
+              attribute(
+                record(children(operation, "wsdl:input")[0]!["soap:body"], "input soap:body"),
+                "use",
+              ),
+              attribute(
+                record(children(operation, "wsdl:output")[0]!["soap:body"], "output soap:body"),
+                "use",
+              ),
+            ];
+          }),
         ];
       }),
     ).toEqual([
@@ -254,8 +263,8 @@ describe("AEAT WSDL and cross-schema contract", () => {
         "document",
         "http://schemas.xmlsoap.org/soap/http",
         [
-          ["RegFactuSistemaFacturacion", "", "literal", "literal"],
-          ["ConsultaFactuSistemaFacturacion", "", "literal", "literal"],
+          ["RegFactuSistemaFacturacion", "", undefined, "literal", "literal"],
+          ["ConsultaFactuSistemaFacturacion", "", undefined, "literal", "literal"],
         ],
       ],
       [
@@ -263,7 +272,7 @@ describe("AEAT WSDL and cross-schema contract", () => {
         "sfWdsl:sfPortTypePorRequerimiento",
         "document",
         "http://schemas.xmlsoap.org/soap/http",
-        [["RegFactuSistemaFacturacion", "", "literal", "literal"]],
+        [["RegFactuSistemaFacturacion", "", undefined, "literal", "literal"]],
       ],
     ]);
   });

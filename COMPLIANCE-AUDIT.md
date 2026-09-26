@@ -333,11 +333,12 @@ action, port binding, and address. This ties the WSDL to the exported endpoint c
 leaving the relationship as a manual comparison.
 
 The fake transport now emits consultation responses with the published response and common
-namespaces, echoed `Cabecera` and `PeriodoImputacion`, and the exact response-XSD sequence. Issuer,
-recipient, and populated fake responses pass `RespuestaConsultaLR.xsd`; filing fake responses
-continue to pass `RespuestaSuministro.xsd`. `createClient` still accepts any caller-supplied endpoint
-and cannot prevent consulta being sent to a requirement-only URL, so select the voluntary endpoint
-for consulta. These offline checks do not prove certificate authorization or live service acceptance.
+namespaces, echoed `Cabecera` and `PeriodoImputacion`, and the exact response-XSD sequence. Empty and
+populated issuer and recipient responses pass `RespuestaConsultaLR.xsd`, including a populated
+external reference; filing fake responses continue to pass `RespuestaSuministro.xsd`. `createClient`
+still accepts any caller-supplied endpoint and cannot prevent consulta being sent to a
+requirement-only URL, so select the voluntary endpoint for consulta. These offline checks do not
+prove certificate authorization or live service acceptance.
 
 #### Global element coverage index
 
