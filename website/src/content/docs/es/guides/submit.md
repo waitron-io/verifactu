@@ -52,6 +52,11 @@ envío, porque cada registro lleva su propio `SistemaInformatico`. Cada alta deb
 `cabecera.ObligadoEmision.NIF` en `IDEmisorFactura`; el serializador se detiene antes del envío si
 ambos valores difieren.
 
+Ese campo XML no concede por sí solo autorización para actuar por el obligado. Tu despliegue debe
+contar por separado con el acuerdo de colaboración social aplicable, la autorización del cliente y
+un certificado que la AEAT acepte para esa representación. La validación local del NIF solo prueba
+la forma del texto.
+
 Para un envío voluntario VERI*FACTU ordinario, deja ausentes los bloques de remisión de la
 cabecera. Puedes añadir `RemisionVoluntaria: { FechaFinVeriFactu, Incidencia }` cuando proceda.
 Si envías registros no verificables por requerimiento de la AEAT, usa en su lugar
@@ -248,6 +253,13 @@ un nuevo registro subsanado. Comprueba antes si procede una factura rectificativ
 La AEAT exceptúa algunos errores admisibles, como una hora de generación futura, de la obligación
 de subsanar. Ante un requerimiento, no apliques ese proceso de subsanación voluntaria a los
 errores de negocio de los registros conservados.
+
+Cuando la AEAT haya rechazado un alta inicial y no la haya guardado, usa la ruta de primer registro
+rechazado: `Subsanacion: "S"` con `RechazoPrevio: "X"`. Corregir un registro almacenado, emitir una
+factura rectificativa y anular una factura completamente errónea son flujos distintos. No traduzcas
+los términos `Sustitutivo` o `SubsanaError` de la FAQ pública posterior a campos del paquete mientras
+la AEAT no publique una correspondencia exacta con el esquema; la FAQ para desarrolladores y el XSD
+vigentes usan `Subsanacion` y `RechazoPrevio`.
 
 Interpreta el error por la categoría de la
 [lista de códigos vigente de la AEAT](https://prewww2.aeat.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1.0/cont/ws/errores.properties),
