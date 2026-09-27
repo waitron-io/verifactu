@@ -640,13 +640,13 @@ export function validate(
   if (xmlCharacterCount(sistemaId) !== 2) {
     add(
       "ID_SISTEMA_LENGTH",
-      "IdSistemaInformatico",
+      "SistemaInformatico.IdSistemaInformatico",
       "IdSistemaInformatico must contain exactly 2 characters",
     );
   } else if (!/^[A-Z0-9]{2}$/.test(sistemaId)) {
     add(
       "ID_SISTEMA_CHARSET",
-      "IdSistemaInformatico",
+      "SistemaInformatico.IdSistemaInformatico",
       "IdSistemaInformatico must use exactly 2 uppercase A-Z letters or digits",
     );
   }
