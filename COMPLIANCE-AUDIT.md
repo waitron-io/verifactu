@@ -1492,6 +1492,29 @@ Any other error or an absent consulta record needs separate interpretation. AEAT
 between submissions may matter if this manual probe runs near the monthly scheduled submission.
 This probe does not change the library's two-decimal builder policy or any hash output.
 
+#### Decimal lexical probe result — 27 September 2026
+
+[Preproduction run 36337265120](https://github.com/waitron-io/verifactu/actions/runs/36337265120)
+used the landed probe mode on main `2f5fea6efbaabb8e13bb761406bb217ed06c8762`. It sent one
+alta named `CI-DECIMAL/20260927/36337265120`, with XML `CuotaTotal: "21.0"` and
+`ImporteTotal: "121.0"`; its breakdown retained `TipoImpositivo: "21.00"`,
+`BaseImponibleOimporteNoSujeto: "100.00"` and `CuotaRepercutida: "21.00"`. The hash over the
+one-decimal total literals was
+`E2C1998B55B04B57B8FD8390C1F062A2E15BBF57C6453445CAB83160FDB904BB`.
+
+AEAT returned `EstadoEnvio: Correcto` and `EstadoRegistro: Correcto`, with no error code or
+description. The read-only issuer consulta returned `ResultadoConsulta: ConDatos` and the record
+as `EstadoRegistro: Correcto`, with the same 64-character hash. It rendered the stored totals as
+`"21"` and `"121"`, and the breakdown rate, base and tax amount as `"21"`, `"100"` and `"21"`.
+The response therefore shows acceptance of this one-decimal submission without a hash warning;
+consulta echoes the submitted hash and normalizes decimal presentation, so the response does not
+expose AEAT's internal hash-input string. The library's two-decimal builder and canonicalization
+remain unchanged.
+
+The existing read-only [`consult` mode run 36337302428](https://github.com/waitron-io/verifactu/actions/runs/36337302428)
+then succeeded on the same main SHA, returning `SinDatos` for its separate `CI-CHECK` filter. This
+confirms the scheduled consultation path still operates after the submitting probe.
+
 The preproduction workflow's manual `consult` and alta-plus-consulta checks succeeded on
 2026-09-22, including comparison of AEAT's stored hash with the submitted hash. Its monthly schedule
 is enabled. The test environment uses the certificate company's identity for both issuer and
