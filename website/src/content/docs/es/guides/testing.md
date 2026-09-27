@@ -101,8 +101,11 @@ Otros dígitos decimales Unicode, como los persas, superan la validación de la 
 transporte falso no los convierte; una consulta exacta no encuentra un registro con fecha ASCII.
 Ninguno de estos dos casos se ha comprobado en la AEAT.
 
-En particular, el transporte falso conserva los espacios al principio y al final del texto
-enviado. La AEAT los elimina antes de almacenar y devolver los campos de texto. Si tu prueba
-depende del valor almacenado de un campo como `RefExterna`, confírmalo en la preproducción de la
-AEAT. La publicación no define qué caracteres de espacio Unicode no ASCII elimina la AEAT, así que
-no deduzcas ese límite del transporte falso ni del comportamiento de `trim()` en JavaScript.
+El transporte falso elimina los caracteres hasta U+0020 de los extremos de `RefExterna` al
+almacenarla, devolverla y aplicar un filtro de consulta. Conserva U+00A0 en los extremos. Una
+prueba en preproducción confirmó los valores de la línea de respuesta y la consulta para el
+espacio ASCII, la tabulación, el salto de línea y U+00A0; consulta la
+[auditoría de cumplimiento](https://github.com/waitron-io/verifactu/blob/main/COMPLIANCE-AUDIT.md#xml-text-and-escaping--service-description-67-69).
+`parseEnvio` sigue entregándote el texto enviado sin cambios. Si tu prueba necesita el valor
+almacenado exacto de otro campo de texto o carácter de espacio, compruébalo en la preproducción de
+la AEAT.

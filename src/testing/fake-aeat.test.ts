@@ -4,6 +4,7 @@ import { createClient } from "../client.js";
 import { parseRespuestaSuministro, resolveEstadoEfectivo } from "../xml/parse-suministro.js";
 import type { RegistroAlta, RegistroAnulacion } from "../types.js";
 import { serializeConsulta, serializeEnvio } from "../xml/serialize.js";
+import { parseEnvio } from "../xml/parse-request.js";
 import { withoutNif } from "../../test/fixtures.js";
 
 const cabecera = { ObligadoEmision: { NombreRazon: "Waitron SL", NIF: "89890001K" } };
@@ -1849,6 +1850,98 @@ describe("fake AEAT — consulta imputation period", () => {
 });
 
 describe("fake AEAT — consulta pagination + RefExterna echo + state hooks", () => {
+  it("stores and echoes AEAT's observed reference trim while preserving U+00A0", async () => {
+    const aeat = createFakeAeat();
+    const client = aeat.client();
+    const space = " \t\nref inner space\n\t ";
+    const nbsp = "\u00a0ref inner space\u00a0";
+    const sent = [
+      altaFixture("A/TRIM", "20-07-2026", space),
+      altaFixture("A/NBSP", "20-07-2026", nbsp),
+    ];
+    const response = await client.submit(
+      cabecera,
+      sent.map((RegistroAlta) => ({ RegistroAlta })),
+    );
+
+    expect(response.RespuestaLinea.map((line) => line.RefExterna)).toEqual([
+      "ref inner space",
+      nbsp,
+    ]);
+    expect(aeat.stored().map((entry) => entry.refExterna)).toEqual(["ref inner space", nbsp]);
+    const byReference = async (RefExterna: string) =>
+      (await client.consultar(cabecera, { Ejercicio: "2026", Periodo: "07", RefExterna }))
+        .registros;
+    expect((await byReference(space)).map((entry) => entry.IDFactura.NumSerieFactura)).toEqual([
+      "A/TRIM",
+    ]);
+    expect(
+      (await byReference("ref inner space")).map((entry) => entry.IDFactura.NumSerieFactura),
+    ).toEqual(["A/TRIM"]);
+    expect((await byReference(nbsp)).map((entry) => entry.IDFactura.NumSerieFactura)).toEqual([
+      "A/NBSP",
+    ]);
+    expect((await byReference("\u00a0ref inner space")).length).toBe(0);
+    const consulted = await client.consultar(cabecera, { Ejercicio: "2026", Periodo: "07" });
+    expect(consulted.registros.map((entry) => entry.DatosRegistroFacturacion.RefExterna)).toEqual([
+      "ref inner space",
+      nbsp,
+    ]);
+
+    const parsed = parseEnvio(serializeEnvio(cabecera, [{ RegistroAlta: sent[0]! }]));
+    expect(parsed.registros[0]).toMatchObject({ RegistroAlta: { RefExterna: space } });
+  });
+
+  it("compares normalized cancellation references before deciding duplicate or replacement", async () => {
+    const aeat = createFakeAeat();
+    const client = aeat.client();
+    await client.submit(cabecera, [
+      { RegistroAlta: altaFixture("A/CANCEL-TRIM", "20-07-2026", " alta ") },
+    ]);
+    const cancellation = anulacionFixture("A/CANCEL-TRIM", "20-07-2026", "\t cancel \n");
+    const first = await client.submit(cabecera, [{ RegistroAnulacion: cancellation }]);
+    expect(first.RespuestaLinea[0]?.RefExterna).toBe("cancel");
+    expect(aeat.stored()[0]).toMatchObject({ tipo: "anulacion", refExterna: "cancel" });
+
+    const retry = await client.submit(cabecera, [
+      { RegistroAnulacion: { ...cancellation, RefExterna: " cancel " } },
+    ]);
+    expect(retry.RespuestaLinea[0]?.CodigoErrorRegistro).toBe(3000);
+    expect(retry.RespuestaLinea[0]?.RefExterna).toBe("cancel");
+    expect(aeat.stored()[0]?.refExterna).toBe("cancel");
+    const old = await client.consultar(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      RefExterna: " alta ",
+    });
+    const current = await client.consultar(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      RefExterna: "\t cancel \n",
+    });
+    expect(old.ResultadoConsulta).toBe("SinDatos");
+    expect(current.registros[0]?.DatosRegistroFacturacion.RefExterna).toBe("cancel");
+  });
+
+  it("paginates records after normalizing the reference filter", async () => {
+    const aeat = createFakeAeat({ consultaPageSize: 1 });
+    const client = aeat.client();
+    await client.submit(cabecera, [
+      { RegistroAlta: altaFixture("A/PAGE-1", "20-07-2026", " shared ") },
+      { RegistroAlta: altaFixture("A/PAGE-2", "20-07-2026", "\tshared\n") },
+      { RegistroAlta: altaFixture("A/PAGE-3", "20-07-2026", "other") },
+    ]);
+    const filter = { Ejercicio: "2026", Periodo: "07", RefExterna: "\n shared \t" };
+    const first = await client.consultar(cabecera, filter);
+    expect(first.registros.map((entry) => entry.IDFactura.NumSerieFactura)).toEqual(["A/PAGE-1"]);
+    expect(first.IndicadorPaginacion).toBe("S");
+    const second = await client.consultar(cabecera, {
+      ...filter,
+      ClavePaginacion: first.ClavePaginacion,
+    });
+    expect(second.registros.map((entry) => entry.IDFactura.NumSerieFactura)).toEqual(["A/PAGE-2"]);
+    expect(second.IndicadorPaginacion).toBe("N");
+  });
   it("supports issuer date ranges and recipient-side consultas", async () => {
     const aeat = createFakeAeat();
     const recipient = { NombreRazon: "Cliente Uno", NIF: "11111111H" };
