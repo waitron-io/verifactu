@@ -445,7 +445,7 @@ describe("buildAltaRecord — TipoRectificativa, FacturasRectificadas, FacturasS
 
 describe("buildAltaRecord — Destinatarios (recipient)", () => {
   const DESTINATARIOS: NonNullable<AltaInput["Destinatarios"]> = {
-    IDDestinatario: [{ NombreRazon: "Cliente Factura SL", NIF: "B99999999" }],
+    IDDestinatario: [{ NombreRazon: "Cliente Factura SL", NIF: "B99999997" }],
   };
 
   it("passes Destinatarios through, one IDDestinatario per entry, when supplied", () => {
@@ -455,7 +455,7 @@ describe("buildAltaRecord — Destinatarios (recipient)", () => {
       Destinatarios: DESTINATARIOS,
     });
     expect(record.Destinatarios).toEqual({
-      IDDestinatario: [{ NombreRazon: "Cliente Factura SL", NIF: "B99999999" }],
+      IDDestinatario: [{ NombreRazon: "Cliente Factura SL", NIF: "B99999997" }],
     });
   });
 

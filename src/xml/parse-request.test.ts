@@ -547,7 +547,7 @@ describe("parseEnvio", () => {
       TipoFactura: "F3",
       Destinatarios: {
         IDDestinatario: [
-          { NombreRazon: "Cliente Uno SL", NIF: "B99999999" },
+          { NombreRazon: "Cliente Uno SL", NIF: "B99999997" },
           { NombreRazon: "Foreign Buyer", IDOtro: { CodigoPais: "FR", IDType: "04", ID: "X1234" } },
           { NombreRazon: "No-Country Buyer", IDOtro: { IDType: "07", ID: "NP-1" } },
         ],

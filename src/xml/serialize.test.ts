@@ -2423,7 +2423,7 @@ describe("serializeEnvio — Destinatarios", () => {
       Cupon: "N",
       Destinatarios: {
         IDDestinatario: [
-          { NombreRazon: "Cliente Uno SL", NIF: "B99999999" },
+          { NombreRazon: "Cliente Uno SL", NIF: "B99999997" },
           { NombreRazon: "Foreign Buyer", IDOtro: { CodigoPais: "FR", IDType: "04", ID: "X1234" } },
         ],
       },
@@ -2434,7 +2434,7 @@ describe("serializeEnvio — Destinatarios", () => {
         `<sf:Destinatarios>` +
         `<sf:IDDestinatario>` +
         `<sf:NombreRazon>Cliente Uno SL</sf:NombreRazon>` +
-        `<sf:NIF>B99999999</sf:NIF>` +
+        `<sf:NIF>B99999997</sf:NIF>` +
         `</sf:IDDestinatario>` +
         `<sf:IDDestinatario>` +
         `<sf:NombreRazon>Foreign Buyer</sf:NombreRazon>` +
@@ -2463,7 +2463,7 @@ describe("serializeEnvio — Destinatarios", () => {
         Macrodato: "N",
         TipoFactura: "F3",
         Destinatarios: {
-          IDDestinatario: [{ NombreRazon: "Cliente Uno SL", NIF: "B99999999" }],
+          IDDestinatario: [{ NombreRazon: "Cliente Uno SL", NIF: "B99999997" }],
         },
       }),
       {
