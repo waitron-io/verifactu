@@ -381,10 +381,13 @@ async function stateConsultaEvidence(client, header, record, year, month, stage)
   return {
     ResultadoConsulta: result.ResultadoConsulta,
     IndicadorPaginacion: result.IndicadorPaginacion,
+    RegistroEncontrado: stored !== undefined,
     EstadoConsultado: stored?.EstadoRegistro,
     CodigoErrorConsultado: stored?.CodigoErrorRegistro,
     DescripcionErrorConsultado: stored?.DescripcionErrorRegistro,
     HuellaConsultada: stored?.DatosRegistroFacturacion?.Huella,
+    SubsanacionConsultada: stored?.DatosRegistroFacturacion?.Subsanacion,
+    RechazoPrevioConsultado: stored?.DatosRegistroFacturacion?.RechazoPrevio,
   };
 }
 
@@ -395,72 +398,91 @@ export async function submitStateTransitionProbe(
   records,
   year,
   month,
+  report = () => {},
+  waitForSubmission = waitForNextSubmission,
 ) {
-  const send = async (stage, record) => {
+  const send = async (stage, key, record) => {
     const response = await withLiveStage(stage, () =>
       client.submit(cabecera, [{ RegistroAlta: record }]),
     );
-    return { response, evidence: stateSubmissionEvidence(response, record) };
+    const evidence = stateSubmissionEvidence(response, record);
+    report(key, evidence);
+    return { response, evidence };
   };
-  const first = await send("state accepted alta", records.accepted);
+  const consult = async (stage, key, record) => {
+    const evidence = await stateConsultaEvidence(
+      client,
+      consultaCabecera,
+      record,
+      year,
+      month,
+      stage,
+    );
+    report(key, evidence);
+    return evidence;
+  };
+  const wait = (stage, response) =>
+    withLiveStage(stage, () => waitForSubmission(response.TiempoEsperaEnvio));
+
+  const first = await send("state accepted alta", "accepted", records.accepted);
   const evidence = { accepted: first.evidence };
-  if (first.evidence.EstadoRegistro !== "Correcto") {
+  if (first.evidence.EstadoEnvio !== "Correcto" || first.evidence.EstadoRegistro !== "Correcto") {
     evidence.stoppedAfter = "accepted";
-    evidence.consultaAccepted = await stateConsultaEvidence(
-      client,
-      consultaCabecera,
-      records.accepted,
-      year,
-      month,
+    evidence.consultaAccepted = await consult(
       "state accepted consulta",
+      "consultaAccepted",
+      records.accepted,
     );
     return evidence;
   }
-  await waitForNextSubmission(first.response.TiempoEsperaEnvio);
-  const duplicate = await send("state identical alta retry", records.accepted);
+  await wait("wait before identical alta retry", first.response);
+  const duplicate = await send("state identical alta retry", "duplicate", records.accepted);
   evidence.duplicate = duplicate.evidence;
-  await waitForNextSubmission(duplicate.response.TiempoEsperaEnvio);
-  const rejected = await send("state controlled rejection", records.rejected);
-  evidence.rejected = rejected.evidence;
-  if (rejected.evidence.EstadoRegistro !== "Incorrecto") {
-    evidence.stoppedAfter = "rejected";
-    evidence.consultaAccepted = await stateConsultaEvidence(
-      client,
-      consultaCabecera,
-      records.accepted,
-      year,
-      month,
+  if (duplicate.evidence.EstadoRegistro !== "Incorrecto") {
+    evidence.stoppedAfter = "duplicate";
+    evidence.consultaAccepted = await consult(
       "state accepted consulta",
-    );
-    evidence.consultaCorrection = await stateConsultaEvidence(
-      client,
-      consultaCabecera,
-      records.rejected,
-      year,
-      month,
-      "state rejection consulta",
+      "consultaAccepted",
+      records.accepted,
     );
     return evidence;
   }
-  await waitForNextSubmission(rejected.response.TiempoEsperaEnvio);
-  const correction = await send("state corrected alta", records.correction);
+  await wait("wait before controlled rejection", duplicate.response);
+  const rejected = await send("state controlled rejection", "rejected", records.rejected);
+  evidence.rejected = rejected.evidence;
+  if (
+    rejected.evidence.EstadoRegistro !== "Incorrecto" ||
+    rejected.evidence.CodigoErrorRegistro !== 1161
+  ) {
+    evidence.stoppedAfter = "rejected";
+    evidence.consultaAccepted = await consult(
+      "state accepted consulta",
+      "consultaAccepted",
+      records.accepted,
+    );
+    evidence.consultaCorrection = await consult(
+      "state rejection consulta",
+      "consultaCorrection",
+      records.rejected,
+    );
+    return evidence;
+  }
+  await wait("wait before corrected alta", rejected.response);
+  const correction = await send("state corrected alta", "correction", records.correction);
   evidence.correction = correction.evidence;
-  evidence.consultaAccepted = await stateConsultaEvidence(
-    client,
-    consultaCabecera,
-    records.accepted,
-    year,
-    month,
+  evidence.consultaAccepted = await consult(
     "state accepted consulta",
+    "consultaAccepted",
+    records.accepted,
   );
-  evidence.consultaCorrection = await stateConsultaEvidence(
-    client,
-    consultaCabecera,
-    records.correction,
-    year,
-    month,
+  evidence.consultaCorrection = await consult(
     "state corrected consulta",
+    "consultaCorrection",
+    records.correction,
   );
+  evidence.incomplete =
+    !evidence.consultaAccepted.RegistroEncontrado ||
+    !evidence.consultaCorrection.RegistroEncontrado;
   return evidence;
 }
 
@@ -965,6 +987,25 @@ async function main() {
       now,
       runId,
     });
+    process.stdout.write(
+      `AEAT state-transition plan: ${JSON.stringify({
+        accepted: {
+          NumSerieFactura: records.accepted.IDFactura.NumSerieFactura,
+          Huella: records.accepted.Huella,
+        },
+        rejected: {
+          NumSerieFactura: records.rejected.IDFactura.NumSerieFactura,
+          Huella: records.rejected.Huella,
+          RechazoPrevio: records.rejected.RechazoPrevio,
+        },
+        correction: {
+          NumSerieFactura: records.correction.IDFactura.NumSerieFactura,
+          Huella: records.correction.Huella,
+          Subsanacion: records.correction.Subsanacion,
+          RechazoPrevio: records.correction.RechazoPrevio,
+        },
+      })}\n`,
+    );
     const evidence = await submitStateTransitionProbe(
       client,
       cabecera,
@@ -972,8 +1013,11 @@ async function main() {
       records,
       year,
       month,
+      (stage, entry) =>
+        process.stdout.write(`AEAT state-transition ${stage}: ${JSON.stringify(entry)}\n`),
     );
     process.stdout.write(`AEAT state-transition response: ${JSON.stringify(evidence)}\n`);
+    if (evidence.stoppedAfter || evidence.incomplete) process.exitCode = 1;
     return;
   }
 

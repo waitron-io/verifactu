@@ -1474,12 +1474,15 @@ valid alta, waits for AEAT's `TiempoEsperaEnvio`, then files the identical
 record. The rejection case files an alta with `RechazoPrevio: "S"` and no
 `Subsanacion`; this is valid against the pinned `SuministroLR.xsd`, but the
 [published error 1161](https://prewww2.aeat.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1.0/cont/ws/errores.properties)
-defines that combination as a business-rule rejection. The local validator
-also flags it, so this one controlled negative probe deliberately bypasses
-local validation. After AEAT's requested wait, the mode retries that same
+defines that combination as a business-rule rejection. The offline test
+confirms the local validator flags this one negative record; the live script
+submits it without calling the validator. After AEAT's requested wait, the mode retries that same
 invoice identity with `Subsanacion: "S"` and `RechazoPrevio: "X"`, then
-consults both identities. If AEAT unexpectedly accepts the intended rejection,
-the mode stops before the correction.
+consults both identities. The mode logs each stage as it completes, so a later
+transport or consulta failure leaves the earlier responses visible in the run
+log. If AEAT accepts the identical retry, accepts the intended rejection, or
+rejects it for a reason other than `1161`, the mode stops before sending a
+correction and fails the workflow step.
 
 Before dispatch, the expected duplicate outcome is a first-line `Correcto`
 and an identical retry with error `3000` and a duplicate-detail state of
@@ -1489,8 +1492,11 @@ consulta shows the corrected record. These are hypotheses from the fake and
 published rules, not live findings. A duplicate without detail, a different
 status or code, a missing first or corrected record, or a different stored
 hash would narrow or contradict the fake's claim. In particular, a correction
-line of `Correcto` alone would show only that AEAT accepted that request; the
-consulta state and stored hash are needed to establish the resulting record.
+line of `Correcto` alone would show only that AEAT accepted that request. The
+rejected attempt and correction have the same hash because the correction
+flags are not hash inputs. Consulta must show the resulting state and, if AEAT
+returns them, `Subsanacion`/`RechazoPrevio` flags to distinguish the stored
+correction; the hash checks only that its hashed content matches the request.
 The probe does not change the library, the fake, or a hash rule.
 
 ## Audit state after the official-document closure
