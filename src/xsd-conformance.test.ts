@@ -1565,6 +1565,40 @@ describe("consultation response identity fields against AEAT XSDs", () => {
       expect(result.status, result.stderr).toBe(0);
     },
   );
+
+  it("keeps the fake's 2007 warning and correction flags schema-valid in consulta", async () => {
+    const fake = createFakeAeat();
+    await fake
+      .client()
+      .submit(CABECERA, [
+        { RegistroAlta: buildAltaRecord({ ...ALTA_INPUT, NumSerieFactura: "E35-XSD-1" }) },
+      ]);
+    const warning = await fake.client().submit(CABECERA, [
+      {
+        RegistroAlta: buildAltaRecord({
+          ...ALTA_INPUT,
+          NumSerieFactura: "E35-XSD-2",
+          Subsanacion: "S",
+          RechazoPrevio: "X",
+        }),
+      },
+    ]);
+    expect(warning.RespuestaLinea[0]?.CodigoErrorRegistro).toBe(2007);
+    const response = await fake.fetch("https://fake.aeat.test/soap", {
+      method: "POST",
+      body: serializeConsulta(CABECERA, {
+        Ejercicio: "2024",
+        Periodo: "01",
+        NumSerieFactura: "E35-XSD-2",
+      }),
+    });
+    const body = soapBodyElement(await response.text());
+    expect(body).toContain("<sfRC:Subsanacion>S</sfRC:Subsanacion>");
+    expect(body).toContain("<sfRC:RechazoPrevio>X</sfRC:RechazoPrevio>");
+    expect(body).toContain("<sfRC:CodigoErrorRegistro>2007</sfRC:CodigoErrorRegistro>");
+    const result = schemaResult(RESPUESTA_CONSULTA_XSD, body);
+    expect(result.status, result.stderr).toBe(0);
+  });
 });
 
 describe("filing response fields against AEAT XSDs", () => {

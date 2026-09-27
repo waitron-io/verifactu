@@ -1627,6 +1627,48 @@ lookup. The follow-up mode fix refreshes the correction chain's timestamp
 after the prior wait and refreshes the final corrected record after its
 own wait, without changing the library's canonicalisation.
 
+#### Complete live result, 27 September 2026
+
+Manual [run 36350894099](https://github.com/waitron-io/verifactu/actions/runs/36350894099)
+passed on main `c0dd2998b99a030f6d3bc0f81d8984ef077a4292`. Each response
+specified a 60-second wait, which the probe observed before the next
+submission. The run-specific invoice suffix was `/20260927/36350894099`.
+Every consulta result below matched the exact huella submitted for that
+record.
+
+| Chain and invoice prefix                                                          | Submission response                                      | Consulta result and submitted huella                                                                                            |
+| --------------------------------------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `F1` `CI-FIRST-REPEAT-1`                                                          | `Correcto`                                               | `Correcto`; `000B69730CE95A69686B7953C95F3A4BC82BB339D36C5F969776258A9EBBC461`                                                  |
+| `F1` `CI-FIRST-REPEAT-2`, another `PrimerRegistro: S`                             | `ParcialmenteCorrecto`; line `AceptadoConErrores`/`2007` | `AceptadoConErrores`/`2007`; `FE911FE0DC91B06D858DFA14F7A49A40E10529EF8F6A3B919F865B9CEFAD5F67`                                 |
+| `F2` `CI-FIRST-CHAIN-1`                                                           | `Correcto`                                               | `Correcto`; `46BE2DD93A33BCD6191DB7AF65915AEEABB1DA561D74CBD0B815876BCF3290A5`                                                  |
+| `F2` `CI-FIRST-CHAIN-2`, chained to preceding alta                                | `Correcto`                                               | `Correcto`; `8344B79BBD0B12CCEB589B8B87A3694E9C2DA857C357DB43C3D833299725B95F`                                                  |
+| `F3` `CI-FIRST-CORR-1`                                                            | `Correcto`                                               | `Correcto`; `0BD1F72457011C248F83DBC9E98AF1B39AA6F8667FB7909DBD82056C16A28EAF`                                                  |
+| `F3` `CI-FIRST-CORR-2`, deliberately invalid `RechazoPrevio: S`                   | `Incorrecto`; line `Incorrecto`/`1161`                   | `SinDatos` before correction; rejected huella `27D4A20944C205BCBDEF2F524287348C7DB36A70223932549FC14ACCCBF02526` was not stored |
+| `F3` same `CI-FIRST-CORR-2`, corrected with `Subsanacion: S` / `RechazoPrevio: X` | `Correcto`; operation echoed both flags                  | `Correcto` with both flags; `7A2E8745FAAD7029C92EC8C0ED79E46EF9EBFE792FA4F75AFC343534587276F8`                                  |
+
+AEAT's exact `2007` text was “No debe informarse como primer registro,
+existen facturas emitidas con el obligado emisión y el sistema informático
+actual.” Its exact `1161` text was “El valor del campo RechazoPrevio no es
+válido, no podrá incluirse el campo RechazoPrevio con valor S si no se ha
+informado del campo Subsanacion o tiene el valor N.” The rejected attempt
+and accepted correction had the same invoice identity and predecessor. The
+correction's generation time and huella were refreshed after the AEAT wait;
+consulta matched the final submitted huella, not the rejected attempt's.
+The existing read-only
+[`consult` run 36351386434](https://github.com/waitron-io/verifactu/actions/runs/36351386434)
+then passed on the same main SHA and returned `SinDatos` for its unrelated
+`CI-CHECK` lookup.
+
+The fake now models the repeated first-record warning for an issuer and
+software producer, system ID and installation matching a previously stored
+alta. It also returns the warning and correction flags through consulta.
+The observed chains establish those particular transitions. They do not
+prove AEAT's full software-identity key, warning precedence when multiple
+conditions apply, or long-lived rejection-history rules. The fake does not
+validate `RegistroAnterior` pointers against stored history. It still
+does not model the 240-second stale generation-time limit observed in the
+partial run; it only models a future generation time as `2004`.
+
 ## Audit state after the official-document closure
 
 ### Completed offline audit
