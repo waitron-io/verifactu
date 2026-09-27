@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { parse } from "parse5";
 
 const root = new URL("../", import.meta.url);
 const baselineUrl = new URL("sources/watch-baseline.json", root);
@@ -107,19 +108,47 @@ function sha256(content) {
 }
 
 export function meaningfulHtml(html) {
-  const main = html.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i)?.[1] ?? html;
-  const withoutNoise = main
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "")
-    .replace(/<!--[\s\S]*?-->/g, "");
-  const links = [...withoutNoise.matchAll(/<a\b[^>]*\bhref=["']([^"']+)["']/gi)]
-    .map((match) => match[1])
-    .join("\n");
-  const text = withoutNoise
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  return `${text}\n${links}`;
+  const document = parse(html, { sourceCodeLocationInfo: true });
+  function findMain(node) {
+    if (node.tagName === "main") return node;
+    for (const child of node.childNodes ?? []) {
+      const main = findMain(child);
+      if (main) return main;
+    }
+    return undefined;
+  }
+
+  const textParts = [];
+  const links = [];
+  function collect(node) {
+    if (node.tagName === "script" || node.tagName === "style" || node.nodeName === "#comment")
+      return;
+    if (node.nodeName === "#text") {
+      const location = node.sourceCodeLocation;
+      // Keep source spelling of entities so existing fingerprints stay comparable.
+      textParts.push(location ? html.slice(location.startOffset, location.endOffset) : node.value);
+    }
+    if (node.tagName === "a") {
+      const attribute = node.attrs.find(({ name }) => name === "href");
+      const location = node.sourceCodeLocation?.attrs?.href;
+      let href = attribute?.value;
+      if (location) {
+        const raw = html.slice(location.startOffset, location.endOffset);
+        const equals = raw.indexOf("=");
+        if (equals >= 0) {
+          const value = raw.slice(equals + 1).trim();
+          const quote = value[0];
+          href = quote === '"' || quote === "'" ? value.slice(1, -1) : value;
+        }
+      }
+      if (href) links.push(href);
+    }
+    for (const child of node.childNodes ?? []) collect(child);
+  }
+
+  collect(findMain(document) ?? document);
+  const text = textParts.join(" ").replace(/\s+/g, " ").trim();
+  return `${text}\n${links.join("\n")}`;
 }
 
 export async function fingerprintSource(source, fetcher = fetch) {
