@@ -96,3 +96,6 @@ response-line and consulta values for ASCII space, tab, line feed, and U+00A0; s
 [compliance audit](https://github.com/waitron-io/verifactu/blob/main/COMPLIANCE-AUDIT.md#xml-text-and-escaping--service-description-67-69).
 `parseEnvio` still gives you the submitted text unchanged. If your test needs the exact stored
 spelling of another text field or whitespace character, check it in AEAT preproduction.
+A cancellation retry whose reference differs only in edge padding is a duplicate in the fake.
+A present reference made only of those edge characters becomes an empty string; AEAT has not been
+probed for cancellation retries or all-whitespace references.

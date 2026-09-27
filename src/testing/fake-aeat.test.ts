@@ -1892,6 +1892,24 @@ describe("fake AEAT — consulta pagination + RefExterna echo + state hooks", ()
     expect(parsed.registros[0]).toMatchObject({ RegistroAlta: { RefExterna: space } });
   });
 
+  it("keeps a present all-whitespace reference distinct from an omitted reference", async () => {
+    const aeat = createFakeAeat();
+    const client = aeat.client();
+    const response = await client.submit(cabecera, [
+      { RegistroAlta: altaFixture("A/BLANK", "20-07-2026", " \t\n ") },
+      { RegistroAlta: altaFixture("A/ABSENT") },
+    ]);
+    expect(response.RespuestaLinea.map((line) => line.RefExterna)).toEqual(["", undefined]);
+    expect(aeat.stored().map((entry) => entry.refExterna)).toEqual(["", undefined]);
+    const matched = await client.consultar(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      RefExterna: " ",
+    });
+    expect(matched.registros.map((entry) => entry.IDFactura.NumSerieFactura)).toEqual(["A/BLANK"]);
+    expect(matched.registros[0]?.DatosRegistroFacturacion.RefExterna).toBe("");
+  });
+
   it("compares normalized cancellation references before deciding duplicate or replacement", async () => {
     const aeat = createFakeAeat();
     const client = aeat.client();

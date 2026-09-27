@@ -1063,6 +1063,10 @@ The complete serials begin `CI-TRIM-`. This observed boundary agrees with `trimV
 four characters; it does not establish AEAT's handling of every U+0000–U+0020 character, other
 Unicode whitespace, or hash-input fields beyond `RefExterna`. The fake now normalizes submitted
 and filtered `RefExterna` with that boundary, while `parseEnvio` preserves the submitted XML text.
+In the fake, a cancellation retry whose reference differs only in edge characters through U+0020
+is a duplicate; a different normalized reference still takes its replacement path. A present
+all-whitespace reference becomes an empty string, distinct from an omitted reference. Neither
+cancellation retries nor all-whitespace references were exercised against live AEAT.
 The existing read-only `consult` mode then passed on the same main SHA in
 [run 36340941073](https://github.com/waitron-io/verifactu/actions/runs/36340941073), returning
 `SinDatos` for its unrelated `CI-CHECK` serial.

@@ -109,3 +109,6 @@ espacio ASCII, la tabulación, el salto de línea y U+00A0; consulta la
 `parseEnvio` sigue entregándote el texto enviado sin cambios. Si tu prueba necesita el valor
 almacenado exacto de otro campo de texto o carácter de espacio, compruébalo en la preproducción de
 la AEAT.
+En el transporte falso, un reintento de anulación cuya referencia solo cambia en los caracteres
+de los extremos es un duplicado. Una referencia presente compuesta únicamente por esos caracteres
+se convierte en una cadena vacía. Estos dos casos aún no se han probado en la AEAT.
