@@ -65,6 +65,9 @@ y la huella enviada. El transporte falso reproduce esas rutas para el mismo emis
 del sistema informático. Su comparación de identidades es una regla de prueba: no establece la
 clave completa de identidad de la AEAT ni la duración de su historial de rechazos. El transporte
 falso no comprueba que `RegistroAnterior` apunte al registro anterior real.
+Su almacén de una fila por factura no permite establecer si una factura anulada sigue contando
+como primer registro anterior. Las pruebas en vivo tampoco aislaron una subsanación que repite
+`PrimerRegistro: "S"` para su propia factura ya almacenada.
 
 Una anulación ordinaria también requiere un registro existente. Si no lo hay,
 indica `SinRegistroPrevio: "S"`; sin este indicador, el transporte devuelve `3002`. Rechaza esa

@@ -1667,7 +1667,12 @@ prove AEAT's full software-identity key, warning precedence when multiple
 conditions apply, or long-lived rejection-history rules. The fake does not
 validate `RegistroAnterior` pointers against stored history. It still
 does not model the 240-second stale generation-time limit observed in the
-partial run; it only models a future generation time as `2004`.
+partial run; it only models a future generation time as `2004`. Because its
+one-row store replaces an alta with its later cancellation, it does not
+model whether a cancelled invoice still counts as previously issued when
+another invoice claims to be first. A correction of the _same stored
+invoice_ that repeats `PrimerRegistro: S` also remains unproven by the
+E35 chains; E32's warning involved a different already issued invoice.
 
 ## Audit state after the official-document closure
 

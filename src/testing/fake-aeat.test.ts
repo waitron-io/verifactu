@@ -116,6 +116,20 @@ describe("fake AEAT — submit", () => {
     expect((await client.submit(cabecera, [{ RegistroAlta: otherSystem }])).EstadoEnvio).toBe(
       "Correcto",
     );
+
+    const otherIssuer = {
+      ...altaFixture("A/FIRST-OTHER-ISSUER"),
+      IDFactura: {
+        ...first.IDFactura,
+        IDEmisorFactura: "11111111H",
+        NumSerieFactura: "A/FIRST-OTHER-ISSUER",
+      },
+      NombreRazonEmisor: "Other SL",
+    };
+    const otherHeader = { ObligadoEmision: { NombreRazon: "Other SL", NIF: "11111111H" } };
+    expect((await client.submit(otherHeader, [{ RegistroAlta: otherIssuer }])).EstadoEnvio).toBe(
+      "Correcto",
+    );
   });
 
   it("accepts a correctly chained second alta and its rejected-alta correction", async () => {

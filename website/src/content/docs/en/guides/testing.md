@@ -56,7 +56,9 @@ alta was absent from consulta, then its `Subsanacion: "S"` / `RechazoPrevio: "X"
 stored as `Correcto` with both flags and the submitted hash. The fake now models these paths for
 the same issuer and software-system identity. Its software identity comparison is a test rule,
 not a proven definition of AEAT's complete identity key or long-lived rejection history. The fake
-does not verify that `RegistroAnterior` points to the actual preceding record.
+does not verify that `RegistroAnterior` points to the actual preceding record. Its one-row store
+cannot establish whether a cancelled invoice still counts as a prior first record; the live probes
+also did not isolate a correction that repeats `PrimerRegistro: "S"` for its own stored invoice.
 
 The fake also requires an existing record for an ordinary cancellation. If none exists, set
 `SinRegistroPrevio: "S"`; without it, the fake returns `3002`. It rejects that special path
