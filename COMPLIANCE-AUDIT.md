@@ -4,6 +4,26 @@ This is the working record for checking this library against AEAT's published ru
 local test confirms the stated library behaviour; only AEAT can confirm that a submitted record
 is accepted. The [source watch](sources/README.md) checks for publication changes each week.
 
+## K/L/M NIF control search (E25, 27 September 2026)
+
+The letter-containing seven-character body remains shape-checked in `src/nif.ts`. This search
+found the required final alphabetic verification character, but no published AEAT or BOE algorithm
+for deriving it from a body containing letters and no official accepted/rejected vectors for that
+form. The DNI modulus and the older all-numeric K/L/M check do not establish that algorithm. Do
+not reject a shape-valid alphanumeric K/L/M ID on an inferred control rule.
+
+| Official source consulted                                                                                                                                                                                                                                                                                                                           | Exact source words relevant to this question                              | Result                                                                                   |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| [BOE, Royal Decree 1065/2007, arts. 19.2 and 20.2](https://www.boe.es/eli/es/rd/2007/07/27/1065/con)                                                                                                                                                                                                                                                | “siete caracteres alfanuméricos y un carácter de verificación alfabético” | Specifies the K/L and M structure, not how to calculate that character.                  |
+| [AEAT, model 036 census guide, composition of personal NIFs](https://sede.agenciatributaria.gob.es/Sede/ayuda/manuales-videos-folletos/manuales-practicos/guia-practica-cumplimentacion-modelo-censal-036/anexos/anexo-01-solicitud-nif-documentacion-aportar/informacion-sobre-numero-identificacion-fiscal/composicion-nif/personas-fisicas.html) | “siete caracteres alfanuméricos (no sólo dígitos)”                        | Explicitly permits letters in the body; gives no check-letter algorithm or vectors.      |
+| [AEAT, Veri*Factu validation rules 1.2.2, §3.1.3](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Validaciones_Errores_Veri-Factu.pdf)                                                                                                                                                                       | “El NIF del campo IDEmisorFactura debe estar identificado.”               | Requires an identified NIF but does not state an offline K/L/M calculation or vectors.   |
+| [EU delegated regulation 2017/2055, Spain identifier table](https://eur-lex.europa.eu/eli/reg_del/2017/2055/oj/spa)                                                                                                                                                                                                                                 | “7 caracteres alfanuméricos y una letra (de control)”                     | Confirms the structure; no algorithm or vectors.                                         |
+| [BOE, superseded Royal Decree 338/1990, art. 3.2](https://boe.es/diario_boe/txt.php?id=BOE-A-1990-6394)                                                                                                                                                                                                                                             | “Cinco dígitos que formen un número secuencial”                           | Describes the older numeric allocation, so it cannot settle the later alphanumeric body. |
+
+No `src/nif.ts` behavior or bilingual validation-guide claim changes in E25. The existing guide
+statements that this form receives a shape-only check remain accurate. An official calculation or
+accepted/rejected letter-body vectors would be needed before a local rejection rule can be added.
+
 ## Sources checked through 27 September 2026
 
 | AEAT publication                                                                                                                                                   | Version                                    | Audit status                                                                                                          |
