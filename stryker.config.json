@@ -7,7 +7,7 @@
   "mutate": ["src/**/*.ts", "!src/**/*.test.ts"],
   "incremental": true,
   "incrementalFile": "reports/stryker-incremental.json",
-  "reporters": ["clear-text", "progress", "html"],
+  "reporters": ["clear-text", "progress", "html", "json"],
   "htmlReporter": { "fileName": "reports/mutation/index.html" },
   "coverageAnalysis": "perTest",
   "thresholds": { "high": 95, "low": 90, "break": 90 }
