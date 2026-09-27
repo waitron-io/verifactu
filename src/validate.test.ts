@@ -3337,7 +3337,7 @@ describe("validate — AEAT §3.1.3.14–15.8", () => {
     expect(codes(recipient)).toContain("REGIMEN_10_DESTINATARIO_ID");
   });
 
-  it("§3.1.3.15.6.7 accepts N1, F1 and NIF recipients under regime 10", () => {
+  it("§3.1.3.15.6.7 does not flag N1, F1 or NIF recipients under regime 10", () => {
     const record = withDetail({
       ClaveRegimen: "10",
       CalificacionOperacion: "N1",
@@ -3346,13 +3346,14 @@ describe("validate — AEAT §3.1.3.14–15.8", () => {
     record.Destinatarios = {
       IDDestinatario: [
         { NombreRazon: "Administración A", NIF: "P1234567D" },
-        { NombreRazon: "Administración B", NIF: "Q1234567C" },
+        { NombreRazon: "Administración B", NIF: "Q1234567D" },
       ],
     };
     const result = codes(record);
     expect(result).not.toContain("REGIMEN_10_CALIFICACION");
     expect(result).not.toContain("REGIMEN_10_TIPO_FACTURA");
     expect(result).not.toContain("REGIMEN_10_DESTINATARIO_ID");
+    expect(result).not.toContain("NIF_CONTROL");
   });
 
   it("§3.1.3.15.6.7 rejects one IDOtro among otherwise valid NIF recipients", () => {

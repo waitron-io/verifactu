@@ -1755,6 +1755,35 @@ describe("exact document output — pins the complete serialised string, not fra
 
 describe("serializeConsulta", () => {
   it.each([
+    ["issuer", { ObligadoEmision: { NombreRazon: "Issuer", NIF: "B12345678" } }],
+    [
+      "represented issuer",
+      {
+        ObligadoEmision: { NombreRazon: "Issuer", NIF: "B12345678" },
+        IndicadorRepresentante: "S",
+      },
+    ],
+    ["recipient", { Destinatario: { NombreRazon: "Recipient", NIF: "B12345678" } }],
+  ] as const)("rejects a malformed %s consulta header NIF", (identity, cabecera) => {
+    const field = identity === "recipient" ? "Destinatario" : "ObligadoEmision";
+    expect(() =>
+      serializeConsulta(cabecera as CabeceraConsulta, { Ejercicio: "2026", Periodo: "07" }),
+    ).toThrow(`Consulta ${field}.NIF has an invalid format or control character`);
+  });
+
+  it("serializes a valid represented issuer consulta header NIF", () => {
+    expect(
+      serializeConsulta(
+        {
+          ObligadoEmision: { NombreRazon: "Issuer", NIF: "B12345674" },
+          IndicadorRepresentante: "S",
+        },
+        { Ejercicio: "2026", Periodo: "07" },
+      ),
+    ).toContain("<sf:NIF>B12345674</sf:NIF>");
+  });
+
+  it.each([
     [{ NumSerieFactura: "" }, "Consulta NumSerieFactura must contain 1 to 60 characters"],
     [
       { NumSerieFactura: "A".repeat(61) },
@@ -2423,7 +2452,7 @@ describe("serializeEnvio — Destinatarios", () => {
       Cupon: "N",
       Destinatarios: {
         IDDestinatario: [
-          { NombreRazon: "Cliente Uno SL", NIF: "B99999999" },
+          { NombreRazon: "Cliente Uno SL", NIF: "B99999997" },
           { NombreRazon: "Foreign Buyer", IDOtro: { CodigoPais: "FR", IDType: "04", ID: "X1234" } },
         ],
       },
@@ -2434,7 +2463,7 @@ describe("serializeEnvio — Destinatarios", () => {
         `<sf:Destinatarios>` +
         `<sf:IDDestinatario>` +
         `<sf:NombreRazon>Cliente Uno SL</sf:NombreRazon>` +
-        `<sf:NIF>B99999999</sf:NIF>` +
+        `<sf:NIF>B99999997</sf:NIF>` +
         `</sf:IDDestinatario>` +
         `<sf:IDDestinatario>` +
         `<sf:NombreRazon>Foreign Buyer</sf:NombreRazon>` +
@@ -2463,7 +2492,7 @@ describe("serializeEnvio — Destinatarios", () => {
         Macrodato: "N",
         TipoFactura: "F3",
         Destinatarios: {
-          IDDestinatario: [{ NombreRazon: "Cliente Uno SL", NIF: "B99999999" }],
+          IDDestinatario: [{ NombreRazon: "Cliente Uno SL", NIF: "B99999997" }],
         },
       }),
       {

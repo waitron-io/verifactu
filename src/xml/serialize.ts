@@ -1232,8 +1232,14 @@ export function serializeConsulta(cabecera: CabeceraConsulta, filtro: ConsultaFi
   }
   if (cabecera.ObligadoEmision !== undefined) {
     assertConsultaHeaderPersona("ObligadoEmision", cabecera.ObligadoEmision);
+    if (!hasValidNifControl(cabecera.ObligadoEmision.NIF)) {
+      throw new Error("Consulta ObligadoEmision.NIF has an invalid format or control character");
+    }
   } else if (cabecera.Destinatario !== undefined) {
     assertConsultaHeaderPersona("Destinatario", cabecera.Destinatario);
+    if (!hasValidNifControl(cabecera.Destinatario.NIF)) {
+      throw new Error("Consulta Destinatario.NIF has an invalid format or control character");
+    }
   }
   for (const field of ["Contraparte", "SistemaInformatico"] as const) {
     if (filtro[field] !== undefined) assertConsultaPersona(field, filtro[field]);

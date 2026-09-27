@@ -75,9 +75,14 @@ that customer's records.
 `SistemaInformatico` narrows the result to one software installation. Supply `NombreRazon`, either
 `NIF` or `IDOtro`, `IdSistemaInformatico`, and `NumeroInstalacion`. The software name, version, and
 use flags are optional.
-The client checks these identities and the schema's text lengths before sending. For `IDOtro`,
+The client checks these filter identities' choice and schema shape, including NIF length, before
+sending; it does not check their NIF control characters. For `IDOtro`,
 use an AEAT country code and an identifier type from `02` to `07`. Supply either issuer or
 recipient in the consultation header, never both.
+`serializeConsulta` checks the selected header NIF's form and control character before sending,
+as `serializeEnvio` does for filing headers. This applies to an issuer or a recipient, including an
+issuer queried with `IndicadorRepresentante: "S"`. It cannot confirm the NIF belongs to a
+registered taxpayer.
 
 Request `DatosAdicionalesRespuesta` only when you need the issuer's name or software details in
 each result. AEAT's `ConsultaLR.xsd` says these fields can slow its response. The same schema
@@ -94,7 +99,8 @@ before relying on an omitted counterparty.
 
 Set `IndicadorRepresentante: "S"` alongside `ObligadoEmision` when the certificate holder queries
 as that issuer's representative. `"N"` is not a valid consultation value; omit the flag when the
-query is not on behalf of a representative. Do not include it in a recipient query.
+query is not on behalf of a representative. Do not include it in a recipient query. The consulta
+header has no separate representative NIF field; the checked NIF is the represented issuer's.
 
 When `IndicadorPaginacion` is `"S"`, send `ClavePaginacion` from the response in your next query.
 The response parser checks that `ResultadoConsulta` is `ConDatos` or `SinDatos`, that

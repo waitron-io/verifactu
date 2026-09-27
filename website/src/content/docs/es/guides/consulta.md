@@ -77,9 +77,14 @@ Usa `Contraparte` con `NombreRazon` y el `NIF` o `IDOtro` del cliente para busca
 `SistemaInformatico` limita el resultado a una instalación. Indica `NombreRazon`, `NIF` o
 `IDOtro`, `IdSistemaInformatico` y `NumeroInstalacion`. El nombre del software, la versión y los
 indicadores de uso son opcionales.
-El cliente comprueba estas identidades y los límites de texto del esquema antes del envío. Para
+El cliente comprueba la elección y la forma exigidas por el esquema para estas identidades del
+filtro, incluida la longitud del NIF, pero no sus caracteres de control. Para
 `IDOtro`, usa un código de país admitido por la AEAT y un tipo de identificación entre `02` y
 `07`. Indica emisor o destinatario en la cabecera de consulta, nunca ambos.
+`serializeConsulta` comprueba la forma y el carácter de control del NIF de esa cabecera antes del
+envío, igual que `serializeEnvio` en la cabecera de envío. Se aplica al emisor y al destinatario,
+también cuando consultas por el emisor con `IndicadorRepresentante: "S"`. No confirma que el NIF
+pertenezca a un contribuyente censado.
 
 Pide `DatosAdicionalesRespuesta` solo cuando necesites el nombre del emisor o los datos del
 software en cada resultado. `ConsultaLR.xsd` de la AEAT indica que estos campos pueden ralentizar
@@ -97,7 +102,9 @@ comportamiento en preproducción antes de depender de una consulta sin contrapar
 
 Indica `IndicadorRepresentante: "S"` junto a `ObligadoEmision` cuando el titular del certificado
 consulta como representante del emisor. `"N"` no es válido en una consulta; omite el indicador
-si no consultas como representante. No lo incluyas en una consulta como destinatario.
+si no consultas como representante. No lo incluyas en una consulta como destinatario. La cabecera
+de consulta no tiene un NIF separado para el representante: se comprueba el NIF del emisor
+representado.
 
 Cuando `IndicadorPaginacion` sea `"S"`, envía la `ClavePaginacion` recibida en la
 siguiente consulta. El analizador comprueba que `ResultadoConsulta` sea `ConDatos` o `SinDatos`,

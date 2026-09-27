@@ -375,4 +375,5 @@ console.log(resolveEstadoEfectivo(testResponse.RespuestaLinea[0])); // accepted
 ```
 
 The same client, serializer, and response parser run against the fake. Use it to exercise retries,
-duplicates, consulta, and cancellation before connecting to preproduction.
+duplicates, consulta, and cancellation before connecting to preproduction. The fake does not
+separate AEAT's requirement service; see [its testing limits](/verifactu/en/guides/testing/).

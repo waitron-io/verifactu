@@ -26,12 +26,15 @@ enviada y respetan el orden obligatorio. Las pruebas sin conexión validan ejemp
 rechazados y duplicados contra `RespuestaSuministro.xsd`. Esto demuestra la forma XML probada del
 transporte falso, no el comportamiento de la AEAT.
 
-No uses el transporte falso para demostrar la gravedad de una respuesta bajo requerimiento.
-Acepta una cabecera `RemisionRequerimiento` para que puedas probar el XML de la petición y la
-respuesta, pero sigue aplicando sus reglas de corrección y rechazo de la modalidad VERI*FACTU
-voluntaria. El servicio separado de requerimientos de la AEAT admite los errores de negocio de los
-registros conservados, salvo los errores de identificación por NIF o `IDOtro`. Comprueba ese
-comportamiento en preproducción si tu flujo depende de él.
+El transporte falso tiene un único almacén de registros y responde a las consultas
+independientemente de la URL del servicio. No separa el servicio de requerimientos de la AEAT del
+servicio ordinario. No lo uses como prueba del comportamiento del servicio de requerimientos,
+incluidos la separación de registros, la disponibilidad de consultas y la gravedad de las
+respuestas. Acepta una cabecera `RemisionRequerimiento` para que puedas probar el XML de la
+petición y la respuesta, pero sigue aplicando sus reglas de corrección y rechazo de la modalidad
+VERI*FACTU voluntaria. El servicio separado de requerimientos de la AEAT admite los errores de
+negocio de los registros conservados, salvo los errores de identificación por NIF o `IDOtro`.
+Comprueba ese comportamiento en preproducción si tu flujo depende de él.
 
 Inspecciona cada línea de la respuesta además de `EstadoEnvio`. El transporte falso devuelve
 `Correcto` solo si todas las líneas son correctas, `ParcialmenteCorrecto` si alguna se acepta con
