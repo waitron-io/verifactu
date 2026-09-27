@@ -15,6 +15,7 @@ import {
   buildTestCancellation,
   buildTestRecord,
   buildTextTrimProbeRecords,
+  buildStateTransitionProbeRecords,
   certificateKind,
   consultStoredMixedRegimeProbe,
   consultUnicodeDateProbe,
@@ -30,6 +31,7 @@ import {
   submitMixedRegimeProbe,
   submitDecimalVariantProbe,
   submitTextTrimProbe,
+  submitStateTransitionProbe,
   submissionHeader,
   waitForNextSubmission,
   withLiveStage,
@@ -52,6 +54,377 @@ const decimalOptions = {
   now: new Date("2026-09-27T12:00:00Z"),
   runId: "12345",
 };
+
+test("state-transition records isolate identities and keep the rejection XSD-valid", () => {
+  const { accepted, rejected, correction } = buildStateTransitionProbeRecords(decimalOptions);
+  assert.equal(accepted.IDFactura.NumSerieFactura, "CI-STATE-DUP/20260927/12345");
+  assert.equal(rejected.IDFactura.NumSerieFactura, "CI-STATE-REJ/20260927/12345");
+  assert.deepEqual(rejected.IDFactura, correction.IDFactura);
+  assert.deepEqual(accepted.Encadenamiento, { PrimerRegistro: "S" });
+  assert.deepEqual(rejected.Encadenamiento, { PrimerRegistro: "S" });
+  assert.equal(rejected.RechazoPrevio, "S");
+  assert.equal(rejected.Subsanacion, undefined);
+  assert.equal(correction.Subsanacion, "S");
+  assert.equal(correction.RechazoPrevio, "X");
+  assert.deepEqual(validate(accepted), []);
+  assert.deepEqual(validate(correction), []);
+  assert.deepEqual(
+    validate(rejected).map((issue) => issue.code),
+    ["RECHAZO_PREVIO_REQUIRES_SUBSANACION"],
+  );
+  for (const record of [accepted, rejected, correction]) {
+    assert.equal(record.Huella, computeHuella(record));
+    assert.ok(
+      serializeEnvio(
+        submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+        [{ RegistroAlta: record }],
+      ).includes(`<sf:NumSerieFactura>${record.IDFactura.NumSerieFactura}</sf:NumSerieFactura>`),
+    );
+  }
+});
+
+test("state-transition probe waits before retries and preserves every response and consulta", async () => {
+  const records = buildStateTransitionProbeRecords(decimalOptions);
+  const calls = [];
+  const stages = [];
+  const responses = [
+    {
+      EstadoEnvio: "Correcto",
+      TiempoEsperaEnvio: 2,
+      RespuestaLinea: [{ IDFactura: records.accepted.IDFactura, EstadoRegistro: "Correcto" }],
+    },
+    {
+      EstadoEnvio: "Incorrecto",
+      TiempoEsperaEnvio: 3,
+      RespuestaLinea: [
+        {
+          IDFactura: records.accepted.IDFactura,
+          EstadoRegistro: "Incorrecto",
+          CodigoErrorRegistro: 3000,
+          DescripcionErrorRegistro: "Registro duplicado",
+          RegistroDuplicado: {
+            EstadoRegistroDuplicado: "Correcta",
+            IdPeticionRegistroDuplicado: "P123",
+          },
+        },
+      ],
+    },
+    {
+      EstadoEnvio: "Incorrecto",
+      TiempoEsperaEnvio: 4,
+      RespuestaLinea: [
+        {
+          IDFactura: records.rejected.IDFactura,
+          EstadoRegistro: "Incorrecto",
+          CodigoErrorRegistro: 1161,
+          DescripcionErrorRegistro: "RechazoPrevio sin subsanación",
+        },
+      ],
+    },
+    {
+      EstadoEnvio: "Correcto",
+      TiempoEsperaEnvio: 0,
+      RespuestaLinea: [
+        {
+          IDFactura: records.correction.IDFactura,
+          EstadoRegistro: "Correcto",
+          Operacion: { TipoOperacion: "Alta", Subsanacion: "S", RechazoPrevio: "X" },
+        },
+      ],
+    },
+  ];
+  const evidence = await submitStateTransitionProbe(
+    {
+      async submit(_header, submitted) {
+        calls.push(["submit", submitted[0].RegistroAlta]);
+        return responses.shift();
+      },
+      async consultar(_header, filter) {
+        calls.push(["consultar", filter.NumSerieFactura]);
+        const record =
+          filter.NumSerieFactura === records.accepted.IDFactura.NumSerieFactura
+            ? records.accepted
+            : records.correction;
+        return {
+          ResultadoConsulta: "ConDatos",
+          IndicadorPaginacion: "N",
+          registros: [
+            {
+              IDFactura: record.IDFactura,
+              EstadoRegistro: "Correcto",
+              DatosRegistroFacturacion: {
+                Huella: record.Huella,
+                ...(record === records.correction && { Subsanacion: "S", RechazoPrevio: "X" }),
+              },
+            },
+          ],
+        };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    issuerConsultaHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    records,
+    "2026",
+    "09",
+    (stage, entry) => stages.push([stage, entry]),
+    async (seconds) => calls.push(["wait", seconds]),
+  );
+  assert.deepEqual(
+    calls.map(([kind]) => kind),
+    ["submit", "wait", "submit", "wait", "submit", "wait", "submit", "consultar", "consultar"],
+  );
+  assert.deepEqual(
+    calls.filter(([kind]) => kind === "wait").map(([, seconds]) => seconds),
+    [2, 3, 4],
+  );
+  assert.strictEqual(calls[0][1], calls[2][1]);
+  assert.equal(evidence.accepted.EstadoRegistro, "Correcto");
+  assert.equal(evidence.duplicate.CodigoErrorRegistro, 3000);
+  assert.deepEqual(evidence.duplicate.RegistroDuplicado, {
+    EstadoRegistroDuplicado: "Correcta",
+    IdPeticionRegistroDuplicado: "P123",
+  });
+  assert.equal(evidence.rejected.CodigoErrorRegistro, 1161);
+  assert.equal(evidence.correction.EstadoRegistro, "Correcto");
+  assert.equal(evidence.consultaAccepted.HuellaConsultada, records.accepted.Huella);
+  assert.equal(evidence.consultaCorrection.HuellaConsultada, records.correction.Huella);
+  assert.deepEqual(
+    stages.map(([stage]) => stage),
+    ["accepted", "duplicate", "rejected", "correction", "consultaAccepted", "consultaCorrection"],
+  );
+  assert.equal(stages[0][1].HuellaEnviada, records.accepted.Huella);
+  assert.equal(stages[3][1].Operacion.RechazoPrevio, "X");
+  assert.equal(evidence.consultaCorrection.RegistroEncontrado, true);
+  assert.equal(evidence.consultaCorrection.SubsanacionConsultada, "S");
+  assert.equal(evidence.consultaCorrection.RechazoPrevioConsultado, "X");
+  assert.equal(evidence.incomplete, false);
+});
+
+test("state-transition probe marks a missing consulted invoice as incomplete", async () => {
+  const records = buildStateTransitionProbeRecords(decimalOptions);
+  let submissions = 0;
+  const evidence = await submitStateTransitionProbe(
+    {
+      async submit(_header, submitted) {
+        submissions++;
+        const status = submissions === 1 || submissions === 4 ? "Correcto" : "Incorrecto";
+        return {
+          EstadoEnvio: status,
+          TiempoEsperaEnvio: 0,
+          RespuestaLinea: [
+            {
+              IDFactura: submitted[0].RegistroAlta.IDFactura,
+              EstadoRegistro: status,
+              ...(submissions === 2 && { CodigoErrorRegistro: 3000 }),
+              ...(submissions === 3 && { CodigoErrorRegistro: 1161 }),
+            },
+          ],
+        };
+      },
+      async consultar() {
+        return { ResultadoConsulta: "SinDatos", IndicadorPaginacion: "N", registros: [] };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    issuerConsultaHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    records,
+    "2026",
+    "09",
+  );
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.consultaCorrection.RegistroEncontrado, false);
+});
+
+test("state-transition probe retains the accepted result when a later request fails", async () => {
+  const records = buildStateTransitionProbeRecords(decimalOptions);
+  const stages = [];
+  let submits = 0;
+  await assert.rejects(
+    submitStateTransitionProbe(
+      {
+        async submit(_header, submitted) {
+          submits++;
+          if (submits === 2) throw new Error("connection lost");
+          return {
+            EstadoEnvio: "Correcto",
+            TiempoEsperaEnvio: 0,
+            RespuestaLinea: [
+              { IDFactura: submitted[0].RegistroAlta.IDFactura, EstadoRegistro: "Correcto" },
+            ],
+          };
+        },
+      },
+      submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+      issuerConsultaHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+      records,
+      "2026",
+      "09",
+      (stage, entry) => stages.push([stage, entry]),
+    ),
+    /state identical alta retry: connection lost/,
+  );
+  assert.deepEqual(
+    stages.map(([stage]) => stage),
+    ["accepted"],
+  );
+  assert.equal(stages[0][1].NumSerieFactura, records.accepted.IDFactura.NumSerieFactura);
+});
+
+test("state-transition probe labels a missing wait after preserving the accepted result", async () => {
+  const records = buildStateTransitionProbeRecords(decimalOptions);
+  const stages = [];
+  await assert.rejects(
+    submitStateTransitionProbe(
+      {
+        async submit(_header, submitted) {
+          return {
+            EstadoEnvio: "Correcto",
+            RespuestaLinea: [
+              { IDFactura: submitted[0].RegistroAlta.IDFactura, EstadoRegistro: "Correcto" },
+            ],
+          };
+        },
+      },
+      submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+      issuerConsultaHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+      records,
+      "2026",
+      "09",
+      (stage, entry) => stages.push([stage, entry]),
+    ),
+    /wait before identical alta retry: AEAT returned an invalid submission wait: undefined/,
+  );
+  assert.equal(stages.length, 1);
+  assert.equal(stages[0][0], "accepted");
+});
+
+test("state-transition probe stops if the first alta is not accepted", async () => {
+  const records = buildStateTransitionProbeRecords(decimalOptions);
+  let submissions = 0;
+  const evidence = await submitStateTransitionProbe(
+    {
+      async submit(_header, submitted) {
+        submissions++;
+        return {
+          EstadoEnvio: "Incorrecto",
+          RespuestaLinea: [
+            {
+              IDFactura: submitted[0].RegistroAlta.IDFactura,
+              EstadoRegistro: "Incorrecto",
+              CodigoErrorRegistro: 1234,
+            },
+          ],
+        };
+      },
+      async consultar() {
+        return { ResultadoConsulta: "SinDatos", IndicadorPaginacion: "N", registros: [] };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    issuerConsultaHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    records,
+    "2026",
+    "09",
+  );
+  assert.equal(submissions, 1);
+  assert.equal(evidence.stoppedAfter, "accepted");
+});
+
+test("state-transition probe stops if the identical retry is accepted again", async () => {
+  const records = buildStateTransitionProbeRecords(decimalOptions);
+  let submissions = 0;
+  const evidence = await submitStateTransitionProbe(
+    {
+      async submit(_header, submitted) {
+        submissions++;
+        return {
+          EstadoEnvio: "Correcto",
+          TiempoEsperaEnvio: 0,
+          RespuestaLinea: [
+            { IDFactura: submitted[0].RegistroAlta.IDFactura, EstadoRegistro: "Correcto" },
+          ],
+        };
+      },
+      async consultar() {
+        return { ResultadoConsulta: "SinDatos", IndicadorPaginacion: "N", registros: [] };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    issuerConsultaHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    records,
+    "2026",
+    "09",
+  );
+  assert.equal(submissions, 2);
+  assert.equal(evidence.stoppedAfter, "duplicate");
+  assert.equal(evidence.rejected, undefined);
+});
+
+test("state-transition probe does not correct a record that AEAT unexpectedly accepted", async () => {
+  const records = buildStateTransitionProbeRecords(decimalOptions);
+  let submissions = 0;
+  const evidence = await submitStateTransitionProbe(
+    {
+      async submit(_header, submitted) {
+        submissions++;
+        const status = submissions === 2 ? "Incorrecto" : "Correcto";
+        return {
+          EstadoEnvio: status,
+          TiempoEsperaEnvio: 0,
+          RespuestaLinea: [
+            { IDFactura: submitted[0].RegistroAlta.IDFactura, EstadoRegistro: status },
+          ],
+        };
+      },
+      async consultar() {
+        return { ResultadoConsulta: "SinDatos", IndicadorPaginacion: "N", registros: [] };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    issuerConsultaHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    records,
+    "2026",
+    "09",
+  );
+  assert.equal(submissions, 3);
+  assert.equal(evidence.stoppedAfter, "rejected");
+  assert.equal(evidence.correction, undefined);
+});
+
+test("state-transition probe does not correct after a different rejection rule", async () => {
+  const records = buildStateTransitionProbeRecords(decimalOptions);
+  let submissions = 0;
+  const evidence = await submitStateTransitionProbe(
+    {
+      async submit(_header, submitted) {
+        submissions++;
+        const status = submissions === 1 ? "Correcto" : "Incorrecto";
+        return {
+          EstadoEnvio: status,
+          TiempoEsperaEnvio: 0,
+          RespuestaLinea: [
+            {
+              IDFactura: submitted[0].RegistroAlta.IDFactura,
+              EstadoRegistro: status,
+              ...(submissions > 1 && { CodigoErrorRegistro: submissions === 2 ? 3000 : 1275 }),
+            },
+          ],
+        };
+      },
+      async consultar() {
+        return { ResultadoConsulta: "SinDatos", IndicadorPaginacion: "N", registros: [] };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    issuerConsultaHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    records,
+    "2026",
+    "09",
+  );
+  assert.equal(submissions, 3);
+  assert.equal(evidence.stoppedAfter, "rejected");
+  assert.equal(evidence.correction, undefined);
+});
 
 test("text trim probe sends four isolated, literal references and reports each read-back", async () => {
   const probes = buildTextTrimProbeRecords(decimalOptions);

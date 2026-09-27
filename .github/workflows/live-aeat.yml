@@ -16,6 +16,7 @@ on:
           - decimal-variant
           - unicode-dates
           - text-trim
+          - state-transitions
         default: consult
         required: true
       excluded_regime:
