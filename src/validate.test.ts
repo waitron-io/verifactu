@@ -3337,7 +3337,7 @@ describe("validate — AEAT §3.1.3.14–15.8", () => {
     expect(codes(recipient)).toContain("REGIMEN_10_DESTINATARIO_ID");
   });
 
-  it("§3.1.3.15.6.7 accepts N1, F1 and NIF recipients under regime 10", () => {
+  it("§3.1.3.15.6.7 does not flag N1, F1 or NIF recipients under regime 10", () => {
     const record = withDetail({
       ClaveRegimen: "10",
       CalificacionOperacion: "N1",
