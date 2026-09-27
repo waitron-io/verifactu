@@ -25,6 +25,6 @@
   "devDependencies": {
     "jsqr": "^1.4.0",
     "qrcode-generator": "^2.0.4",
-    "undici": "^8.11.0"
+    "undici": "^8.11.2"
   }
 }
