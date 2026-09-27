@@ -509,34 +509,60 @@ export async function consultUnicodeDateProbe(client, header, { runId, issueDate
     NumSerieFactura: serial,
     FechaExpedicionFactura: issueDate,
   };
+  const sameRecord = (entry) =>
+    entry.IDFactura.NumSerieFactura === serial &&
+    entry.IDFactura.FechaExpedicionFactura === issueDate;
+  const evidence = (result) => ({
+    ResultadoConsulta: result.ResultadoConsulta,
+    IndicadorPaginacion: result.IndicadorPaginacion,
+    ...(result.ClavePaginacion !== undefined && { ClavePaginacion: result.ClavePaginacion }),
+    registros: result.registros.map((entry) => ({
+      IDFactura: entry.IDFactura,
+      ...(entry.EstadoRegistro !== undefined && { EstadoRegistro: entry.EstadoRegistro }),
+      ...(entry.CodigoErrorRegistro !== undefined && {
+        CodigoErrorRegistro: entry.CodigoErrorRegistro,
+      }),
+      ...(entry.DescripcionErrorRegistro !== undefined && {
+        DescripcionErrorRegistro: entry.DescripcionErrorRegistro,
+      }),
+    })),
+    found: result.registros.some(sameRecord),
+  });
   const ascii = await withLiveStage("Unicode-date ASCII baseline", () =>
     client.consultar(header, filter),
   );
   assertConsultation(ascii);
-  if (!ascii.registros.some((entry) => entry.IDFactura.NumSerieFactura === serial)) {
+  if (!ascii.registros.some(sameRecord)) {
     throw new Error("ASCII baseline did not return the known decimal-variant record");
   }
   const arabicIndicDigits = (value) =>
     value.replace(/[0-9]/g, (digit) => "٠١٢٣٤٥٦٧٨٩"[Number(digit)]);
-  let arabicIndic;
+  let arabicIndicResult;
   try {
-    const result = await client.consultar(header, {
-      ...filter,
-      Ejercicio: arabicIndicDigits(year),
-      FechaExpedicionFactura: arabicIndicDigits(issueDate),
-    });
-    assertConsultation(result);
-    arabicIndic = {
-      ResultadoConsulta: result.ResultadoConsulta,
-      found: result.registros.some((entry) => entry.IDFactura.NumSerieFactura === serial),
-    };
+    arabicIndicResult = await withLiveStage("Unicode-date Arabic-Indic consulta", () =>
+      client.consultar(header, {
+        ...filter,
+        Ejercicio: arabicIndicDigits(year),
+        FechaExpedicionFactura: arabicIndicDigits(issueDate),
+      }),
+    );
   } catch (error) {
-    arabicIndic = { error: error instanceof Error ? error.message : String(error) };
+    return {
+      NumSerieFactura: serial,
+      ascii: evidence(ascii),
+      arabicIndic: {
+        requestError: {
+          name: error instanceof Error ? error.name : "UnknownError",
+          message: error instanceof Error ? error.message : String(error),
+        },
+      },
+    };
   }
+  assertConsultation(arabicIndicResult);
   return {
     NumSerieFactura: serial,
-    ascii: { ResultadoConsulta: ascii.ResultadoConsulta, found: true },
-    arabicIndic,
+    ascii: evidence(ascii),
+    arabicIndic: evidence(arabicIndicResult),
   };
 }
 

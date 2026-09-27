@@ -1480,11 +1480,13 @@ those two fields to Arabic-Indic digits; the month and serial stay identical. Th
 preserves the Arabic-Indic characters, which the pinned request XSD accepts. This mode sends no
 record and cannot affect the monthly submission chain.
 
-Before running it: `ConDatos` with the same serial would show AEAT treats these digit scripts as
-equivalent for these filters. `SinDatos` would show the two spellings do not match this stored
-record. A SOAP fault or other error would show AEAT refuses the Arabic-Indic query or could not
-process it; record its exact response before choosing how the fake should behave. An absent ASCII
-baseline makes the comparison invalid, so the probe fails in that case.
+Before running it: `ConDatos` with the same serial and issue date would be consistent with AEAT
+treating these digit scripts as equivalent for these filters, though it would not prove that AEAT
+applies the date filter. `SinDatos` would show the two spellings do not match this stored record.
+A SOAP fault or other request error would show AEAT refuses the Arabic-Indic query or could not
+process it. The probe logs the parsed result status, pagination flag, returned invoice identities,
+record states and errors, or the request error message, before choosing how the fake should
+behave. An absent ASCII baseline makes the comparison invalid, so the probe fails in that case.
 
 #### Decimal lexical probe design (E28)
 
