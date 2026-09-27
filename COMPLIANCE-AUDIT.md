@@ -1039,6 +1039,10 @@ same checks to a parsed request; the public header type now excludes `N`. Bounda
 and recipient-header cases are covered in `src/xml/serialize.test.ts` and
 `src/xml/parse-request.test.ts`. `ConsultaFiltro.Periodo` remains a `string` so callers can supply a
 dynamically formatted month; the runtime boundary enforces the published list.
+`serializeConsulta` also checks the issuer or recipient header NIF form and locally derivable
+control character before sending, including a represented issuer query. The request schema has
+an `IndicadorRepresentante` flag but no separate representative NIF. `parseConsulta` retains its
+XSD-shape-only request check; neither boundary proves registration or representation authority.
 `parseConsulta` checks the literal XML leaf without trimming it, so spaces inside either code-list
 element also fail locally. This keeps the parser's lossless-text policy; a hand-written fixture
 should indent between elements, not inside `Periodo` or `IndicadorRepresentante`.
