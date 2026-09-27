@@ -1563,7 +1563,12 @@ the correction if the controlled rejection is not `Incorrecto`/`1161`.
 The correction chain is built after the preceding wait with a fresh
 `FechaHoraHusoGenRegistro`, while keeping this run's invoice issue date
 and identity. Its predecessor pointers and huellas are recomputed
-together, and the new hashes are logged before that chain is sent.
+together, and the new hashes are logged before that chain is sent. After
+the next two AEAT waits, the final corrected record gets its own current
+generation timestamp and huella immediately before submission. Its invoice
+identity and pointer to the accepted first record stay the same. The
+corrected record's huella may therefore differ from the rejected attempt's;
+consulta must match the huella actually sent for the correction.
 
 Before dispatch, the expected outcomes are: each fresh first alta
 `Correcto`; the second first-record claim stored as
@@ -1619,7 +1624,8 @@ remains **unobserved**. The existing read-only `consult` mode then
 [passed in run 36349726704](https://github.com/waitron-io/verifactu/actions/runs/36349726704)
 on the same main SHA, returning `SinDatos` for its separate `CI-CHECK`
 lookup. The follow-up mode fix refreshes the correction chain's timestamp
-after the prior wait, without changing the library's canonicalisation.
+after the prior wait and refreshes the final corrected record after its
+own wait, without changing the library's canonicalisation.
 
 ## Audit state after the official-document closure
 

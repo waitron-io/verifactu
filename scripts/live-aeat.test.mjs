@@ -28,6 +28,7 @@ import {
   minimalIssuerConsultaFilter,
   mixedRegimeSubmissionEvidence,
   recipientConsultaHeader,
+  refreshProbeRecordGeneration,
   representativeConsultaHeader,
   submitMixedRegimeProbe,
   submitDecimalVariantProbe,
@@ -132,6 +133,15 @@ test("first-record probe waits, reports all cases and consults their stored stat
   }).correction;
   assert.notEqual(freshCorrection.first.Huella, records.correction.first.Huella);
   assert.deepEqual(freshCorrection.first.IDFactura, records.correction.first.IDFactura);
+  const finalCorrection = refreshProbeRecordGeneration(
+    freshCorrection.corrected,
+    new Date("2026-09-27T12:06:25Z"),
+  );
+  assert.deepEqual(finalCorrection.IDFactura, freshCorrection.corrected.IDFactura);
+  assert.deepEqual(finalCorrection.Encadenamiento, freshCorrection.corrected.Encadenamiento);
+  assert.notEqual(finalCorrection.Huella, freshCorrection.rejected.Huella);
+  assert.equal(finalCorrection.Huella, computeHuella(finalCorrection));
+  assert.deepEqual(validate(finalCorrection), []);
   const sequence = [
     [records.repeated.first, "Correcto"],
     [records.repeated.second, "AceptadoConErrores", 2007],
@@ -139,12 +149,13 @@ test("first-record probe waits, reports all cases and consults their stored stat
     [records.chained.second, "Correcto"],
     [freshCorrection.first, "Correcto"],
     [freshCorrection.rejected, "Incorrecto", 1161],
-    [freshCorrection.corrected, "Correcto"],
+    [finalCorrection, "Correcto"],
   ];
   const calls = [];
   const stages = [];
   const submittedRecords = [];
   let refreshCalls = 0;
+  let finalRefreshCalls = 0;
   const evidence = await submitFirstRecordProbe(
     {
       async submit(_header, submitted) {
@@ -184,7 +195,7 @@ test("first-record probe waits, reports all cases and consults their stored stat
                   CodigoErrorRegistro: found[2],
                   DatosRegistroFacturacion: {
                     Huella: found[0].Huella,
-                    ...(found[0] === freshCorrection.corrected && {
+                    ...(found[0] === finalCorrection && {
                       Subsanacion: "S",
                       RechazoPrevio: "X",
                     }),
@@ -207,6 +218,11 @@ test("first-record probe waits, reports all cases and consults their stored stat
       assert.equal(calls.filter(([kind]) => kind === "wait").length, 4);
       return freshCorrection;
     },
+    () => {
+      finalRefreshCalls++;
+      assert.equal(calls.filter(([kind]) => kind === "wait").length, 6);
+      return finalCorrection;
+    },
   );
   assert.equal(calls.filter(([kind]) => kind === "submit").length, 7);
   assert.equal(calls.filter(([kind]) => kind === "wait").length, 6);
@@ -219,7 +235,8 @@ test("first-record probe waits, reports all cases and consults their stored stat
   assert.equal(evidence.consultaCorrected.RechazoPrevioConsultado, "X");
   assert.equal(evidence.incomplete, false);
   assert.equal(refreshCalls, 1);
-  assert.equal(evidence.consultaCorrected.HuellaConsultada, freshCorrection.corrected.Huella);
+  assert.equal(finalRefreshCalls, 1);
+  assert.equal(evidence.consultaCorrected.HuellaConsultada, finalCorrection.Huella);
   assert.equal(stages[0][0], "repeatedFirst");
   assert.equal(stages.at(-1)[0], "consultaCorrected");
 });

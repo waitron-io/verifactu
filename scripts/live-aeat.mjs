@@ -9,6 +9,7 @@ import {
   buildQrPayload,
   computeHuella,
   createClient,
+  formatDateTime,
   SOAP_ENDPOINTS,
   SOAP_ENDPOINTS_SELLO,
 } from "../dist/index.js";
@@ -395,6 +396,14 @@ export function buildFirstRecordProbeRecords(options) {
   };
 }
 
+export function refreshProbeRecordGeneration(record, now) {
+  const refreshed = {
+    ...record,
+    FechaHoraHusoGenRegistro: formatDateTime(now, madridClock(now).offsetMinutes),
+  };
+  return { ...refreshed, Huella: computeHuella(refreshed) };
+}
+
 function stateSubmissionEvidence(result, record) {
   const line = result.RespuestaLinea?.find(
     (entry) => entry.IDFactura.NumSerieFactura === record.IDFactura.NumSerieFactura,
@@ -444,6 +453,7 @@ export async function submitFirstRecordProbe(
   report = () => {},
   waitForSubmission = waitForNextSubmission,
   refreshCorrection = () => records.correction,
+  refreshFinalCorrection = (record) => record,
 ) {
   const evidence = {};
   let priorResponse;
@@ -522,9 +532,13 @@ export async function submitFirstRecordProbe(
       await consult("consultaCorrectionFirst", correctionRecords.first);
       return evidence;
     }
-    await send("corrected", correctionRecords.corrected);
+    let correctedRecord;
+    await send("corrected", () => {
+      correctedRecord = refreshFinalCorrection(correctionRecords.corrected);
+      return correctedRecord;
+    });
     await consult("consultaCorrectionFirst", correctionRecords.first);
-    await consult("consultaCorrected", correctionRecords.corrected);
+    await consult("consultaCorrected", correctedRecord);
     evidence.incomplete =
       [
         [evidence.consultaRepeatedFirst, records.repeated.first],
@@ -532,7 +546,7 @@ export async function submitFirstRecordProbe(
         [evidence.consultaChainedFirst, records.chained.first],
         [evidence.consultaChainedSecond, records.chained.second],
         [evidence.consultaCorrectionFirst, correctionRecords.first],
-        [evidence.consultaCorrected, correctionRecords.corrected],
+        [evidence.consultaCorrected, correctedRecord],
       ].some(
         ([entry, record]) => !entry.RegistroEncontrado || entry.HuellaConsultada !== record.Huella,
       ) ||
@@ -1205,6 +1219,13 @@ async function main() {
       );
       return correction;
     };
+    const refreshFinalCorrection = (record) => {
+      const corrected = refreshProbeRecordGeneration(record, new Date());
+      process.stdout.write(
+        "AEAT first-record final correction plan: " + JSON.stringify(summarize(corrected)) + "\n",
+      );
+      return corrected;
+    };
     const evidence = await submitFirstRecordProbe(
       client,
       cabecera,
@@ -1216,6 +1237,7 @@ async function main() {
         process.stdout.write(`AEAT first-record ${stage}: ${JSON.stringify(entry)}\n`),
       waitForNextSubmission,
       refreshCorrection,
+      refreshFinalCorrection,
     );
     process.stdout.write(`AEAT first-record response: ${JSON.stringify(evidence)}\n`);
     if (evidence.stoppedAfter || evidence.incomplete) process.exitCode = 1;
