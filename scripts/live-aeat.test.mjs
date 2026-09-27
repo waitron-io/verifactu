@@ -15,6 +15,7 @@ import {
   buildTestCancellation,
   buildTestRecord,
   buildTextTrimProbeRecords,
+  buildStateTransitionProbeRecords,
   certificateKind,
   consultStoredMixedRegimeProbe,
   consultUnicodeDateProbe,
@@ -30,6 +31,7 @@ import {
   submitMixedRegimeProbe,
   submitDecimalVariantProbe,
   submitTextTrimProbe,
+  submitStateTransitionProbe,
   submissionHeader,
   waitForNextSubmission,
   withLiveStage,
@@ -52,6 +54,161 @@ const decimalOptions = {
   now: new Date("2026-09-27T12:00:00Z"),
   runId: "12345",
 };
+
+test("state-transition records isolate identities and keep the rejection XSD-valid", () => {
+  const { accepted, rejected, correction } = buildStateTransitionProbeRecords(decimalOptions);
+  assert.equal(accepted.IDFactura.NumSerieFactura, "CI-STATE-DUP/20260927/12345");
+  assert.equal(rejected.IDFactura.NumSerieFactura, "CI-STATE-REJ/20260927/12345");
+  assert.deepEqual(rejected.IDFactura, correction.IDFactura);
+  assert.deepEqual(accepted.Encadenamiento, { PrimerRegistro: "S" });
+  assert.deepEqual(rejected.Encadenamiento, { PrimerRegistro: "S" });
+  assert.equal(rejected.RechazoPrevio, "S");
+  assert.equal(rejected.Subsanacion, undefined);
+  assert.equal(correction.Subsanacion, "S");
+  assert.equal(correction.RechazoPrevio, "X");
+  assert.deepEqual(validate(accepted), []);
+  assert.deepEqual(validate(correction), []);
+  assert.deepEqual(
+    validate(rejected).map((issue) => issue.code),
+    ["RECHAZO_PREVIO_REQUIRES_SUBSANACION"],
+  );
+  for (const record of [accepted, rejected, correction]) {
+    assert.equal(record.Huella, computeHuella(record));
+    assert.ok(
+      serializeEnvio(
+        submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+        [{ RegistroAlta: record }],
+      ).includes(`<sf:NumSerieFactura>${record.IDFactura.NumSerieFactura}</sf:NumSerieFactura>`),
+    );
+  }
+});
+
+test("state-transition probe waits before retries and preserves every response and consulta", async () => {
+  const records = buildStateTransitionProbeRecords(decimalOptions);
+  const calls = [];
+  const responses = [
+    {
+      EstadoEnvio: "Correcto",
+      TiempoEsperaEnvio: 0,
+      RespuestaLinea: [{ IDFactura: records.accepted.IDFactura, EstadoRegistro: "Correcto" }],
+    },
+    {
+      EstadoEnvio: "Incorrecto",
+      TiempoEsperaEnvio: 0,
+      RespuestaLinea: [
+        {
+          IDFactura: records.accepted.IDFactura,
+          EstadoRegistro: "Incorrecto",
+          CodigoErrorRegistro: 3000,
+          DescripcionErrorRegistro: "Registro duplicado",
+          RegistroDuplicado: {
+            EstadoRegistroDuplicado: "Correcta",
+            IdPeticionRegistroDuplicado: "P123",
+          },
+        },
+      ],
+    },
+    {
+      EstadoEnvio: "Incorrecto",
+      TiempoEsperaEnvio: 0,
+      RespuestaLinea: [
+        {
+          IDFactura: records.rejected.IDFactura,
+          EstadoRegistro: "Incorrecto",
+          CodigoErrorRegistro: 1161,
+          DescripcionErrorRegistro: "RechazoPrevio sin subsanación",
+        },
+      ],
+    },
+    {
+      EstadoEnvio: "Correcto",
+      TiempoEsperaEnvio: 0,
+      RespuestaLinea: [
+        {
+          IDFactura: records.correction.IDFactura,
+          EstadoRegistro: "Correcto",
+          Operacion: { TipoOperacion: "Alta", Subsanacion: "S", RechazoPrevio: "X" },
+        },
+      ],
+    },
+  ];
+  const evidence = await submitStateTransitionProbe(
+    {
+      async submit(_header, submitted) {
+        calls.push(["submit", submitted[0].RegistroAlta]);
+        return responses.shift();
+      },
+      async consultar(_header, filter) {
+        calls.push(["consultar", filter.NumSerieFactura]);
+        const record =
+          filter.NumSerieFactura === records.accepted.IDFactura.NumSerieFactura
+            ? records.accepted
+            : records.correction;
+        return {
+          ResultadoConsulta: "ConDatos",
+          IndicadorPaginacion: "N",
+          registros: [
+            {
+              IDFactura: record.IDFactura,
+              EstadoRegistro: "Correcto",
+              DatosRegistroFacturacion: { Huella: record.Huella },
+            },
+          ],
+        };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    issuerConsultaHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    records,
+    "2026",
+    "09",
+  );
+  assert.deepEqual(
+    calls.map(([kind]) => kind),
+    ["submit", "submit", "submit", "submit", "consultar", "consultar"],
+  );
+  assert.strictEqual(calls[0][1], calls[1][1]);
+  assert.equal(evidence.accepted.EstadoRegistro, "Correcto");
+  assert.equal(evidence.duplicate.CodigoErrorRegistro, 3000);
+  assert.deepEqual(evidence.duplicate.RegistroDuplicado, {
+    EstadoRegistroDuplicado: "Correcta",
+    IdPeticionRegistroDuplicado: "P123",
+  });
+  assert.equal(evidence.rejected.CodigoErrorRegistro, 1161);
+  assert.equal(evidence.correction.EstadoRegistro, "Correcto");
+  assert.equal(evidence.consultaAccepted.HuellaConsultada, records.accepted.Huella);
+  assert.equal(evidence.consultaCorrection.HuellaConsultada, records.correction.Huella);
+});
+
+test("state-transition probe does not correct a record that AEAT unexpectedly accepted", async () => {
+  const records = buildStateTransitionProbeRecords(decimalOptions);
+  let submissions = 0;
+  const evidence = await submitStateTransitionProbe(
+    {
+      async submit(_header, submitted) {
+        submissions++;
+        return {
+          EstadoEnvio: "Correcto",
+          TiempoEsperaEnvio: 0,
+          RespuestaLinea: [
+            { IDFactura: submitted[0].RegistroAlta.IDFactura, EstadoRegistro: "Correcto" },
+          ],
+        };
+      },
+      async consultar() {
+        return { ResultadoConsulta: "SinDatos", IndicadorPaginacion: "N", registros: [] };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    issuerConsultaHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    records,
+    "2026",
+    "09",
+  );
+  assert.equal(submissions, 3);
+  assert.equal(evidence.stoppedAfter, "rejected");
+  assert.equal(evidence.correction, undefined);
+});
 
 test("text trim probe sends four isolated, literal references and reports each read-back", async () => {
   const probes = buildTextTrimProbeRecords(decimalOptions);

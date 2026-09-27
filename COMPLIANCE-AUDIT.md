@@ -1464,6 +1464,35 @@ assign codes to every cell. The library does not select a correction operation f
 legal eligibility, live error precedence, clock tolerance, and long-lived history against AEAT
 rather than treating the fake as an authority.
 
+### E32 planned state-transition preproduction probe
+
+The manual `state-transitions` mode uses two run-ID-specific identities,
+`CI-STATE-DUP/<date>/<run ID>` and `CI-STATE-REJ/<date>/<run ID>`, apart from
+the monthly `CI` smoke-test chain. Each starts with `PrimerRegistro: "S"`;
+neither becomes the monthly record's predecessor. The duplicate case files a
+valid alta, waits for AEAT's `TiempoEsperaEnvio`, then files the identical
+record. The rejection case files an alta with `RechazoPrevio: "S"` and no
+`Subsanacion`; this is valid against the pinned `SuministroLR.xsd`, but the
+[published error 1161](https://prewww2.aeat.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1.0/cont/ws/errores.properties)
+defines that combination as a business-rule rejection. The local validator
+also flags it, so this one controlled negative probe deliberately bypasses
+local validation. After AEAT's requested wait, the mode retries that same
+invoice identity with `Subsanacion: "S"` and `RechazoPrevio: "X"`, then
+consults both identities. If AEAT unexpectedly accepts the intended rejection,
+the mode stops before the correction.
+
+Before dispatch, the expected duplicate outcome is a first-line `Correcto`
+and an identical retry with error `3000` and a duplicate-detail state of
+`Correcta`, while consulta still shows the first record. The expected
+rejection is `Incorrecto`/`1161`, followed by an accepted correction whose
+consulta shows the corrected record. These are hypotheses from the fake and
+published rules, not live findings. A duplicate without detail, a different
+status or code, a missing first or corrected record, or a different stored
+hash would narrow or contradict the fake's claim. In particular, a correction
+line of `Correcto` alone would show only that AEAT accepted that request; the
+consulta state and stored hash are needed to establish the resulting record.
+The probe does not change the library, the fake, or a hash rule.
+
 ## Audit state after the official-document closure
 
 ### Completed offline audit

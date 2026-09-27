@@ -333,6 +333,137 @@ export function buildTextTrimProbeRecords(options) {
   });
 }
 
+export function buildStateTransitionProbeRecords(options) {
+  const base = buildTestRecord(options);
+  const withIdentity = (suffix) => {
+    const record = {
+      ...base,
+      IDFactura: {
+        ...base.IDFactura,
+        NumSerieFactura: base.IDFactura.NumSerieFactura.replace("CI/", `CI-STATE-${suffix}/`),
+      },
+      RefExterna: `CI-STATE-${suffix}-${options.runId}`,
+    };
+    return { ...record, Huella: computeHuella(record) };
+  };
+  const accepted = withIdentity("DUP");
+  const rejected = { ...withIdentity("REJ"), RechazoPrevio: "S" };
+  const correction = { ...rejected, Subsanacion: "S", RechazoPrevio: "X" };
+  return { accepted, rejected, correction };
+}
+
+function stateSubmissionEvidence(result, record) {
+  const line = result.RespuestaLinea?.find(
+    (entry) => entry.IDFactura.NumSerieFactura === record.IDFactura.NumSerieFactura,
+  );
+  return {
+    NumSerieFactura: record.IDFactura.NumSerieFactura,
+    HuellaEnviada: record.Huella,
+    EstadoEnvio: result.EstadoEnvio,
+    TiempoEsperaEnvio: result.TiempoEsperaEnvio,
+    RespuestaLineaEncontrada: line !== undefined,
+    EstadoRegistro: line?.EstadoRegistro,
+    CodigoErrorRegistro: line?.CodigoErrorRegistro,
+    DescripcionErrorRegistro: line?.DescripcionErrorRegistro,
+    Operacion: line?.Operacion,
+    RegistroDuplicado: line?.RegistroDuplicado,
+  };
+}
+
+async function stateConsultaEvidence(client, header, record, year, month, stage) {
+  const result = await withLiveStage(stage, () =>
+    client.consultar(header, minimalIssuerConsultaFilter(record, year, month)),
+  );
+  assertConsultation(result);
+  const stored = result.registros.find(
+    (entry) => entry.IDFactura.NumSerieFactura === record.IDFactura.NumSerieFactura,
+  );
+  return {
+    ResultadoConsulta: result.ResultadoConsulta,
+    IndicadorPaginacion: result.IndicadorPaginacion,
+    EstadoConsultado: stored?.EstadoRegistro,
+    CodigoErrorConsultado: stored?.CodigoErrorRegistro,
+    DescripcionErrorConsultado: stored?.DescripcionErrorRegistro,
+    HuellaConsultada: stored?.DatosRegistroFacturacion?.Huella,
+  };
+}
+
+export async function submitStateTransitionProbe(
+  client,
+  cabecera,
+  consultaCabecera,
+  records,
+  year,
+  month,
+) {
+  const send = async (stage, record) => {
+    const response = await withLiveStage(stage, () =>
+      client.submit(cabecera, [{ RegistroAlta: record }]),
+    );
+    return { response, evidence: stateSubmissionEvidence(response, record) };
+  };
+  const first = await send("state accepted alta", records.accepted);
+  const evidence = { accepted: first.evidence };
+  if (first.evidence.EstadoRegistro !== "Correcto") {
+    evidence.stoppedAfter = "accepted";
+    evidence.consultaAccepted = await stateConsultaEvidence(
+      client,
+      consultaCabecera,
+      records.accepted,
+      year,
+      month,
+      "state accepted consulta",
+    );
+    return evidence;
+  }
+  await waitForNextSubmission(first.response.TiempoEsperaEnvio);
+  const duplicate = await send("state identical alta retry", records.accepted);
+  evidence.duplicate = duplicate.evidence;
+  await waitForNextSubmission(duplicate.response.TiempoEsperaEnvio);
+  const rejected = await send("state controlled rejection", records.rejected);
+  evidence.rejected = rejected.evidence;
+  if (rejected.evidence.EstadoRegistro !== "Incorrecto") {
+    evidence.stoppedAfter = "rejected";
+    evidence.consultaAccepted = await stateConsultaEvidence(
+      client,
+      consultaCabecera,
+      records.accepted,
+      year,
+      month,
+      "state accepted consulta",
+    );
+    evidence.consultaCorrection = await stateConsultaEvidence(
+      client,
+      consultaCabecera,
+      records.rejected,
+      year,
+      month,
+      "state rejection consulta",
+    );
+    return evidence;
+  }
+  await waitForNextSubmission(rejected.response.TiempoEsperaEnvio);
+  const correction = await send("state corrected alta", records.correction);
+  evidence.correction = correction.evidence;
+  evidence.consultaAccepted = await stateConsultaEvidence(
+    client,
+    consultaCabecera,
+    records.accepted,
+    year,
+    month,
+    "state accepted consulta",
+  );
+  evidence.consultaCorrection = await stateConsultaEvidence(
+    client,
+    consultaCabecera,
+    records.correction,
+    year,
+    month,
+    "state corrected consulta",
+  );
+  return evidence;
+}
+
 export async function submitTextTrimProbe(client, cabecera, consultaCabecera, probes, year, month) {
   const submitted = await withLiveStage("text-trim alta submission", () =>
     client.submit(
@@ -771,10 +902,11 @@ async function main() {
       "decimal-variant",
       "unicode-dates",
       "text-trim",
+      "state-transitions",
     ].includes(mode)
   ) {
     throw new Error(
-      "Mode must be consult, submit, mixed-regime, mixed-regime-consult, decimal-variant, unicode-dates, or text-trim",
+      "Mode must be consult, submit, mixed-regime, mixed-regime-consult, decimal-variant, unicode-dates, text-trim, or state-transitions",
     );
   }
   const nif = required("AEAT_TEST_NIF");
@@ -821,6 +953,29 @@ async function main() {
   };
   const cabecera = submissionHeader(obligadoEmision);
   const runId = process.env.GITHUB_RUN_ID ?? String(now.getTime());
+
+  if (mode === "state-transitions") {
+    const records = buildStateTransitionProbeRecords({
+      nif,
+      name,
+      systemNif: required("AEAT_TEST_SYSTEM_NIF"),
+      systemName: required("AEAT_TEST_SYSTEM_NAME"),
+      recipientNif: recipient.NIF,
+      recipientName: recipient.NombreRazon,
+      now,
+      runId,
+    });
+    const evidence = await submitStateTransitionProbe(
+      client,
+      cabecera,
+      consultaCabecera,
+      records,
+      year,
+      month,
+    );
+    process.stdout.write(`AEAT state-transition response: ${JSON.stringify(evidence)}\n`);
+    return;
+  }
 
   if (mode === "text-trim") {
     const probes = buildTextTrimProbeRecords({
