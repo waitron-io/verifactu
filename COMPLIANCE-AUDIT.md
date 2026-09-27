@@ -1470,6 +1470,28 @@ Production calls are not required to maintain the offline ledger.
 
 ### Existing live evidence
 
+#### Decimal lexical probe design (E28)
+
+The `decimal-variant` workflow mode submits one first-in-chain preproduction alta with
+`CuotaTotal: "21.0"` and `ImporteTotal: "121.0"`. Its tax rate, base and tax amount retain
+the builder's two-decimal spelling, so only the two hash-input totals vary. The hash is
+recomputed from those exact total literals after the ordinary builder has run; the XML
+serializer receives the same record. Local validation intentionally flags the two totals as
+`AMOUNT_FORMAT`, while the pinned filing XSD accepts their one-decimal form. The invoice serial and external reference use the
+distinct `CI-DECIMAL` prefix, date and GitHub run ID. The monthly `submit` mode keeps its `CI`
+prefix, first-record chain and two-decimal builder output. The probe therefore cannot overwrite
+or become the predecessor of the scheduled test record. Its issuer consulta searches by the
+exact probe serial even if AEAT rejects the alta.
+
+Before running it: `EstadoRegistro: Correcto` with the same hash returned by consulta would be
+consistent with AEAT accepting the one-decimal total literals and their literal-string hash. The
+returned hash could merely echo the submitted one; the consulta also reports stored totals and
+breakdown to separate storage normalization from hash validation. A hash-mismatch error would show
+AEAT did not accept that literal-string hash, consistent with normalizing the decimals first.
+Any other error or an absent consulta record needs separate interpretation. AEAT's requested wait
+between submissions may matter if this manual probe runs near the monthly scheduled submission.
+This probe does not change the library's two-decimal builder policy or any hash output.
+
 The preproduction workflow's manual `consult` and alta-plus-consulta checks succeeded on
 2026-09-22, including comparison of AEAT's stored hash with the submitted hash. Its monthly schedule
 is enabled. The test environment uses the certificate company's identity for both issuer and

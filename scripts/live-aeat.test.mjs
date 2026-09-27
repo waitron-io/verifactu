@@ -10,6 +10,7 @@ import {
   assertStoredRecordAt,
   assertStoredRecord,
   assertSubmission,
+  buildDecimalVariantTestRecord,
   buildMixedRegimeTestRecord,
   buildTestCancellation,
   buildTestRecord,
@@ -25,17 +26,183 @@ import {
   recipientConsultaHeader,
   representativeConsultaHeader,
   submitMixedRegimeProbe,
+  submitDecimalVariantProbe,
   submissionHeader,
   waitForNextSubmission,
   withLiveStage,
 } from "./live-aeat.mjs";
-import { validate } from "../dist/index.js";
+import { buildCadena, computeHuella, serializeEnvio, validate } from "../dist/index.js";
 import { createFakeAeat } from "../dist/testing/fake-aeat.js";
 
 const record = {
   IDFactura: { NumSerieFactura: "CI/123" },
   Huella: "A".repeat(64),
 };
+
+const decimalOptions = {
+  nif: "89890001K",
+  name: "Waitron SL",
+  systemNif: "89890001K",
+  systemName: "Waitron SL",
+  recipientNif: "11111111H",
+  recipientName: "Cliente Uno",
+  now: new Date("2026-09-27T12:00:00Z"),
+  runId: "12345",
+};
+
+test("decimal probe submits one-decimal XML and hashes those exact literals with its own serial", () => {
+  const probe = buildDecimalVariantTestRecord(decimalOptions);
+  const ordinary = buildTestRecord(decimalOptions);
+  const xml = serializeEnvio(
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    [{ RegistroAlta: probe }],
+  );
+
+  assert.equal(probe.IDFactura.NumSerieFactura, "CI-DECIMAL/20260927/12345");
+  assert.equal(ordinary.IDFactura.NumSerieFactura, "CI/20260927/12345");
+  assert.equal(probe.CuotaTotal, "21.0");
+  assert.equal(probe.ImporteTotal, "121.0");
+  assert.equal(probe.Desglose[0].BaseImponibleOimporteNoSujeto, "100.00");
+  assert.equal(probe.Desglose[0].TipoImpositivo, "21.00");
+  assert.match(xml, /<sf:CuotaTotal>21\.0<\/sf:CuotaTotal>/);
+  assert.match(xml, /<sf:ImporteTotal>121\.0<\/sf:ImporteTotal>/);
+  assert.match(xml, /<sf:TipoImpositivo>21\.00<\/sf:TipoImpositivo>/);
+  assert.match(
+    xml,
+    /<sf:BaseImponibleOimporteNoSujeto>100\.00<\/sf:BaseImponibleOimporteNoSujeto>/,
+  );
+  assert.match(xml, /<sf:CuotaRepercutida>21\.00<\/sf:CuotaRepercutida>/);
+  assert.match(buildCadena(probe), /CuotaTotal=21\.0&ImporteTotal=121\.0&Huella=/);
+  assert.equal(probe.Huella, computeHuella(probe));
+  assert.notEqual(
+    probe.Huella,
+    computeHuella({ ...probe, CuotaTotal: "21.00", ImporteTotal: "121.00" }),
+  );
+  assert.deepEqual(probe.Encadenamiento, { PrimerRegistro: "S" });
+  assert.deepEqual(
+    validate(probe).map(({ code, field }) => ({ code, field })),
+    [
+      { code: "AMOUNT_FORMAT", field: "CuotaTotal" },
+      { code: "AMOUNT_FORMAT", field: "ImporteTotal" },
+    ],
+  );
+});
+
+test("decimal probe reports AEAT rejection and still performs read-only consulta", async () => {
+  const probe = buildDecimalVariantTestRecord(decimalOptions);
+  const calls = [];
+  const evidence = await submitDecimalVariantProbe(
+    {
+      async submit(_header, records) {
+        calls.push(["submit", records]);
+        return {
+          EstadoEnvio: "Incorrecto",
+          RespuestaLinea: [
+            {
+              IDFactura: probe.IDFactura,
+              EstadoRegistro: "Incorrecto",
+              CodigoErrorRegistro: 2000,
+              DescripcionErrorRegistro: "Huella incorrecta",
+            },
+          ],
+        };
+      },
+      async consultar(_header, filter) {
+        calls.push(["consultar", filter]);
+        return { ResultadoConsulta: "SinDatos", IndicadorPaginacion: "N", registros: [] };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    issuerConsultaHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    probe,
+    "2026",
+    "09",
+  );
+
+  assert.deepEqual(
+    calls.map(([operation]) => operation),
+    ["submit", "consultar"],
+  );
+  assert.equal(calls[1][1].NumSerieFactura, probe.IDFactura.NumSerieFactura);
+  assert.equal(evidence.EstadoRegistro, "Incorrecto");
+  assert.equal(evidence.RespuestaLineaEncontrada, true);
+  assert.equal(evidence.CodigoErrorRegistro, 2000);
+  assert.equal(evidence.DescripcionErrorRegistro, "Huella incorrecta");
+  assert.equal(evidence.ResultadoConsulta, "SinDatos");
+  assert.equal(evidence.HuellaConsultada, undefined);
+});
+
+test("decimal probe reports an accepted record and its stored hash", async () => {
+  const probe = buildDecimalVariantTestRecord(decimalOptions);
+  const evidence = await submitDecimalVariantProbe(
+    {
+      async submit() {
+        return {
+          EstadoEnvio: "Correcto",
+          RespuestaLinea: [{ IDFactura: probe.IDFactura, EstadoRegistro: "Correcto" }],
+        };
+      },
+      async consultar() {
+        return {
+          ResultadoConsulta: "ConDatos",
+          IndicadorPaginacion: "N",
+          registros: [
+            {
+              IDFactura: probe.IDFactura,
+              EstadoRegistro: "Correcto",
+              DatosRegistroFacturacion: {
+                Huella: probe.Huella,
+                CuotaTotal: "21",
+                ImporteTotal: "121",
+                Desglose: { DetalleDesglose: probe.Desglose[0] },
+              },
+            },
+          ],
+        };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    issuerConsultaHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    probe,
+    "2026",
+    "09",
+  );
+
+  assert.equal(evidence.EstadoRegistro, "Correcto");
+  assert.equal(evidence.ResultadoConsulta, "ConDatos");
+  assert.equal(evidence.EstadoConsultado, "Correcto");
+  assert.equal(evidence.HuellaConsultada, probe.Huella);
+  assert.equal(evidence.CuotaTotalConsultada, "21");
+  assert.equal(evidence.ImporteTotalConsultado, "121");
+  assert.deepEqual(evidence.DesgloseConsultado, { DetalleDesglose: probe.Desglose[0] });
+});
+
+test("decimal probe consults even when AEAT rejects the whole envelope without a line", async () => {
+  const probe = buildDecimalVariantTestRecord(decimalOptions);
+  let consulted = false;
+  const evidence = await submitDecimalVariantProbe(
+    {
+      async submit() {
+        return { EstadoEnvio: "Incorrecto", RespuestaLinea: [] };
+      },
+      async consultar() {
+        consulted = true;
+        return { ResultadoConsulta: "SinDatos", IndicadorPaginacion: "N", registros: [] };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    issuerConsultaHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    probe,
+    "2026",
+    "09",
+  );
+
+  assert.equal(consulted, true);
+  assert.equal(evidence.EstadoEnvio, "Incorrecto");
+  assert.equal(evidence.RespuestaLineaEncontrada, false);
+  assert.equal(evidence.EstadoRegistro, undefined);
+  assert.equal(evidence.ResultadoConsulta, "SinDatos");
+});
 
 test("an unset or empty certificate kind defaults to a personal certificate", () => {
   assert.equal(certificateKind(undefined), "personal");
