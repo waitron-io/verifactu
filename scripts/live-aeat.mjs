@@ -302,17 +302,10 @@ export function buildDecimalVariantTestRecord(options) {
     cuotaTotal: "21.00",
     importeTotal: "121.00",
   });
-  // This probe alone uses XSD-permitted one-decimal literals after the builder's two-decimal policy.
+  // Only the two hash-input totals bypass the builder's two-decimal policy; local validation
+  // intentionally flags their format, while the pinned filing XSD permits one decimal.
   const record = {
     ...built,
-    Desglose: [
-      {
-        ...built.Desglose[0],
-        TipoImpositivo: "21.0",
-        BaseImponibleOimporteNoSujeto: "100.0",
-        CuotaRepercutida: "21.0",
-      },
-    ],
     CuotaTotal: "21.0",
     ImporteTotal: "121.0",
   };
@@ -333,7 +326,6 @@ export async function submitDecimalVariantProbe(
   const line = submitted.RespuestaLinea?.find(
     (entry) => entry.IDFactura.NumSerieFactura === record.IDFactura.NumSerieFactura,
   );
-  if (!line) throw new Error("AEAT did not return the decimal-variant response line");
   const consulted = await withLiveStage("decimal-variant issuer consulta", () =>
     client.consultar(consultaCabecera, minimalIssuerConsultaFilter(record, year, month)),
   );
@@ -347,12 +339,16 @@ export async function submitDecimalVariantProbe(
     ImporteTotal: record.ImporteTotal,
     HuellaEnviada: record.Huella,
     EstadoEnvio: submitted.EstadoEnvio,
-    EstadoRegistro: line.EstadoRegistro,
-    CodigoErrorRegistro: line.CodigoErrorRegistro,
-    DescripcionErrorRegistro: line.DescripcionErrorRegistro,
+    RespuestaLineaEncontrada: line !== undefined,
+    EstadoRegistro: line?.EstadoRegistro,
+    CodigoErrorRegistro: line?.CodigoErrorRegistro,
+    DescripcionErrorRegistro: line?.DescripcionErrorRegistro,
     ResultadoConsulta: consulted.ResultadoConsulta,
     EstadoConsultado: stored?.EstadoRegistro,
     HuellaConsultada: stored?.DatosRegistroFacturacion?.Huella,
+    CuotaTotalConsultada: stored?.DatosRegistroFacturacion?.CuotaTotal,
+    ImporteTotalConsultado: stored?.DatosRegistroFacturacion?.ImporteTotal,
+    DesgloseConsultado: stored?.DatosRegistroFacturacion?.Desglose,
   };
 }
 

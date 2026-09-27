@@ -62,13 +62,16 @@ test("decimal probe submits one-decimal XML and hashes those exact literals with
   assert.equal(ordinary.IDFactura.NumSerieFactura, "CI/20260927/12345");
   assert.equal(probe.CuotaTotal, "21.0");
   assert.equal(probe.ImporteTotal, "121.0");
-  assert.equal(probe.Desglose[0].BaseImponibleOimporteNoSujeto, "100.0");
-  assert.equal(probe.Desglose[0].TipoImpositivo, "21.0");
+  assert.equal(probe.Desglose[0].BaseImponibleOimporteNoSujeto, "100.00");
+  assert.equal(probe.Desglose[0].TipoImpositivo, "21.00");
   assert.match(xml, /<sf:CuotaTotal>21\.0<\/sf:CuotaTotal>/);
   assert.match(xml, /<sf:ImporteTotal>121\.0<\/sf:ImporteTotal>/);
-  assert.match(xml, /<sf:TipoImpositivo>21\.0<\/sf:TipoImpositivo>/);
-  assert.match(xml, /<sf:BaseImponibleOimporteNoSujeto>100\.0<\/sf:BaseImponibleOimporteNoSujeto>/);
-  assert.match(xml, /<sf:CuotaRepercutida>21\.0<\/sf:CuotaRepercutida>/);
+  assert.match(xml, /<sf:TipoImpositivo>21\.00<\/sf:TipoImpositivo>/);
+  assert.match(
+    xml,
+    /<sf:BaseImponibleOimporteNoSujeto>100\.00<\/sf:BaseImponibleOimporteNoSujeto>/,
+  );
+  assert.match(xml, /<sf:CuotaRepercutida>21\.00<\/sf:CuotaRepercutida>/);
   assert.match(buildCadena(probe), /CuotaTotal=21\.0&ImporteTotal=121\.0&Huella=/);
   assert.equal(probe.Huella, computeHuella(probe));
   assert.notEqual(
@@ -76,6 +79,13 @@ test("decimal probe submits one-decimal XML and hashes those exact literals with
     computeHuella({ ...probe, CuotaTotal: "21.00", ImporteTotal: "121.00" }),
   );
   assert.deepEqual(probe.Encadenamiento, { PrimerRegistro: "S" });
+  assert.deepEqual(
+    validate(probe).map(({ code, field }) => ({ code, field })),
+    [
+      { code: "AMOUNT_FORMAT", field: "CuotaTotal" },
+      { code: "AMOUNT_FORMAT", field: "ImporteTotal" },
+    ],
+  );
 });
 
 test("decimal probe reports AEAT rejection and still performs read-only consulta", async () => {
@@ -115,6 +125,7 @@ test("decimal probe reports AEAT rejection and still performs read-only consulta
   );
   assert.equal(calls[1][1].NumSerieFactura, probe.IDFactura.NumSerieFactura);
   assert.equal(evidence.EstadoRegistro, "Incorrecto");
+  assert.equal(evidence.RespuestaLineaEncontrada, true);
   assert.equal(evidence.CodigoErrorRegistro, 2000);
   assert.equal(evidence.DescripcionErrorRegistro, "Huella incorrecta");
   assert.equal(evidence.ResultadoConsulta, "SinDatos");
@@ -139,7 +150,12 @@ test("decimal probe reports an accepted record and its stored hash", async () =>
             {
               IDFactura: probe.IDFactura,
               EstadoRegistro: "Correcto",
-              DatosRegistroFacturacion: { Huella: probe.Huella },
+              DatosRegistroFacturacion: {
+                Huella: probe.Huella,
+                CuotaTotal: "21",
+                ImporteTotal: "121",
+                Desglose: { DetalleDesglose: probe.Desglose[0] },
+              },
             },
           ],
         };
@@ -156,6 +172,36 @@ test("decimal probe reports an accepted record and its stored hash", async () =>
   assert.equal(evidence.ResultadoConsulta, "ConDatos");
   assert.equal(evidence.EstadoConsultado, "Correcto");
   assert.equal(evidence.HuellaConsultada, probe.Huella);
+  assert.equal(evidence.CuotaTotalConsultada, "21");
+  assert.equal(evidence.ImporteTotalConsultado, "121");
+  assert.deepEqual(evidence.DesgloseConsultado, { DetalleDesglose: probe.Desglose[0] });
+});
+
+test("decimal probe consults even when AEAT rejects the whole envelope without a line", async () => {
+  const probe = buildDecimalVariantTestRecord(decimalOptions);
+  let consulted = false;
+  const evidence = await submitDecimalVariantProbe(
+    {
+      async submit() {
+        return { EstadoEnvio: "Incorrecto", RespuestaLinea: [] };
+      },
+      async consultar() {
+        consulted = true;
+        return { ResultadoConsulta: "SinDatos", IndicadorPaginacion: "N", registros: [] };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    issuerConsultaHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    probe,
+    "2026",
+    "09",
+  );
+
+  assert.equal(consulted, true);
+  assert.equal(evidence.EstadoEnvio, "Incorrecto");
+  assert.equal(evidence.RespuestaLineaEncontrada, false);
+  assert.equal(evidence.EstadoRegistro, undefined);
+  assert.equal(evidence.ResultadoConsulta, "SinDatos");
 });
 
 test("an unset or empty certificate kind defaults to a personal certificate", () => {
