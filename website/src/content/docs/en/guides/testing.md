@@ -75,6 +75,16 @@ code `2004` for a future `FechaHoraHusoGenRegistro`, matching the published list
 exact local clock comparison; AEAT's live tolerance is not published, so test its boundary in
 preproduction if your workflow depends on it.
 
+If you query an ASCII-dated record with Arabic-Indic digits in `Ejercicio` and
+`FechaExpedicionFactura`, the fake finds the same record and returns its stored ASCII date. For
+example, a record dated `20-07-2026` matches `Ejercicio: "٢٠٢٦"` and
+`FechaExpedicionFactura: "٢٠-٠٧-٢٠٢٦"`. The fake also converts Arabic-Indic date digits in range
+bounds and pagination cursors when comparing them with stored records; it does not rewrite the
+stored invoice identity. A [read-only preproduction check](https://github.com/waitron-io/verifactu/actions/runs/36338604405)
+returned the same accepted record for ASCII and Arabic-Indic year and exact-date filters. That
+check did not test other digit scripts, range bounds or cursor spellings against AEAT. Use ASCII
+dates for general interoperability until you have live evidence for those other cases.
+
 In particular, the fake keeps leading and trailing spaces in submitted text. AEAT trims those
 spaces before storing and returning text fields. If your test depends on the stored spelling of
 a value such as `RefExterna`, confirm it in AEAT preproduction. The publication does not define

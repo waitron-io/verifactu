@@ -1379,6 +1379,74 @@ describe("fake AEAT — resubmit (error 3000) and consulta", () => {
     expect(r.registros[0].EstadoRegistro).toBe("Correcto");
   });
 
+  it("finds an ASCII-dated record with Arabic-Indic consulta year and exact date", async () => {
+    const aeat = createFakeAeat();
+    await aeat.client().submit(cabecera, [{ RegistroAlta: altaFixture("A/1") }]);
+    const client = aeat.client();
+    const ascii = await client.consultar(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      NumSerieFactura: "A/1",
+      FechaExpedicionFactura: "20-07-2026",
+    });
+    const arabicIndic = await client.consultar(cabecera, {
+      Ejercicio: "٢٠٢٦",
+      Periodo: "07",
+      NumSerieFactura: "A/1",
+      FechaExpedicionFactura: "٢٠-٠٧-٢٠٢٦",
+    });
+    expect(arabicIndic.ResultadoConsulta).toBe("ConDatos");
+    expect(arabicIndic.registros.map((entry) => entry.IDFactura)).toEqual(
+      ascii.registros.map((entry) => entry.IDFactura),
+    );
+    expect(arabicIndic.registros[0]?.EstadoRegistro).toBe("Correcto");
+
+    const wrongDate = await client.consultar(cabecera, {
+      Ejercicio: "٢٠٢٦",
+      Periodo: "07",
+      NumSerieFactura: "A/1",
+      FechaExpedicionFactura: "٢١-٠٧-٢٠٢٦",
+    });
+    const wrongYear = await client.consultar(cabecera, {
+      Ejercicio: "٢٠٢٥",
+      Periodo: "07",
+      NumSerieFactura: "A/1",
+    });
+    expect(wrongDate.ResultadoConsulta).toBe("SinDatos");
+    expect(wrongYear.ResultadoConsulta).toBe("SinDatos");
+  });
+
+  it("applies Arabic-Indic date bounds and pagination cursors to ASCII-dated records", async () => {
+    const aeat = createFakeAeat({ consultaPageSize: 1 });
+    for (const serial of ["A/1", "A/2"]) {
+      await aeat.client().submit(cabecera, [{ RegistroAlta: altaFixture(serial) }]);
+    }
+    const client = aeat.client();
+    const page1 = await client.consultar(cabecera, {
+      Ejercicio: "٢٠٢٦",
+      Periodo: "07",
+      RangoFechaExpedicion: { Desde: "١٩-٠٧-٢٠٢٦", Hasta: "٢١-٠٧-٢٠٢٦" },
+    });
+    expect(page1.IndicadorPaginacion).toBe("S");
+    expect(page1.registros[0]?.IDFactura.NumSerieFactura).toBe("A/1");
+    const page2 = await client.consultar(cabecera, {
+      Ejercicio: "٢٠٢٦",
+      Periodo: "07",
+      RangoFechaExpedicion: { Desde: "١٩-٠٧-٢٠٢٦", Hasta: "٢١-٠٧-٢٠٢٦" },
+      ClavePaginacion: {
+        ...page1.ClavePaginacion!,
+        FechaExpedicionFactura: "٢٠-٠٧-٢٠٢٦",
+      },
+    });
+    expect(page2.registros.map((entry) => entry.IDFactura.NumSerieFactura)).toEqual(["A/2"]);
+    const outside = await client.consultar(cabecera, {
+      Ejercicio: "٢٠٢٦",
+      Periodo: "07",
+      RangoFechaExpedicion: { Hasta: "١٩-٠٧-٢٠٢٦" },
+    });
+    expect(outside.ResultadoConsulta).toBe("SinDatos");
+  });
+
   it("narrows consulta by external reference, counterpart, and software identity", async () => {
     const aeat = createFakeAeat({ consultaPageSize: 10 });
     const foreignSystemCommon = withoutNif(SISTEMA);

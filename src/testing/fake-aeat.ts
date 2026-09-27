@@ -169,6 +169,11 @@ function periodoImputacionOf(ddMmYyyy: string): string {
   return `${year}-${month}`;
 }
 
+function asciiArabicIndicDigits(value: string): string {
+  // Consultation compares date values without changing stored invoice identities or echoed text.
+  return value.replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 0x0660));
+}
+
 export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
   const store = new Map<FacturaKey, StoredRecord>();
   // A duplicate echoes the petition that stored the earlier record, not the current request.
@@ -433,13 +438,14 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
         samePersona(recipient, cabecera.Destinatario),
       );
     });
-    const requestedPeriod = `${filtro.Ejercicio}-${filtro.Periodo}`;
+    const requestedPeriod = `${asciiArabicIndicDigits(filtro.Ejercicio)}-${filtro.Periodo}`;
     all = all.filter((s) => metadata.get(s.key)?.periodoImputacion === requestedPeriod);
     if (filtro.NumSerieFactura !== undefined) {
       all = all.filter((s) => s.key.split("|")[1] === filtro.NumSerieFactura);
     }
     if (filtro.FechaExpedicionFactura !== undefined) {
-      all = all.filter((s) => s.key.split("|")[2] === filtro.FechaExpedicionFactura);
+      const issueDate = asciiArabicIndicDigits(filtro.FechaExpedicionFactura);
+      all = all.filter((s) => s.key.split("|")[2] === issueDate);
     }
     if (filtro.RangoFechaExpedicion !== undefined) {
       const sortableDate = (value: string) => {
@@ -451,8 +457,8 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
       all = all.filter((s) => {
         const date = sortableDate(s.key.split("|")[2] ?? "");
         return (
-          (desde === undefined || date >= sortableDate(desde)) &&
-          (hasta === undefined || date <= sortableDate(hasta))
+          (desde === undefined || date >= sortableDate(asciiArabicIndicDigits(desde))) &&
+          (hasta === undefined || date <= sortableDate(asciiArabicIndicDigits(hasta)))
         );
       });
     }
@@ -488,7 +494,7 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
     // filtered set rather than throwing — a stale cursor is a caller bug this fake surfaces as
     // "start over", not a crash.
     if (filtro.ClavePaginacion !== undefined) {
-      const afterKey = `${filtro.ClavePaginacion.IDEmisorFactura}|${filtro.ClavePaginacion.NumSerieFactura}|${filtro.ClavePaginacion.FechaExpedicionFactura}`;
+      const afterKey = `${filtro.ClavePaginacion.IDEmisorFactura}|${filtro.ClavePaginacion.NumSerieFactura}|${asciiArabicIndicDigits(filtro.ClavePaginacion.FechaExpedicionFactura)}`;
       const idx = all.findIndex((s) => s.key === afterKey);
       all = idx >= 0 ? all.slice(idx + 1) : all;
     }
