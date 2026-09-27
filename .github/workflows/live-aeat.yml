@@ -17,6 +17,7 @@ on:
           - unicode-dates
           - text-trim
           - state-transitions
+          - first-record
         default: consult
         required: true
       excluded_regime:

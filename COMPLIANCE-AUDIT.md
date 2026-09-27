@@ -1537,6 +1537,38 @@ The existing read-only [`consult` run 36346728526](https://github.com/waitron-io
 then succeeded on the same main SHA and returned `SinDatos` for its unrelated
 `CI-CHECK` lookup. It did not resubmit either probe identity.
 
+### E35 first-record and chained-correction preproduction plan
+
+The manual `first-record` mode uses run-ID-specific `CI-FIRST-*` invoice
+identities, three distinct `IdSistemaInformatico` values (`F1`, `F2`,
+`F3`), and distinct run-specific installations for one certificate's issuer.
+It does not extend the monthly `CI` smoke-test chain. The first chain sends
+a first alta and then another alta that also claims `PrimerRegistro: "S"`
+under the same issuer and software-system identity. The second chain sends
+a first alta and a different invoice chained to its four-part
+`RegistroAnterior`. The third sends a first alta, a different invoice
+chained to that first alta but deliberately rejected by the published
+`RechazoPrevio: "S"` / no-`Subsanacion` rule, and then that rejected
+identity with the same predecessor and `Subsanacion: "S"` /
+`RechazoPrevio: "X"`. The mode waits for each response's
+`TiempoEsperaEnvio` before the next submission, logs every stage, and
+consults the records. It stops before the correction if the controlled
+rejection is not `Incorrecto`/`1161`.
+
+Before dispatch, the expected outcomes are: each fresh first alta
+`Correcto`; the second first-record claim stored as
+`AceptadoConErrores`/`2007`; the correctly chained second alta
+`Correcto`; the deliberate rejection `Incorrecto`/`1161` and absent
+from consulta before correction; and the correctly chained correction
+`Correcto` with stored `Subsanacion: S` and `RechazoPrevio: X`.
+These are hypotheses from E32 and the published rule, not live findings.
+A different line state/code, missing or different stored huella, or missing
+stored correction would narrow or contradict them. In particular,
+`Correcto` on the correction line alone does not prove that AEAT stored
+the corrected record: consulta must show the submitted huella and the
+correction flags where AEAT returns them. The probe does not change the
+library's hash, builder, validator, or fake.
+
 ## Audit state after the official-document closure
 
 ### Completed offline audit
