@@ -25,6 +25,36 @@ test("HTML fingerprints ignore page chrome but include FAQ text and links", () =
   assert.notEqual(meaningfulHtml(first), meaningfulHtml(first.replace("Rule A", "Rule B")));
 });
 
+test("HTML fingerprints exclude raw script and style content with whitespace in closing tags", () => {
+  const page =
+    '<main><p>Published rule</p><script>const example = \'<a href="/script-noise">noise</a>\';</script ><style>.x::after { content: "<a href=\\"/style-noise\\">" }</style ><a href="/published">Source</a></main>';
+  assert.equal(meaningfulHtml(page), "Published rule Source\n/published");
+});
+
+test("HTML fingerprints exclude malformed comments and their nested tag-like text", () => {
+  const page =
+    '<main><p>Published rule</p><a href="/published">Source</a><!-- <a href="/comment-noise">noise</a> -- ></main>';
+  assert.equal(meaningfulHtml(page), "Published rule Source\n/published");
+});
+
+test("HTML fingerprints ignore nested tag-like text in script data but keep following content", () => {
+  const page =
+    '<main><script>const value = "<a href=\'/noise\'>"; /* <script> */</script><p>Published rule</p><a href="/published">Source</a></main>';
+  assert.equal(meaningfulHtml(page), "Published rule Source\n/published");
+  assert.notEqual(meaningfulHtml(page), meaningfulHtml(page.replace("/published", "/updated")));
+  assert.notEqual(
+    meaningfulHtml(page),
+    meaningfulHtml(page.replace("Published rule", "Updated rule")),
+  );
+});
+
+test("HTML fingerprints retain the pinned spelling of text and link entities", () => {
+  assert.equal(
+    meaningfulHtml('<main><p>&iquest;Qu&eacute;?</p><a href="/rules?x=1&amp;y=2">Rules</a></main>'),
+    "&iquest;Qu&eacute;? Rules\n/rules?x=1&amp;y=2",
+  );
+});
+
 test("source inspection distinguishes unchanged, changed, new, and unreachable sources", async () => {
   const entries = [
     { id: "same", kind: "binary", url: "https://example.test/same" },
