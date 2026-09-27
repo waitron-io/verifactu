@@ -352,6 +352,49 @@ export function buildStateTransitionProbeRecords(options) {
   return { accepted, rejected, correction };
 }
 
+export function buildFirstRecordProbeRecords(options) {
+  const base = buildTestRecord(options);
+  const predecessor = (record) => ({ ...record.IDFactura, Huella: record.Huella });
+  const make = (suffix, systemId, chain, previous) => {
+    const record = {
+      ...base,
+      IDFactura: {
+        ...base.IDFactura,
+        NumSerieFactura: base.IDFactura.NumSerieFactura.replace("CI/", `CI-FIRST-${suffix}/`),
+      },
+      RefExterna: `CI-FIRST-${suffix}-${options.runId}`,
+      SistemaInformatico: {
+        ...base.SistemaInformatico,
+        IdSistemaInformatico: systemId,
+        NumeroInstalacion: `CI-FIRST-${options.runId}-${chain}`,
+      },
+      Encadenamiento: previous
+        ? { RegistroAnterior: predecessor(previous) }
+        : { PrimerRegistro: "S" },
+    };
+    return { ...record, Huella: computeHuella(record) };
+  };
+  const repeatedFirst = make("REPEAT-1", "F1", "R");
+  const chainedFirst = make("CHAIN-1", "F2", "C");
+  const correctionFirst = make("CORR-1", "F3", "X");
+  const rejected = { ...make("CORR-2", "F3", "X", correctionFirst), RechazoPrevio: "S" };
+  return {
+    repeated: {
+      first: repeatedFirst,
+      second: make("REPEAT-2", "F1", "R"),
+    },
+    chained: {
+      first: chainedFirst,
+      second: make("CHAIN-2", "F2", "C", chainedFirst),
+    },
+    correction: {
+      first: correctionFirst,
+      rejected,
+      corrected: { ...rejected, Subsanacion: "S", RechazoPrevio: "X" },
+    },
+  };
+}
+
 function stateSubmissionEvidence(result, record) {
   const line = result.RespuestaLinea?.find(
     (entry) => entry.IDFactura.NumSerieFactura === record.IDFactura.NumSerieFactura,
@@ -389,6 +432,132 @@ async function stateConsultaEvidence(client, header, record, year, month, stage)
     SubsanacionConsultada: stored?.DatosRegistroFacturacion?.Subsanacion,
     RechazoPrevioConsultado: stored?.DatosRegistroFacturacion?.RechazoPrevio,
   };
+}
+
+export async function submitFirstRecordProbe(
+  client,
+  cabecera,
+  consultaCabecera,
+  records,
+  year,
+  month,
+  report = () => {},
+  waitForSubmission = waitForNextSubmission,
+) {
+  const evidence = {};
+  let priorResponse;
+  let pendingRecord;
+  let lastSubmittedRecord;
+  let activeStage;
+  const send = async (key, record) => {
+    if (priorResponse) {
+      activeStage = `wait before ${key}`;
+      await withLiveStage(`wait before ${key}`, () =>
+        waitForSubmission(priorResponse.TiempoEsperaEnvio),
+      );
+    }
+    activeStage = key;
+    pendingRecord = record;
+    const response = await withLiveStage(key, () =>
+      client.submit(cabecera, [{ RegistroAlta: record }]),
+    );
+    priorResponse = response;
+    lastSubmittedRecord = record;
+    pendingRecord = undefined;
+    evidence[key] = stateSubmissionEvidence(response, record);
+    report(key, evidence[key]);
+    return evidence[key];
+  };
+  const consult = async (key, record) => {
+    activeStage = key;
+    evidence[key] = await stateConsultaEvidence(client, consultaCabecera, record, year, month, key);
+    report(key, evidence[key]);
+    return evidence[key];
+  };
+  const isControlCorrect = (entry) =>
+    entry.EstadoEnvio === "Correcto" && entry.EstadoRegistro === "Correcto";
+
+  const run = async () => {
+    if (!isControlCorrect(await send("repeatedFirst", records.repeated.first))) {
+      evidence.stoppedAfter = "repeatedFirst";
+      await consult("consultaRepeatedFirst", records.repeated.first);
+      return evidence;
+    }
+    await send("repeatedSecond", records.repeated.second);
+    await consult("consultaRepeatedFirst", records.repeated.first);
+    await consult("consultaRepeatedSecond", records.repeated.second);
+
+    if (!isControlCorrect(await send("chainedFirst", records.chained.first))) {
+      evidence.stoppedAfter = "chainedFirst";
+      await consult("consultaChainedFirst", records.chained.first);
+      return evidence;
+    }
+    await send("chainedSecond", records.chained.second);
+    await consult("consultaChainedFirst", records.chained.first);
+    await consult("consultaChainedSecond", records.chained.second);
+
+    if (!isControlCorrect(await send("correctionFirst", records.correction.first))) {
+      evidence.stoppedAfter = "correctionFirst";
+      await consult("consultaCorrectionFirst", records.correction.first);
+      return evidence;
+    }
+    const rejected = await send("rejected", records.correction.rejected);
+    await consult("consultaRejected", records.correction.rejected);
+    if (
+      rejected.EstadoEnvio !== "Incorrecto" ||
+      rejected.EstadoRegistro !== "Incorrecto" ||
+      rejected.CodigoErrorRegistro !== 1161
+    ) {
+      evidence.stoppedAfter = "rejected";
+      await consult("consultaCorrectionFirst", records.correction.first);
+      return evidence;
+    }
+    await send("corrected", records.correction.corrected);
+    await consult("consultaCorrectionFirst", records.correction.first);
+    await consult("consultaCorrected", records.correction.corrected);
+    evidence.incomplete =
+      [
+        [evidence.consultaRepeatedFirst, records.repeated.first],
+        [evidence.consultaRepeatedSecond, records.repeated.second],
+        [evidence.consultaChainedFirst, records.chained.first],
+        [evidence.consultaChainedSecond, records.chained.second],
+        [evidence.consultaCorrectionFirst, records.correction.first],
+        [evidence.consultaCorrected, records.correction.corrected],
+      ].some(
+        ([entry, record]) => !entry.RegistroEncontrado || entry.HuellaConsultada !== record.Huella,
+      ) ||
+      evidence.consultaRejected.RegistroEncontrado ||
+      (evidence.consultaCorrected.SubsanacionConsultada !== undefined &&
+        evidence.consultaCorrected.SubsanacionConsultada !== "S") ||
+      (evidence.consultaCorrected.RechazoPrevioConsultado !== undefined &&
+        evidence.consultaCorrected.RechazoPrevioConsultado !== "X");
+    return evidence;
+  };
+  try {
+    return await run();
+  } catch (error) {
+    evidence.stoppedAfter = activeStage;
+    evidence.error = (error instanceof Error ? error.message : String(error)).replace(
+      /\b[A-Z0-9]{9}\b/g,
+      "[NIF]",
+    );
+    const uncertainRecord = pendingRecord ?? lastSubmittedRecord;
+    if (uncertainRecord) {
+      try {
+        await consult("consultaAfterFailure", uncertainRecord);
+      } catch (consultaError) {
+        evidence.consultaAfterFailureError = (
+          consultaError instanceof Error ? consultaError.message : String(consultaError)
+        ).replace(/\b[A-Z0-9]{9}\b/g, "[NIF]");
+      }
+    }
+    report("failure", {
+      stoppedAfter: evidence.stoppedAfter,
+      error: evidence.error,
+      consultaAfterFailureError: evidence.consultaAfterFailureError,
+    });
+    return evidence;
+  }
 }
 
 export async function submitStateTransitionProbe(
@@ -925,10 +1094,11 @@ async function main() {
       "unicode-dates",
       "text-trim",
       "state-transitions",
+      "first-record",
     ].includes(mode)
   ) {
     throw new Error(
-      "Mode must be consult, submit, mixed-regime, mixed-regime-consult, decimal-variant, unicode-dates, text-trim, or state-transitions",
+      "Mode must be consult, submit, mixed-regime, mixed-regime-consult, decimal-variant, unicode-dates, text-trim, state-transitions, or first-record",
     );
   }
   const nif = required("AEAT_TEST_NIF");
@@ -975,6 +1145,55 @@ async function main() {
   };
   const cabecera = submissionHeader(obligadoEmision);
   const runId = process.env.GITHUB_RUN_ID ?? String(now.getTime());
+
+  if (mode === "first-record") {
+    const records = buildFirstRecordProbeRecords({
+      nif,
+      name,
+      systemNif: required("AEAT_TEST_SYSTEM_NIF"),
+      systemName: required("AEAT_TEST_SYSTEM_NAME"),
+      recipientNif: recipient.NIF,
+      recipientName: recipient.NombreRazon,
+      now,
+      runId,
+    });
+    const summarize = (record) => ({
+      NumSerieFactura: record.IDFactura.NumSerieFactura,
+      Huella: record.Huella,
+      IdSistemaInformatico: record.SistemaInformatico.IdSistemaInformatico,
+      NumeroInstalacion: record.SistemaInformatico.NumeroInstalacion,
+      PrimerRegistro: record.Encadenamiento.PrimerRegistro,
+      RegistroAnterior: record.Encadenamiento.RegistroAnterior?.NumSerieFactura,
+      Subsanacion: record.Subsanacion,
+      RechazoPrevio: record.RechazoPrevio,
+    });
+    process.stdout.write(
+      `AEAT first-record plan: ${JSON.stringify({
+        repeated: Object.fromEntries(
+          Object.entries(records.repeated).map(([key, record]) => [key, summarize(record)]),
+        ),
+        chained: Object.fromEntries(
+          Object.entries(records.chained).map(([key, record]) => [key, summarize(record)]),
+        ),
+        correction: Object.fromEntries(
+          Object.entries(records.correction).map(([key, record]) => [key, summarize(record)]),
+        ),
+      })}\n`,
+    );
+    const evidence = await submitFirstRecordProbe(
+      client,
+      cabecera,
+      consultaCabecera,
+      records,
+      year,
+      month,
+      (stage, entry) =>
+        process.stdout.write(`AEAT first-record ${stage}: ${JSON.stringify(entry)}\n`),
+    );
+    process.stdout.write(`AEAT first-record response: ${JSON.stringify(evidence)}\n`);
+    if (evidence.stoppedAfter || evidence.incomplete) process.exitCode = 1;
+    return;
+  }
 
   if (mode === "state-transitions") {
     const records = buildStateTransitionProbeRecords({
