@@ -381,3 +381,5 @@ console.log(resolveEstadoEfectivo(testResponse.RespuestaLinea[0])); // accepted
 
 El cliente, serializador y analizador de respuestas son los mismos. Prueba reintentos,
 duplicados, consultas y anulaciones así antes de conectar con preproducción.
+El transporte falso no separa el servicio de requerimientos de la AEAT; consulta sus
+[límites de prueba](/verifactu/es/guides/testing/).
