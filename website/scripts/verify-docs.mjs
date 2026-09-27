@@ -83,10 +83,8 @@ assert.doesNotThrow(() => assertValid(rectificativa));
       "guides/submit.md",
       "guides/testing.md",
       "guides/validation.md",
-      "index.mdx",
       "start/getting-started.md",
     ]);
-    const home = blocks(locale, "index", "", "mdx");
     const submit = blocks(locale, "submit");
     const qr = blocks(locale, "qr");
     const facade = blocks(locale, "facade");
@@ -99,9 +97,8 @@ assert.doesNotThrow(() => assertValid(rectificativa));
     assert.equal(submit.length, 8, `${locale} submit guide must have eight TypeScript blocks`);
     assert.equal(qr.length, 3, `${locale} QR guide must have three TypeScript blocks`);
     assert.equal(testing.length, 1, `${locale} testing guide must have one TypeScript block`);
-    assert.equal(home.length, 1, `${locale} homepage must have one TypeScript block`);
+    assert.equal(gettingStarted.length, 2, `${locale} getting-started must build and file`);
     for (const [page, snippets] of [
-      ["getting-started", gettingStarted],
       ["alta-record", alta],
       ["huella-chain", chain],
       ["validation", validation],
@@ -112,31 +109,43 @@ assert.doesNotThrow(() => assertValid(rectificativa));
     }
 
     const setup = `${submit[0]}\n${submit[1]}`;
-    save(
-      `${locale}-homepage`,
-      `import assert from "node:assert/strict";
-${home[0]}
-assert.deepEqual(validate(record), []);
-assert.match(record.Huella, /^[0-9A-F]{64}$/);
-`,
-    );
     const saleSetup = `${submit[0]}\n${submit[1].split("\nconst first =")[0]}`;
+    const facadeSetup = `${submit[0].slice(submit[0].indexOf("const sistema:"))}\n${submit[1].split("\nconst first =")[0]}`;
     save(
       `${locale}-facade`,
       `import assert from "node:assert/strict";
 import { createFakeAeat } from "../../dist/testing/fake-aeat.js";
-${saleSetup}
-const fake = createFakeAeat({ serverNow: new Date("2026-07-21T00:00:00Z") });
-const certificateFetch = fake.fetch;
 ${facade[0]}
-assert.equal(response.RespuestaLinea.length, 2);
-assert.equal(second.Encadenamiento.RegistroAnterior?.Huella, first.Huella);
+${facadeSetup}
+const fake = createFakeAeat({ serverNow: new Date("2026-07-21T00:00:00Z") });
+const saved: RegistroAlta[] = [];
+const responses: RespuestaSuministro[] = [];
+const waits: number[] = [];
+const store: InvoiceStore = {
+  reserveAndLoad: async () => ({ serial: "T01/000123", previous: null }),
+  saveRecord: async (record) => { saved.push(record); },
+  saveResponse: async (response) => { responses.push(response); },
+  scheduleNext: async (ms) => { waits.push(ms); },
+};
+const filed = await fileSale(store, sale, cabecera, fake.fetch);
+assert.equal(saved[0], filed.record);
+assert.equal(responses[0]?.CSV, "CSV-00000001");
+assert.equal(filed.response.RespuestaLinea.length, 1);
+assert.equal(waits[0], filed.response.TiempoEsperaEnvio! * 1000);
+assert.equal(filed.found.ResultadoConsulta, "ConDatos");
+assert.equal(filed.found.registros[0]?.DatosRegistroFacturacion.Huella, filed.record.Huella);
+assert.equal(new URL(filed.qrUrl).searchParams.get("importe"), "12.10");
 `,
     );
     const starterOutputs = [
       ...gettingStarted[0].matchAll(/^console\.log\(.*\);\s*\/\/\s*(.+)$/gm),
     ].map((match) => match[1]);
     assert.equal(starterOutputs.length, 4, `${locale} getting-started output comments`);
+    assert.equal(
+      expectedLogs(gettingStarted[1]),
+      JSON.stringify(["CSV-00000001", "Correcto", "ConDatos", "12.10"]),
+      `${locale} getting-started response comments`,
+    );
     const recordFixture = gettingStarted[0].split("\nconsole.log(")[0].replace(", validate,", ",");
     save(
       `${locale}-getting-started`,
@@ -144,10 +153,13 @@ assert.equal(second.Encadenamiento.RegistroAnterior?.Huella, first.Huella);
 const outputs: unknown[][] = [];
 const console = { log: (...items: unknown[]) => outputs.push(items) };
 ${gettingStarted[0]}
+${gettingStarted[1]}
 assert.equal(outputs[0]?.[0], ${JSON.stringify(starterOutputs[0])});
 assert.equal(outputs[1]?.[0], ${JSON.stringify(starterOutputs[1])});
 assert.match(String(outputs[2]?.[0]), /^[0-9A-F]{64}$/);
 assert.deepEqual(outputs[3]?.[0], []);
+assert.deepEqual(outputs.slice(4).map((items) => items[0]), ["CSV-00000001", "Correcto", "ConDatos", "12.10"]);
+assert.equal(found.registros[0]?.DatosRegistroFacturacion.Huella, record.Huella);
 `,
     );
     save(

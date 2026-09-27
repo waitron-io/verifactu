@@ -1,6 +1,6 @@
 ---
 title: Getting started
-description: Install the library and build your first invoice record.
+description: Build an invoice record, then file and query it locally.
 ---
 
 Install the package in a TypeScript project:
@@ -9,8 +9,9 @@ Install the package in a TypeScript project:
 npm install @waitron/verifactu
 ```
 
-Give your deployed invoicing system a `SistemaInformatico` identity. These values describe the
-software installation, not an individual invoice. Use your real registered details in production.
+The smallest useful path starts with a sale. Your application assigns its invoice number and
+supplies the software identity. This example uses a fixed summer date so you can check the output;
+use the actual issue time and your own identity in your application.
 
 ```ts
 import { buildAltaRecord, validate, type SistemaInformatico } from "@waitron/verifactu";
@@ -49,16 +50,45 @@ console.log(record.Huella); // 64 uppercase hexadecimal characters
 console.log(validate(record)); // [] for this example
 ```
 
-Use `NIF` for a Spanish software producer. For a producer identified outside Spain, replace `NIF`
-with `IDOtro`; never provide both. `IdSistemaInformatico` must contain exactly two uppercase A-Z
-letters or digits. The software name and both `TipoUsoPosible...` flags must not be blank. These are
-local checks; only AEAT can confirm that the identity is registered.
+The record contains the formatted invoice date, total and calculated huella. `validate` checks
+local rules, so stop on any error before filing. The first record uses `PrimerRegistro`; later
+records must name the preceding stored record. [See the four predecessor fields](/verifactu/en/guides/huella-chain/).
 
-`offsetMinutes` is the issuing location's UTC offset **at issue time**. Spain's mainland uses 120
-minutes in summer and 60 in winter; derive it from the issuing location's calendar rather than
-hard-coding it. `buildAltaRecord` formats amounts and dates once and hashes those same strings.
-Do not reformat a record before sending it.
+## File it against the local fake
 
-The first record uses `PrimerRegistro`. For the next invoice, copy the preceding record's
-identity and huella into `RegistroAnterior`; [the chain guide](/verifactu/en/guides/huella-chain/)
-shows the exact shape. Then [submit the record](/verifactu/en/guides/submit/).
+The fake AEAT exercises the same XML client and response parser without a certificate or network
+call. Continue in the same file:
+
+```ts
+import { buildQrPayload } from "@waitron/verifactu";
+import { createFakeAeat } from "@waitron/verifactu/testing";
+
+const fake = createFakeAeat({ serverNow: new Date("2026-07-21T00:00:00Z") });
+const client = fake.client();
+const cabecera = { ObligadoEmision: { NombreRazon: sistema.NombreRazon, NIF: sistema.NIF } };
+const response = await client.submit(cabecera, [{ RegistroAlta: record }]);
+console.log(response.CSV); // CSV-00000001
+console.log(response.RespuestaLinea[0]?.EstadoRegistro); // Correcto
+
+const found = await client.consultar(cabecera, {
+  Ejercicio: "2026",
+  Periodo: "07",
+  NumSerieFactura: record.IDFactura.NumSerieFactura,
+  FechaExpedicionFactura: record.IDFactura.FechaExpedicionFactura,
+});
+console.log(found.ResultadoConsulta); // ConDatos
+
+const qrUrl = buildQrPayload(record, "preproduction");
+console.log(new URL(qrUrl).searchParams.get("importe")); // 12.10
+```
+
+`CSV-00000001` is a deterministic **fake** receipt, not an AEAT receipt. In a deployment, save the
+completed record and the real CSV and response lines durably; inspect each line and obey AEAT's
+wait time. Pass `qrUrl` to the [QR renderer you choose](/verifactu/en/guides/qr/). The library
+returns a URL, not an image.
+
+[Connect your invoice store, certificate-bearing transport and real preproduction endpoint](/verifactu/en/guides/submit/).
+A certificate authenticates that connection; this local example sends nothing to AEAT. The
+[facade guide](/verifactu/en/guides/facade/) shows a shorter `buildAlta` call when your store already
+has the preceding record. Your system remains responsible for numbering, chain order, retries
+and storage; [read the SIF boundary](/verifactu/en/start/not-a-sif/) before deployment.

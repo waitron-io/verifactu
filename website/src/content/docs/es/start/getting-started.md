@@ -1,6 +1,6 @@
 ---
 title: Primeros pasos
-description: Instala la biblioteca y crea tu primer registro de factura.
+description: Crea un registro, envíalo y consúltalo sin salir de tu equipo.
 ---
 
 Instala el paquete en un proyecto TypeScript:
@@ -9,8 +9,9 @@ Instala el paquete en un proyecto TypeScript:
 npm install @waitron/verifactu
 ```
 
-Asigna una identidad `SistemaInformatico` a tu instalación. Estos datos describen el programa,
-no cada factura. En producción debes usar tus datos reales.
+El recorrido más corto empieza con una venta. Tu aplicación asigna el número de factura y
+facilita la identidad del programa. El ejemplo fija una fecha de verano para que puedas comprobar
+el resultado. En tu aplicación usa la fecha real y la identidad de tu sistema.
 
 ```ts
 import { buildAltaRecord, validate, type SistemaInformatico } from "@waitron/verifactu";
@@ -49,17 +50,48 @@ console.log(record.Huella); // 64 caracteres hexadecimales en mayúsculas
 console.log(validate(record)); // [] en este ejemplo
 ```
 
-Usa `NIF` si el productor del programa es español. Si se identifica fuera de España, sustituye
-`NIF` por `IDOtro`; no indiques ambos. `IdSistemaInformatico` debe contener exactamente dos letras
-mayúsculas de la A a la Z o dígitos. El nombre del programa y los dos indicadores
-`TipoUsoPosible...` no pueden estar vacíos. Son comprobaciones locales; solo la AEAT puede confirmar
-que la identidad está censada.
+El registro contiene la fecha y el total con el formato de envío y la huella calculada.
+`validate` comprueba las reglas locales; detén el envío si hay un error. El primer registro usa
+`PrimerRegistro`; los siguientes deben identificar el registro anterior que guardaste.
+[Consulta sus cuatro campos](/verifactu/es/guides/huella-chain/).
 
-`offsetMinutes` es el desfase UTC del lugar de expedición **en el momento de emitir**. La España
-peninsular usa 120 minutos en verano y 60 en invierno. Calcúlalo según el calendario del lugar; no
-lo fijes como una constante. `buildAltaRecord` da formato a fechas e importes una sola vez y
-calcula la huella a partir de esos mismos textos. No cambies el formato antes de enviar.
+## Envíalo a la AEAT falsa local
 
-El primer registro usa `PrimerRegistro`. Para la siguiente factura copia la identidad y la
-huella del registro anterior en `RegistroAnterior`. La [guía de la cadena](/verifactu/es/guides/huella-chain/)
-muestra los cuatro campos. Después [envía el registro](/verifactu/es/guides/submit/).
+La AEAT falsa usa el mismo cliente XML y el mismo analizador de respuestas sin certificado ni
+llamada de red. Continúa en el mismo archivo:
+
+```ts
+import { buildQrPayload } from "@waitron/verifactu";
+import { createFakeAeat } from "@waitron/verifactu/testing";
+
+const fake = createFakeAeat({ serverNow: new Date("2026-07-21T00:00:00Z") });
+const client = fake.client();
+const cabecera = { ObligadoEmision: { NombreRazon: sistema.NombreRazon, NIF: sistema.NIF } };
+const response = await client.submit(cabecera, [{ RegistroAlta: record }]);
+console.log(response.CSV); // CSV-00000001
+console.log(response.RespuestaLinea[0]?.EstadoRegistro); // Correcto
+
+const found = await client.consultar(cabecera, {
+  Ejercicio: "2026",
+  Periodo: "07",
+  NumSerieFactura: record.IDFactura.NumSerieFactura,
+  FechaExpedicionFactura: record.IDFactura.FechaExpedicionFactura,
+});
+console.log(found.ResultadoConsulta); // ConDatos
+
+const qrUrl = buildQrPayload(record, "preproduction");
+console.log(new URL(qrUrl).searchParams.get("importe")); // 12.10
+```
+
+`CSV-00000001` es un justificante **falso** y previsible, no un CSV de la AEAT. En un sistema
+desplegado guarda de forma duradera el registro terminado, el CSV real y cada línea de respuesta,
+y respeta el tiempo de espera que indique la AEAT. Entrega `qrUrl` al
+[generador de QR que elijas](/verifactu/es/guides/qr/). La biblioteca devuelve una URL, no una
+imagen.
+
+[Conecta tu almacenamiento, la conexión con certificado y preproducción real](/verifactu/es/guides/submit/).
+El certificado autentica esa conexión; este ejemplo local no envía nada a la AEAT. La
+[guía de la fachada](/verifactu/es/guides/facade/) muestra una llamada `buildAlta` más corta si
+tu almacenamiento ya conoce el registro anterior. Tu sistema sigue a cargo de la numeración, la
+cadena, los reintentos y el almacenamiento. [Lee los límites del SIF](/verifactu/es/start/not-a-sif/)
+antes de desplegarlo.

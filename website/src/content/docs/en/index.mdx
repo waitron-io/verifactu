@@ -1,64 +1,37 @@
 ---
-title: Veri*Factu records for TypeScript
-description: Build, chain, validate, and send invoicing records to AEAT.
+title: Add Veri*Factu to your TypeScript invoicing system
+description: Build and send AEAT invoice records while keeping your own workflow and storage.
 template: splash
 hero:
-  tagline: Build the records your invoicing system sends to Spain's tax agency.
+  tagline: Turn an issued invoice into a checked, chained record for Spain's tax agency.
   actions:
-    - text: Get started
+    - text: Build your first record
       link: /verifactu/en/start/getting-started/
       icon: right-arrow
-    - text: Send records to AEAT
+    - text: See the full filing path
       link: /verifactu/en/guides/submit/
       variant: minimal
 ---
 
-`@waitron/verifactu` builds alta and cancellation records, calculates their huella hashes, checks
-them, prepares QR payloads, and sends SOAP requests. You own invoice numbering, durable storage,
-chain order, and the client certificate.
+Your invoicing system knows when a sale becomes an invoice. Spain's Veri*Factu rules also call for
+an invoice record with a **huella** (hash), a link to the preceding record, and a QR lookup URL.
+You need to send the record to the AEAT, Spain's tax agency, and handle its response.
+
+`@waitron/verifactu` gives your TypeScript code the protocol pieces: record construction,
+hash chaining, validation, XML, QR payloads, and AEAT response parsing. Its API keeps no invoice
+or chain state. You choose the database, numbering and invoice workflow, certificate-bearing HTTP
+transport, and QR renderer.
+
+Choose it when you already have an invoicing application and want to keep those choices. If you
+need built-in series storage, record signing or QR images, [compare other starting points](/verifactu/en/start/introduction/)
+before adopting this smaller protocol core.
 
 ```sh
 npm install @waitron/verifactu
 ```
 
-```ts
-import { buildAltaRecord, validate, type SistemaInformatico } from "@waitron/verifactu";
+[Build a first record and send it to the local fake AEAT](/verifactu/en/start/getting-started/).
+Then [connect your own storage and transport](/verifactu/en/guides/submit/).
 
-const sistema: SistemaInformatico = {
-  NombreRazon: "Example SL",
-  NIF: "89890001K",
-  NombreSistemaInformatico: "Example POS",
-  IdSistemaInformatico: "01",
-  Version: "1.0",
-  NumeroInstalacion: "001",
-  TipoUsoPosibleSoloVerifactu: "S",
-  TipoUsoPosibleMultiOT: "N",
-  IndicadorMultiplesOT: "N",
-};
-
-const record = buildAltaRecord({
-  IDEmisorFactura: "89890001K",
-  NumSerieFactura: "T01/000123",
-  FechaExpedicionFactura: new Date("2026-07-20T12:00:00Z"),
-  NombreRazonEmisor: "Example SL",
-  TipoFactura: "F2",
-  DescripcionOperacion: "Coffee and lunch",
-  Desglose: [{ ClaveRegimen: "01", CalificacionOperacion: "S1", TipoImpositivo: "21", BaseImponibleOimporteNoSujeto: "10.00", CuotaRepercutida: "2.10" }],
-  CuotaTotal: "2.10",
-  ImporteTotal: "12.10",
-  Encadenamiento: { PrimerRegistro: "S" },
-  SistemaInformatico: sistema,
-  generadoEn: new Date("2026-07-20T12:00:00Z"),
-  offsetMinutes: 120,
-});
-
-if (validate(record).some((issue) => issue.severity === "error")) {
-  throw new Error("Record failed validation");
-}
-```
-
-Use your own system identity, then follow [Getting started](/verifactu/en/start/getting-started/)
-or the complete [sale-to-response walkthrough](/verifactu/en/guides/submit/).
-
-This library is **a tool for building a SIF, not a SIF itself**. A deployed invoicing system must
-meet its own legal obligations. [Understand the boundary](/verifactu/en/start/not-a-sif/).
+This package helps you build a **SIF**, a deployed invoicing system. It is not a complete SIF by
+itself. [Check what your system still has to do](/verifactu/en/start/not-a-sif/).
