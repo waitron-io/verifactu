@@ -231,7 +231,7 @@ async function loadCertificate() {
 }
 
 function buildTestRecordWith(
-  { nif, name, systemNif, systemName, recipientNif, recipientName, now, runId },
+  { nif, name, systemNif, systemName, recipientNif, recipientName, now, generatedAt, runId },
   probe,
 ) {
   const { year, month, day, offsetMinutes } = madridClock(now);
@@ -261,7 +261,7 @@ function buildTestRecordWith(
       TipoUsoPosibleMultiOT: "N",
       IndicadorMultiplesOT: "N",
     },
-    generadoEn: now,
+    generadoEn: generatedAt ?? now,
     offsetMinutes,
   });
 }
@@ -443,19 +443,21 @@ export async function submitFirstRecordProbe(
   month,
   report = () => {},
   waitForSubmission = waitForNextSubmission,
+  refreshCorrection = () => records.correction,
 ) {
   const evidence = {};
   let priorResponse;
   let pendingRecord;
   let lastSubmittedRecord;
   let activeStage;
-  const send = async (key, record) => {
+  const send = async (key, recordOrFactory) => {
     if (priorResponse) {
       activeStage = `wait before ${key}`;
       await withLiveStage(`wait before ${key}`, () =>
         waitForSubmission(priorResponse.TiempoEsperaEnvio),
       );
     }
+    const record = typeof recordOrFactory === "function" ? recordOrFactory() : recordOrFactory;
     activeStage = key;
     pendingRecord = record;
     const response = await withLiveStage(key, () =>
@@ -496,33 +498,41 @@ export async function submitFirstRecordProbe(
     await consult("consultaChainedFirst", records.chained.first);
     await consult("consultaChainedSecond", records.chained.second);
 
-    if (!isControlCorrect(await send("correctionFirst", records.correction.first))) {
+    let correctionRecords;
+    if (
+      !isControlCorrect(
+        await send("correctionFirst", () => {
+          correctionRecords = refreshCorrection();
+          return correctionRecords.first;
+        }),
+      )
+    ) {
       evidence.stoppedAfter = "correctionFirst";
-      await consult("consultaCorrectionFirst", records.correction.first);
+      await consult("consultaCorrectionFirst", correctionRecords.first);
       return evidence;
     }
-    const rejected = await send("rejected", records.correction.rejected);
-    await consult("consultaRejected", records.correction.rejected);
+    const rejected = await send("rejected", correctionRecords.rejected);
+    await consult("consultaRejected", correctionRecords.rejected);
     if (
       rejected.EstadoEnvio !== "Incorrecto" ||
       rejected.EstadoRegistro !== "Incorrecto" ||
       rejected.CodigoErrorRegistro !== 1161
     ) {
       evidence.stoppedAfter = "rejected";
-      await consult("consultaCorrectionFirst", records.correction.first);
+      await consult("consultaCorrectionFirst", correctionRecords.first);
       return evidence;
     }
-    await send("corrected", records.correction.corrected);
-    await consult("consultaCorrectionFirst", records.correction.first);
-    await consult("consultaCorrected", records.correction.corrected);
+    await send("corrected", correctionRecords.corrected);
+    await consult("consultaCorrectionFirst", correctionRecords.first);
+    await consult("consultaCorrected", correctionRecords.corrected);
     evidence.incomplete =
       [
         [evidence.consultaRepeatedFirst, records.repeated.first],
         [evidence.consultaRepeatedSecond, records.repeated.second],
         [evidence.consultaChainedFirst, records.chained.first],
         [evidence.consultaChainedSecond, records.chained.second],
-        [evidence.consultaCorrectionFirst, records.correction.first],
-        [evidence.consultaCorrected, records.correction.corrected],
+        [evidence.consultaCorrectionFirst, correctionRecords.first],
+        [evidence.consultaCorrected, correctionRecords.corrected],
       ].some(
         ([entry, record]) => !entry.RegistroEncontrado || entry.HuellaConsultada !== record.Huella,
       ) ||
@@ -1147,7 +1157,7 @@ async function main() {
   const runId = process.env.GITHUB_RUN_ID ?? String(now.getTime());
 
   if (mode === "first-record") {
-    const records = buildFirstRecordProbeRecords({
+    const probeOptions = {
       nif,
       name,
       systemNif: required("AEAT_TEST_SYSTEM_NIF"),
@@ -1156,12 +1166,14 @@ async function main() {
       recipientName: recipient.NombreRazon,
       now,
       runId,
-    });
+    };
+    const records = buildFirstRecordProbeRecords(probeOptions);
     const summarize = (record) => ({
       NumSerieFactura: record.IDFactura.NumSerieFactura,
       Huella: record.Huella,
       IdSistemaInformatico: record.SistemaInformatico.IdSistemaInformatico,
       NumeroInstalacion: record.SistemaInformatico.NumeroInstalacion,
+      FechaHoraHusoGenRegistro: record.FechaHoraHusoGenRegistro,
       PrimerRegistro: record.Encadenamiento.PrimerRegistro,
       RegistroAnterior: record.Encadenamiento.RegistroAnterior?.NumSerieFactura,
       Subsanacion: record.Subsanacion,
@@ -1175,11 +1187,24 @@ async function main() {
         chained: Object.fromEntries(
           Object.entries(records.chained).map(([key, record]) => [key, summarize(record)]),
         ),
-        correction: Object.fromEntries(
-          Object.entries(records.correction).map(([key, record]) => [key, summarize(record)]),
-        ),
       })}\n`,
     );
+    const refreshCorrection = () => {
+      const correction = buildFirstRecordProbeRecords({
+        ...probeOptions,
+        generatedAt: new Date(),
+      }).correction;
+      process.stdout.write(
+        "AEAT first-record correction plan: " +
+          JSON.stringify(
+            Object.fromEntries(
+              Object.entries(correction).map(([key, record]) => [key, summarize(record)]),
+            ),
+          ) +
+          "\n",
+      );
+      return correction;
+    };
     const evidence = await submitFirstRecordProbe(
       client,
       cabecera,
@@ -1189,6 +1214,8 @@ async function main() {
       month,
       (stage, entry) =>
         process.stdout.write(`AEAT first-record ${stage}: ${JSON.stringify(entry)}\n`),
+      waitForNextSubmission,
+      refreshCorrection,
     );
     process.stdout.write(`AEAT first-record response: ${JSON.stringify(evidence)}\n`);
     if (evidence.stoppedAfter || evidence.incomplete) process.exitCode = 1;
