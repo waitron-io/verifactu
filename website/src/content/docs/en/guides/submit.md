@@ -157,6 +157,14 @@ Warnings deserve review; errors block this voluntary submission. Do not use this
 gate for records your SIF already preserved and AEAT requested. Local validation does not replace
 AEAT's response, which is authoritative for each submitted record.
 
+If the software ID fails validation, `issue.field` is
+`SistemaInformatico.IdSistemaInformatico` for both `ID_SISTEMA_LENGTH` and
+`ID_SISTEMA_CHARSET`. For example, `assertValid` reports a three-character ID as:
+
+```text
+SistemaInformatico.IdSistemaInformatico: IdSistemaInformatico must contain exactly 2 characters (ID_SISTEMA_LENGTH)
+```
+
 ## Supply a certificate-bearing fetch
 
 AEAT authenticates the connection with a client certificate (mTLS). The package does not read

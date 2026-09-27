@@ -392,13 +392,13 @@ describe("validate", () => {
       "SistemaInformatico.NombreSistemaInformatico: NombreSistemaInformatico is at most 30 characters (NOMBRE_SISTEMA_LENGTH)",
     );
     expect((failure as Error).message).toContain(
-      "IdSistemaInformatico: IdSistemaInformatico must contain exactly 2 characters (ID_SISTEMA_LENGTH)",
+      "SistemaInformatico.IdSistemaInformatico: IdSistemaInformatico must contain exactly 2 characters (ID_SISTEMA_LENGTH)",
     );
     expect((failure as VerifactuValidationError).issues).toEqual([
       {
         code: "ID_SISTEMA_LENGTH",
         severity: "error",
-        field: "IdSistemaInformatico",
+        field: "SistemaInformatico.IdSistemaInformatico",
         message: "IdSistemaInformatico must contain exactly 2 characters",
       },
       {
@@ -4700,7 +4700,7 @@ describe("validate — pins the exact field, message and severity for every Vali
     {
       description: "ID_SISTEMA_LENGTH",
       code: "ID_SISTEMA_LENGTH",
-      field: "IdSistemaInformatico",
+      field: "SistemaInformatico.IdSistemaInformatico",
       message: "IdSistemaInformatico must contain exactly 2 characters",
       mutate: (r) => {
         r.SistemaInformatico = { ...SISTEMA, IdSistemaInformatico: "WTX" };
@@ -4709,7 +4709,7 @@ describe("validate — pins the exact field, message and severity for every Vali
     {
       description: "ID_SISTEMA_CHARSET",
       code: "ID_SISTEMA_CHARSET",
-      field: "IdSistemaInformatico",
+      field: "SistemaInformatico.IdSistemaInformatico",
       message: "IdSistemaInformatico must use exactly 2 uppercase A-Z letters or digits",
       mutate: (r) => {
         r.SistemaInformatico = { ...SISTEMA, IdSistemaInformatico: "W-" };

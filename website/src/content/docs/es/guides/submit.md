@@ -159,6 +159,14 @@ Revisa los avisos; los errores impiden este envío voluntario. No uses este cont
 validación local no sustituye a la respuesta de la AEAT, que determina el resultado de cada
 registro enviado.
 
+Si falla la validación del identificador del software, `issue.field` es
+`SistemaInformatico.IdSistemaInformatico` tanto para `ID_SISTEMA_LENGTH` como para
+`ID_SISTEMA_CHARSET`. Por ejemplo, `assertValid` informa así de un identificador de tres caracteres:
+
+```text
+SistemaInformatico.IdSistemaInformatico: IdSistemaInformatico must contain exactly 2 characters (ID_SISTEMA_LENGTH)
+```
+
 ## Proporciona un fetch con certificado
 
 La AEAT autentica la conexión con un certificado de cliente (mTLS). El paquete no lee
