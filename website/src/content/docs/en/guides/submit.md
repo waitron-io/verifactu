@@ -159,7 +159,8 @@ AEAT's response, which is authoritative for each submitted record.
 
 If the software ID fails validation, `issue.field` is
 `SistemaInformatico.IdSistemaInformatico` for both `ID_SISTEMA_LENGTH` and
-`ID_SISTEMA_CHARSET`. For example, `assertValid` reports a three-character ID as:
+`ID_SISTEMA_CHARSET`. For example, the `assertValid` error message includes this excerpt
+for a three-character ID:
 
 ```text
 SistemaInformatico.IdSistemaInformatico: IdSistemaInformatico must contain exactly 2 characters (ID_SISTEMA_LENGTH)

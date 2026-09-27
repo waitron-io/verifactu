@@ -161,7 +161,8 @@ registro enviado.
 
 Si falla la validación del identificador del software, `issue.field` es
 `SistemaInformatico.IdSistemaInformatico` tanto para `ID_SISTEMA_LENGTH` como para
-`ID_SISTEMA_CHARSET`. Por ejemplo, `assertValid` informa así de un identificador de tres caracteres:
+`ID_SISTEMA_CHARSET`. Por ejemplo, el mensaje de error de `assertValid` incluye este fragmento
+para un identificador de tres caracteres:
 
 ```text
 SistemaInformatico.IdSistemaInformatico: IdSistemaInformatico must contain exactly 2 characters (ID_SISTEMA_LENGTH)
