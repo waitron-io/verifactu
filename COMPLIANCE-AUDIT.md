@@ -1464,7 +1464,7 @@ assign codes to every cell. The library does not select a correction operation f
 legal eligibility, live error precedence, clock tolerance, and long-lived history against AEAT
 rather than treating the fake as an authority.
 
-### E32 planned state-transition preproduction probe
+### E32 state-transition preproduction probe
 
 The manual `state-transitions` mode uses two run-ID-specific identities,
 `CI-STATE-DUP/<date>/<run ID>` and `CI-STATE-REJ/<date>/<run ID>`, apart from
@@ -1498,6 +1498,44 @@ flags are not hash inputs. Consulta must show the resulting state and, if AEAT
 returns them, `Subsanacion`/`RechazoPrevio` flags to distinguish the stored
 correction; the hash checks only that its hashed content matches the request.
 The probe does not change the library, the fake, or a hash rule.
+
+#### Live result, 27 September 2026
+
+Manual [state-transition run 36346478997](https://github.com/waitron-io/verifactu/actions/runs/36346478997)
+completed successfully on main `761d5478071451db96d9a49df1adcacf523a3a56`.
+The duplicate identity was `CI-STATE-DUP/20260927/36346478997` with submitted
+huella `B2D1C29974F00533BF907D4E73FBE820987B7F7E27576A796F3A921D2EB178A3`.
+The rejection and correction used the same invoice identity,
+`CI-STATE-REJ/20260927/36346478997`, and the same huella,
+`81008449F648BEE15EA29FA5E042D3871DF10CF8F361CD75F718FE0157E88F26`.
+The only correction changes were `Subsanacion: "S"` and `RechazoPrevio: "X"`;
+neither flag contributes to the huella. AEAT returned `TiempoEsperaEnvio: 60`
+seconds after each of the first three submissions, and the workflow observed
+each wait before its next submission.
+
+| Stage                         | Exact AEAT response                                                                                                                                                                                                                                                 | Issuer consulta                                                                                                  |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Initial alta                  | `EstadoEnvio: Correcto`; line `EstadoRegistro: Correcto`, `Operacion: Alta`; no error code or description                                                                                                                                                           | `ConDatos`, stored `Correcto`, submitted huella matched                                                          |
+| Identical retry               | `EstadoEnvio: Incorrecto`; line `Incorrecto`, code `3000`, “Registro de facturación duplicado.”; `RegistroDuplicado.IdPeticionRegistroDuplicado: 20260927220152034033`, `EstadoRegistroDuplicado: Correcta`                                                         | The same initial alta remained `Correcto` with its original huella                                               |
+| Deliberately rejected alta    | `EstadoEnvio: Incorrecto`; line `Incorrecto`, code `1161`, “El valor del campo RechazoPrevio no es válido, no podrá incluirse el campo RechazoPrevio con valor S si no se ha informado del campo Subsanacion o tiene el valor N.”                                   | Its later correction was found; the rejected attempt was not separately queried before retry                     |
+| Correction with `S`/`X` flags | `EstadoEnvio: ParcialmenteCorrecto`; line `AceptadoConErrores`, code `2007`, “No debe informarse como primer registro, existen facturas emitidas con el obligado emisión y el sistema informático actual.”; `Operacion: Alta`, `Subsanacion: S`, `RechazoPrevio: X` | `ConDatos`, stored `AceptadoConErrores`/`2007` with the exact submitted huella and both correction flags `S`/`X` |
+
+The duplicate code and stored-state detail, and the controlled `1161` rejection,
+match the fake's offline sequence. AEAT also stored the correction, but its
+state differs from the fake's `Correcto`: both independent probe identities
+declared `PrimerRegistro: "S"` for the same issuer and software system, and
+AEAT reported that second first-record claim as accepted-with-errors `2007`.
+This is evidence about this fixture's chaining claim, not proof that a
+correctly chained correction receives an error. The consultation's stored
+`S`/`X` flags establish the correction transition even though its huella
+equals the rejected attempt's. Neither this short sequence nor the fake proves
+long-lived rejection-history retention or exact status for other correction
+cases. We recorded the `2007` fake-fidelity choice in the lane question and
+left library and fake behavior unchanged.
+
+The existing read-only [`consult` run 36346728526](https://github.com/waitron-io/verifactu/actions/runs/36346728526)
+then succeeded on the same main SHA and returned `SinDatos` for its unrelated
+`CI-CHECK` lookup. It did not resubmit either probe identity.
 
 ## Audit state after the official-document closure
 
