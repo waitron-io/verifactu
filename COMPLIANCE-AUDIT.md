@@ -1558,8 +1558,17 @@ identity with the same predecessor and `Subsanacion: "S"` /
 consults the records. Four submissions claim `PrimerRegistro: "S"`: the
 two in the repeated-first chain and one control in each other chain.
 If a submission or wait fails, the mode attempts a consulta for the
-possibly stored record and reports the partial evidence. It stops before the correction if the controlled
-rejection is not `Incorrecto`/`1161`.
+possibly stored record and reports the partial evidence. It stops before
+the correction if the controlled rejection is not `Incorrecto`/`1161`.
+The correction chain is built after the preceding wait with a fresh
+`FechaHoraHusoGenRegistro`, while keeping this run's invoice issue date
+and identity. Its predecessor pointers and huellas are recomputed
+together, and the new hashes are logged before that chain is sent. After
+the next two AEAT waits, the final corrected record gets its own current
+generation timestamp and huella immediately before submission. Its invoice
+identity and pointer to the accepted first record stay the same. The
+corrected record's huella may therefore differ from the rejected attempt's;
+consulta must match the huella actually sent for the correction.
 
 Before dispatch, the expected outcomes are: each fresh first alta
 `Correcto`; the second first-record claim stored as
@@ -1574,6 +1583,49 @@ stored correction would narrow or contradict them. In particular,
 the corrected record: consulta must show the submitted huella and the
 correction flags where AEAT returns them. The probe does not change the
 library's hash, builder, validator, or fake.
+
+#### Partial live result, 27 September 2026
+
+Manual [run 36349373760](https://github.com/waitron-io/verifactu/actions/runs/36349373760)
+on main `8e210d134f92619649cd1c154df5862f7e106684` ended with a
+probe-fixture failure after five submissions. Every response requested a
+60-second wait. The first alta
+`CI-FIRST-REPEAT-1/20260927/36349373760` returned `Correcto`; the second
+`PrimerRegistro: "S"` claim under the same `F1` software identity,
+`CI-FIRST-REPEAT-2/20260927/36349373760`, returned
+`ParcialmenteCorrecto` / `AceptadoConErrores` / `2007`:
+“No debe informarse como primer registro, existen facturas emitidas con el
+obligado emisión y el sistema informático actual.” Issuer consulta found
+both, with states `Correcto` and `AceptadoConErrores`/`2007` and exact
+submitted huellas `E1BD3811851246B59DC8FA4B697E6D976CF4E48583ED1F6BF0A31D0CD396B337`
+and `1E85A6FBB3CF4260D9DB8DEC2CA12205664A84FC68E4D0F619C2B0891F5A4080`.
+
+The separate `F2` chain's first
+`CI-FIRST-CHAIN-1/20260927/36349373760` and its correctly chained
+second `CI-FIRST-CHAIN-2/20260927/36349373760` both returned
+`Correcto`. Consulta found both `Correcto` with exact submitted
+huellas `75EEBA314009DA0287070FB15360BC598C21A24E3E6F0F974F517C5C0FC6FE21`
+and `BE2F3551FB7A47DA4AC04AE9A37D2D42043B377AAA901FFB481D229B574B73A2`.
+These two chains support the fake's missing-`2007` discrepancy and
+its normal chained path for these software identities; they do not
+establish AEAT's full chain-key definition.
+
+The `F3` correction control
+`CI-FIRST-CORR-1/20260927/36349373760` was stored as
+`AceptadoConErrores`/`2004`, with the submitted huella
+`CB43837F2CF5D34ACA60B6C3BFAC44368EF85D0A304E472E5A8F8FF71EA6724E`.
+AEAT's exact text was “El valor del campo FechaHoraHusoGenRegistro debe ser
+la fecha actual del sistema de la AEAT, admitiéndose un margen de error de:
+240 segundos.” That control reused a timestamp generated just before the
+first chain; its submission followed four 60-second waits. The mode
+stopped before the deliberately rejected alta and correction. This is a
+probe-fixture timing shortfall, so the correctly chained correction
+remains **unobserved**. The existing read-only `consult` mode then
+[passed in run 36349726704](https://github.com/waitron-io/verifactu/actions/runs/36349726704)
+on the same main SHA, returning `SinDatos` for its separate `CI-CHECK`
+lookup. The follow-up mode fix refreshes the correction chain's timestamp
+after the prior wait and refreshes the final corrected record after its
+own wait, without changing the library's canonicalisation.
 
 ## Audit state after the official-document closure
 
