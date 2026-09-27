@@ -16,6 +16,7 @@ import {
   buildTestRecord,
   certificateKind,
   consultStoredMixedRegimeProbe,
+  consultUnicodeDateProbe,
   describeRecipientConsulta,
   describeRepresentativeConsulta,
   expandedIssuerConsultaFilter,
@@ -1205,5 +1206,85 @@ test("the recipient probe reports whether it can see the submitted record", () =
       record,
     ),
     "AEAT recipient consulta returned SinDatos; submitted record absent.",
+  );
+});
+
+test("Unicode-date probe compares the same known record with ASCII and Arabic-Indic dates", async () => {
+  const filters = [];
+  const serial = "CI-DECIMAL/20260927/36337265120";
+  const client = {
+    consultar: async (_header, filter) => {
+      filters.push(filter);
+      return {
+        ResultadoConsulta: "ConDatos",
+        IndicadorPaginacion: "N",
+        registros: [{ IDFactura: { NumSerieFactura: serial } }],
+      };
+    },
+  };
+  const result = await consultUnicodeDateProbe(
+    client,
+    {},
+    {
+      runId: "36337265120",
+      issueDate: "27-09-2026",
+    },
+  );
+  assert.deepEqual(filters, [
+    {
+      Ejercicio: "2026",
+      Periodo: "09",
+      NumSerieFactura: serial,
+      FechaExpedicionFactura: "27-09-2026",
+    },
+    {
+      Ejercicio: "٢٠٢٦",
+      Periodo: "09",
+      NumSerieFactura: serial,
+      FechaExpedicionFactura: "٢٧-٠٩-٢٠٢٦",
+    },
+  ]);
+  assert.deepEqual(result, {
+    NumSerieFactura: serial,
+    ascii: { ResultadoConsulta: "ConDatos", found: true },
+    arabicIndic: { ResultadoConsulta: "ConDatos", found: true },
+  });
+});
+
+test("Unicode-date probe records an AEAT refusal after proving the ASCII record exists", async () => {
+  let calls = 0;
+  const client = {
+    consultar: async () => {
+      if (++calls === 2) throw new Error("SOAP fault: invalid date");
+      return {
+        ResultadoConsulta: "ConDatos",
+        IndicadorPaginacion: "N",
+        registros: [{ IDFactura: { NumSerieFactura: "CI-DECIMAL/20260927/36337265120" } }],
+      };
+    },
+  };
+  const result = await consultUnicodeDateProbe(
+    client,
+    {},
+    {
+      runId: "36337265120",
+      issueDate: "27-09-2026",
+    },
+  );
+  assert.deepEqual(result.arabicIndic, { error: "SOAP fault: invalid date" });
+  assert.equal(calls, 2);
+});
+
+test("Unicode-date probe refuses to compare against a missing ASCII baseline", async () => {
+  const client = {
+    consultar: async () => ({
+      ResultadoConsulta: "SinDatos",
+      IndicadorPaginacion: "N",
+      registros: [],
+    }),
+  };
+  await assert.rejects(
+    consultUnicodeDateProbe(client, {}, { runId: "36337265120", issueDate: "27-09-2026" }),
+    /did not return the known decimal-variant record/,
   );
 });

@@ -496,6 +496,50 @@ export async function consultStoredMixedRegimeProbe(client, options) {
   };
 }
 
+export async function consultUnicodeDateProbe(client, header, { runId, issueDate }) {
+  const date = /^(\d{2})-(\d{2})-(\d{4})$/.exec(issueDate);
+  if (!date || !/^\d+$/.test(runId)) {
+    throw new Error("Unicode-date probe needs an ASCII DD-MM-YYYY issue date and numeric run ID");
+  }
+  const [, day, month, year] = date;
+  const serial = `CI-DECIMAL/${year}${month}${day}/${runId}`;
+  const filter = {
+    Ejercicio: year,
+    Periodo: month,
+    NumSerieFactura: serial,
+    FechaExpedicionFactura: issueDate,
+  };
+  const ascii = await withLiveStage("Unicode-date ASCII baseline", () =>
+    client.consultar(header, filter),
+  );
+  assertConsultation(ascii);
+  if (!ascii.registros.some((entry) => entry.IDFactura.NumSerieFactura === serial)) {
+    throw new Error("ASCII baseline did not return the known decimal-variant record");
+  }
+  const arabicIndicDigits = (value) =>
+    value.replace(/[0-9]/g, (digit) => "٠١٢٣٤٥٦٧٨٩"[Number(digit)]);
+  let arabicIndic;
+  try {
+    const result = await client.consultar(header, {
+      ...filter,
+      Ejercicio: arabicIndicDigits(year),
+      FechaExpedicionFactura: arabicIndicDigits(issueDate),
+    });
+    assertConsultation(result);
+    arabicIndic = {
+      ResultadoConsulta: result.ResultadoConsulta,
+      found: result.registros.some((entry) => entry.IDFactura.NumSerieFactura === serial),
+    };
+  } catch (error) {
+    arabicIndic = { error: error instanceof Error ? error.message : String(error) };
+  }
+  return {
+    NumSerieFactura: serial,
+    ascii: { ResultadoConsulta: ascii.ResultadoConsulta, found: true },
+    arabicIndic,
+  };
+}
+
 export function assertStoredMixedRegimeEvidence(evidence) {
   if (evidence.EstadoRegistro !== "Correcto") {
     throw new Error(
@@ -635,10 +679,17 @@ export function describeRecipientConsulta(result, record) {
 async function main() {
   const mode = process.argv[2] ?? "consult";
   if (
-    !["consult", "submit", "mixed-regime", "mixed-regime-consult", "decimal-variant"].includes(mode)
+    ![
+      "consult",
+      "submit",
+      "mixed-regime",
+      "mixed-regime-consult",
+      "decimal-variant",
+      "unicode-dates",
+    ].includes(mode)
   ) {
     throw new Error(
-      "Mode must be consult, submit, mixed-regime, mixed-regime-consult, or decimal-variant",
+      "Mode must be consult, submit, mixed-regime, mixed-regime-consult, decimal-variant, or unicode-dates",
     );
   }
   const nif = required("AEAT_TEST_NIF");
@@ -667,6 +718,15 @@ async function main() {
     );
     assertConsultation(result);
     process.stdout.write(`AEAT preproduction consulta succeeded: ${result.ResultadoConsulta}\n`);
+    return;
+  }
+
+  if (mode === "unicode-dates") {
+    const evidence = await consultUnicodeDateProbe(client, consultaCabecera, {
+      runId: required("AEAT_TEST_EXISTING_RUN_ID"),
+      issueDate: required("AEAT_TEST_EXISTING_ISSUE_DATE"),
+    });
+    process.stdout.write(`AEAT Unicode-date consulta response: ${JSON.stringify(evidence)}\n`);
     return;
   }
 
