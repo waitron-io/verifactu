@@ -21,7 +21,24 @@ jobs:
       - run: npm run build
       - run: node --test scripts/source-watch.test.mjs
       - run: node --test scripts/live-aeat.test.mjs
+      - run: node --test scripts/mutation-summary.test.mjs
       - run: node scripts/pack-smoke.mjs
       - run: sudo apt-get update && sudo apt-get install -y libxml2-utils
       - run: npm run test:coverage
-      - run: npm run mutation
+      - name: Mutation testing
+        run: GITHUB_STEP_SUMMARY="$RUNNER_TEMP/mutation-vitest-summary.md" npm run mutation
+      - name: Mutation summary
+        if: always()
+        run: |
+          if test -f reports/mutation/mutation.json; then
+            node scripts/mutation-summary.mjs reports/mutation/mutation.json "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Full mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report
+          path: |
+            reports/mutation/index.html
+            reports/mutation/mutation.json
+          if-no-files-found: warn
