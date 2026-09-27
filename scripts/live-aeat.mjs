@@ -7,6 +7,7 @@ import {
   buildAltaRecord,
   buildAnulacionRecord,
   buildQrPayload,
+  computeHuella,
   createClient,
   SOAP_ENDPOINTS,
   SOAP_ENDPOINTS_SELLO,
@@ -282,6 +283,77 @@ export function buildTestRecord(options) {
     cuotaTotal: "0.21",
     importeTotal: "1.21",
   });
+}
+
+export function buildDecimalVariantTestRecord(options) {
+  const built = buildTestRecordWith(options, {
+    serialPrefix: "CI-DECIMAL",
+    referencePrefix: "CI-DECIMAL",
+    description: "Prueba de decimales léxicos en preproducción",
+    desglose: [
+      {
+        ClaveRegimen: "01",
+        CalificacionOperacion: "S1",
+        TipoImpositivo: "21.00",
+        BaseImponibleOimporteNoSujeto: "100.00",
+        CuotaRepercutida: "21.00",
+      },
+    ],
+    cuotaTotal: "21.00",
+    importeTotal: "121.00",
+  });
+  // This probe alone uses XSD-permitted one-decimal literals after the builder's two-decimal policy.
+  const record = {
+    ...built,
+    Desglose: [
+      {
+        ...built.Desglose[0],
+        TipoImpositivo: "21.0",
+        BaseImponibleOimporteNoSujeto: "100.0",
+        CuotaRepercutida: "21.0",
+      },
+    ],
+    CuotaTotal: "21.0",
+    ImporteTotal: "121.0",
+  };
+  return { ...record, Huella: computeHuella(record) };
+}
+
+export async function submitDecimalVariantProbe(
+  client,
+  cabecera,
+  consultaCabecera,
+  record,
+  year,
+  month,
+) {
+  const submitted = await withLiveStage("decimal-variant alta submission", () =>
+    client.submit(cabecera, [{ RegistroAlta: record }]),
+  );
+  const line = submitted.RespuestaLinea?.find(
+    (entry) => entry.IDFactura.NumSerieFactura === record.IDFactura.NumSerieFactura,
+  );
+  if (!line) throw new Error("AEAT did not return the decimal-variant response line");
+  const consulted = await withLiveStage("decimal-variant issuer consulta", () =>
+    client.consultar(consultaCabecera, minimalIssuerConsultaFilter(record, year, month)),
+  );
+  assertConsultation(consulted);
+  const stored = consulted.registros.find(
+    (entry) => entry.IDFactura.NumSerieFactura === record.IDFactura.NumSerieFactura,
+  );
+  return {
+    NumSerieFactura: record.IDFactura.NumSerieFactura,
+    CuotaTotal: record.CuotaTotal,
+    ImporteTotal: record.ImporteTotal,
+    HuellaEnviada: record.Huella,
+    EstadoEnvio: submitted.EstadoEnvio,
+    EstadoRegistro: line.EstadoRegistro,
+    CodigoErrorRegistro: line.CodigoErrorRegistro,
+    DescripcionErrorRegistro: line.DescripcionErrorRegistro,
+    ResultadoConsulta: consulted.ResultadoConsulta,
+    EstadoConsultado: stored?.EstadoRegistro,
+    HuellaConsultada: stored?.DatosRegistroFacturacion?.Huella,
+  };
 }
 
 export function buildMixedRegimeTestRecord(options) {
@@ -566,8 +638,12 @@ export function describeRecipientConsulta(result, record) {
 
 async function main() {
   const mode = process.argv[2] ?? "consult";
-  if (!["consult", "submit", "mixed-regime", "mixed-regime-consult"].includes(mode)) {
-    throw new Error("Mode must be consult, submit, mixed-regime, or mixed-regime-consult");
+  if (
+    !["consult", "submit", "mixed-regime", "mixed-regime-consult", "decimal-variant"].includes(mode)
+  ) {
+    throw new Error(
+      "Mode must be consult, submit, mixed-regime, mixed-regime-consult, or decimal-variant",
+    );
   }
   const nif = required("AEAT_TEST_NIF");
   const name = required("AEAT_TEST_NAME");
@@ -642,6 +718,29 @@ async function main() {
       `Mixed-regime probe ${excludedRegime}: CuotaTotal and ImporteTotal differ by more than 10.00 under all-line and regime-01-only scopes.\n`,
     );
     process.stdout.write(`AEAT mixed-regime response: ${JSON.stringify(evidence)}\n`);
+    return;
+  }
+
+  if (mode === "decimal-variant") {
+    const record = buildDecimalVariantTestRecord({
+      nif,
+      name,
+      systemNif: required("AEAT_TEST_SYSTEM_NIF"),
+      systemName: required("AEAT_TEST_SYSTEM_NAME"),
+      recipientNif: recipient.NIF,
+      recipientName: recipient.NombreRazon,
+      now,
+      runId,
+    });
+    const evidence = await submitDecimalVariantProbe(
+      client,
+      cabecera,
+      consultaCabecera,
+      record,
+      year,
+      month,
+    );
+    process.stdout.write(`AEAT decimal-variant response: ${JSON.stringify(evidence)}\n`);
     return;
   }
 

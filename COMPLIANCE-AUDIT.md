@@ -1470,6 +1470,23 @@ Production calls are not required to maintain the offline ledger.
 
 ### Existing live evidence
 
+#### Decimal lexical probe design (E28)
+
+The `decimal-variant` workflow mode submits one first-in-chain preproduction alta with
+`CuotaTotal: "21.0"`, `ImporteTotal: "121.0"`, and one-decimal tax rate, base and tax amount.
+Its hash is recomputed from those exact record literals after the ordinary builder has run;
+the XML serializer receives the same record. The invoice serial and external reference use the
+distinct `CI-DECIMAL` prefix, date and GitHub run ID. The monthly `submit` mode keeps its `CI`
+prefix, first-record chain and two-decimal builder output. The probe therefore cannot overwrite
+or become the predecessor of the scheduled test record. Its issuer consulta searches by the
+exact probe serial even if AEAT rejects the alta.
+
+Before running it: `EstadoRegistro: Correcto` with the same hash returned by consulta would show
+AEAT accepted the one-decimal literals and their literal-string hash. A hash-mismatch error would
+show AEAT did not accept that literal-string hash, consistent with normalizing the decimals first.
+Any other error or an absent consulta record needs separate interpretation. This probe does not
+change the library's two-decimal builder policy or any hash output.
+
 The preproduction workflow's manual `consult` and alta-plus-consulta checks succeeded on
 2026-09-22, including comparison of AEAT's stored hash with the submitted hash. Its monthly schedule
 is enabled. The test environment uses the certificate company's identity for both issuer and
