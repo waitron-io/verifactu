@@ -1505,7 +1505,12 @@ ASCII-dated record. The probe did not send a deliberately wrong date, so it does
 prove that AEAT applied each filter. The fake now converts Arabic-Indic digits in consultation
 year and date filters to ASCII for comparison with stored ASCII dates, including range bounds and
 pagination cursors; those latter two forms were not tested live. It preserves the stored identity
-and the text returned to callers. No submission, hash or canonicalization rule changed.
+and the text returned to callers. This conversion applies only to consultation filters for
+ASCII-dated records. A record submitted with Arabic-Indic date digits remains stored in that
+spelling and does not match the fake's ASCII period comparison, even when queried with the same
+digits. Other Unicode decimal-digit scripts, such as Persian digits, pass request validation but
+are not converted by this fake. Neither case was tested against AEAT. No submission, hash or
+canonicalization rule changed.
 
 #### Decimal lexical probe design (E28)
 
