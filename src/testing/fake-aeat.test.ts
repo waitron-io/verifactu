@@ -82,6 +82,126 @@ function anulacionFixture(
 }
 
 describe("fake AEAT — submit", () => {
+  it("stores a repeated first-record claim as 2007 under the same issuer and software system", async () => {
+    const aeat = createFakeAeat();
+    const client = aeat.client();
+    const first = altaFixture("A/FIRST-1");
+    const repeated = altaFixture("A/FIRST-2");
+
+    expect((await client.submit(cabecera, [{ RegistroAlta: first }])).EstadoEnvio).toBe("Correcto");
+    const response = await client.submit(cabecera, [{ RegistroAlta: repeated }]);
+
+    expect(response.EstadoEnvio).toBe("ParcialmenteCorrecto");
+    expect(response.RespuestaLinea[0]).toMatchObject({
+      EstadoRegistro: "AceptadoConErrores",
+      CodigoErrorRegistro: 2007,
+      DescripcionErrorRegistro:
+        "No debe informarse como primer registro, existen facturas emitidas con el obligado emisión y el sistema informático actual.",
+    });
+    const consulted = await client.consultar(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      NumSerieFactura: "A/FIRST-2",
+    });
+    expect(consulted.registros[0]).toMatchObject({
+      EstadoRegistro: "AceptadoConErrores",
+      CodigoErrorRegistro: 2007,
+      DatosRegistroFacturacion: { Huella: repeated.Huella },
+    });
+
+    const otherSystem = {
+      ...altaFixture("A/FIRST-OTHER"),
+      SistemaInformatico: { ...SISTEMA, IdSistemaInformatico: "78", NumeroInstalacion: "2" },
+    };
+    expect((await client.submit(cabecera, [{ RegistroAlta: otherSystem }])).EstadoEnvio).toBe(
+      "Correcto",
+    );
+
+    const otherIssuer = {
+      ...altaFixture("A/FIRST-OTHER-ISSUER"),
+      IDFactura: {
+        ...first.IDFactura,
+        IDEmisorFactura: "11111111H",
+        NumSerieFactura: "A/FIRST-OTHER-ISSUER",
+      },
+      NombreRazonEmisor: "Other SL",
+    };
+    const otherHeader = { ObligadoEmision: { NombreRazon: "Other SL", NIF: "11111111H" } };
+    expect((await client.submit(otherHeader, [{ RegistroAlta: otherIssuer }])).EstadoEnvio).toBe(
+      "Correcto",
+    );
+  });
+
+  it("accepts a correctly chained second alta and its rejected-alta correction", async () => {
+    const aeat = createFakeAeat();
+    const client = aeat.client();
+    const first = altaFixture("A/CHAIN-1");
+    const predecessor = {
+      IDEmisorFactura: first.IDFactura.IDEmisorFactura,
+      NumSerieFactura: first.IDFactura.NumSerieFactura,
+      FechaExpedicionFactura: first.IDFactura.FechaExpedicionFactura,
+      Huella: first.Huella,
+    };
+    const chained = {
+      ...altaFixture("A/CHAIN-2"),
+      Encadenamiento: { RegistroAnterior: predecessor },
+    };
+
+    expect((await client.submit(cabecera, [{ RegistroAlta: first }])).EstadoEnvio).toBe("Correcto");
+    expect((await client.submit(cabecera, [{ RegistroAlta: chained }])).EstadoEnvio).toBe(
+      "Correcto",
+    );
+
+    const rejected = {
+      ...altaFixture("A/CHAIN-3"),
+      Encadenamiento: {
+        RegistroAnterior: {
+          ...predecessor,
+          NumSerieFactura: chained.IDFactura.NumSerieFactura,
+          Huella: chained.Huella,
+        },
+      },
+      RechazoPrevio: "S" as const,
+    };
+    const refusal = await client.submit(cabecera, [{ RegistroAlta: rejected }]);
+    expect(refusal.RespuestaLinea[0]).toMatchObject({
+      EstadoRegistro: "Incorrecto",
+      CodigoErrorRegistro: 1161,
+    });
+    const before = await client.consultar(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      NumSerieFactura: rejected.IDFactura.NumSerieFactura,
+    });
+    expect(before.ResultadoConsulta).toBe("SinDatos");
+
+    const corrected = {
+      ...rejected,
+      Huella: "H-A/CHAIN-3-CORRECTED",
+      Subsanacion: "S" as const,
+      RechazoPrevio: "X" as const,
+    };
+    const accepted = await client.submit(cabecera, [{ RegistroAlta: corrected }]);
+    expect(accepted.EstadoEnvio).toBe("Correcto");
+    expect(accepted.RespuestaLinea[0]).toMatchObject({
+      EstadoRegistro: "Correcto",
+      Operacion: { TipoOperacion: "Alta", Subsanacion: "S", RechazoPrevio: "X" },
+    });
+    const after = await client.consultar(cabecera, {
+      Ejercicio: "2026",
+      Periodo: "07",
+      NumSerieFactura: corrected.IDFactura.NumSerieFactura,
+    });
+    expect(after.registros[0]).toMatchObject({
+      EstadoRegistro: "Correcto",
+      DatosRegistroFacturacion: {
+        Huella: corrected.Huella,
+        Subsanacion: "S",
+        RechazoPrevio: "X",
+      },
+    });
+  });
+
   it("accepts a clean alta, issues a CSV, and stores it with its huella", async () => {
     const aeat = createFakeAeat({ serverNow: new Date("2026-07-21T00:00:00Z") });
     const respuesta = await aeat.client().submit(cabecera, [{ RegistroAlta: altaFixture("A/1") }]);

@@ -44,16 +44,21 @@ For an alta correction, `Subsanacion: "S"` with `RechazoPrevio` omitted or `N` r
 existing fake record, including one that was annulled. Without that prior record, the fake
 returns error `3002`; use `RechazoPrevio: "X"` for the published no-prior-record path.
 
-Check the response line and then consult the invoice when you retry a rejected alta. In
-[one preproduction probe](https://github.com/waitron-io/verifactu/blob/main/COMPLIANCE-AUDIT.md#e32-state-transition-preproduction-probe),
-an identical alta retry returned `3000` with duplicate state `Correcta`, and an intentionally
-invalid `RechazoPrevio: "S"` alta returned `1161`, matching the fake. AEAT stored its subsequent
-`Subsanacion: "S"` / `RechazoPrevio: "X"` correction, but marked it
-`AceptadoConErrores` with `2007`: the probe also declared that record a second
-`PrimerRegistro: "S"` for the same issuer and software system. The fake returned `Correcto`
-for that offline sequence. Use the fake to exercise the correction path, and read the live line
-and stored state before assuming a correction has no warning. This probe did not test a properly
-chained correction or long-lived rejection history.
+Check the response line and then consult the invoice when you retry a rejected alta. In the
+[E32 preproduction probe](https://github.com/waitron-io/verifactu/blob/main/COMPLIANCE-AUDIT.md#e32-state-transition-preproduction-probe),
+an identical alta retry returned `3000` with duplicate state `Correcta`, and an invalid
+`RechazoPrevio: "S"` alta returned `1161`. Its correction was stored with warning `2007` because
+it also claimed to be a second `PrimerRegistro: "S"` for the same issuer and software system.
+The [E35 probe](https://github.com/waitron-io/verifactu/blob/main/COMPLIANCE-AUDIT.md#e35-first-record-and-chained-correction-preproduction-plan)
+isolated that warning: a repeated first-record claim was stored as `AceptadoConErrores`/`2007`;
+a correctly chained second alta returned `Correcto`. A deliberately rejected, correctly chained
+alta was absent from consulta, then its `Subsanacion: "S"` / `RechazoPrevio: "X"` correction was
+stored as `Correcto` with both flags and the submitted hash. The fake now models these paths for
+the same issuer and software-system identity. Its software identity comparison is a test rule,
+not a proven definition of AEAT's complete identity key or long-lived rejection history. The fake
+does not verify that `RegistroAnterior` points to the actual preceding record. Its one-row store
+cannot establish whether a cancelled invoice still counts as a prior first record; the live probes
+also did not isolate a correction that repeats `PrimerRegistro: "S"` for its own stored invoice.
 
 The fake also requires an existing record for an ordinary cancellation. If none exists, set
 `SinRegistroPrevio: "S"`; without it, the fake returns `3002`. It rejects that special path

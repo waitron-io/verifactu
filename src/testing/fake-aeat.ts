@@ -28,6 +28,8 @@ const NS_SF =
   "https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/SuministroInformacion.xsd";
 const NS_RC =
   "https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/RespuestaConsultaLR.xsd";
+const REPEATED_FIRST_RECORD_MESSAGE =
+  "No debe informarse como primer registro, existen facturas emitidas con el obligado emisión y el sistema informático actual.";
 
 export type FacturaKey = string;
 
@@ -37,6 +39,8 @@ export interface StoredRecord {
   estado: EstadoRegistroConsulta;
   tipo: "alta" | "anulacion";
   refExterna?: string;
+  codigoErrorRegistro?: number;
+  descripcionErrorRegistro?: string;
 }
 
 interface StoredMetadata {
@@ -44,6 +48,16 @@ interface StoredMetadata {
   destinatarios: Destinatario[];
   sistema: SistemaInformatico;
   periodoImputacion: string;
+  subsanacion?: RegistroAlta["Subsanacion"];
+  rechazoPrevio?: RegistroAlta["RechazoPrevio"];
+}
+
+function sameSoftwareIdentity(left: SistemaInformatico, right: SistemaInformatico): boolean {
+  return (
+    samePersona(left, right) &&
+    left.IdSistemaInformatico === right.IdSistemaInformatico &&
+    left.NumeroInstalacion === right.NumeroInstalacion
+  );
 }
 
 function samePersona(left: Destinatario, right: Destinatario): boolean {
@@ -220,6 +234,18 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
       const futureGenerationTime = Date.parse(fechaHoraHusoGenRegistro) > serverNow.getTime();
       const alta = "RegistroAlta" in entry ? entry.RegistroAlta : undefined;
       const anulacion = "RegistroAnulacion" in entry ? entry.RegistroAnulacion : undefined;
+      const repeatedFirstRecord =
+        alta?.Encadenamiento.PrimerRegistro === "S" &&
+        [...store.values()].some((prior) => {
+          const details = metadata.get(prior.key);
+          return (
+            prior.key !== key &&
+            prior.tipo === "alta" &&
+            prior.key.split("|")[0] === idf.IDEmisorFactura &&
+            details !== undefined &&
+            sameSoftwareIdentity(details.sistema, alta.SistemaInformatico)
+          );
+        });
       const rejectedOperation =
         alta?.Subsanacion === "S" ? "alta-subsanacion" : anulacion ? "anulacion" : undefined;
       const previousRejections = rejectedOperations.get(key);
@@ -354,7 +380,7 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
         const estado =
           tipo === "anulacion"
             ? "Anulado"
-            : futureGenerationTime
+            : futureGenerationTime || repeatedFirstRecord
               ? "AceptadoConErrores"
               : "Correcto";
         // Consulta exposes the latest record for an invoice identity. This one-row fake therefore
@@ -365,6 +391,12 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
           estado,
           tipo,
           refExterna: tipo === "anulacion" ? (ref ?? existing?.refExterna) : ref,
+          ...(repeatedFirstRecord && !futureGenerationTime
+            ? {
+                codigoErrorRegistro: 2007,
+                descripcionErrorRegistro: REPEATED_FIRST_RECORD_MESSAGE,
+              }
+            : {}),
         });
         petitionIds.set(key, `PET-${String(csvSequence).padStart(8, "0")}`);
         if (alta?.Subsanacion === "S") previousRejections?.delete("alta-subsanacion");
@@ -378,6 +410,8 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
             periodoImputacion: periodoImputacionOf(
               alta.FechaOperacion ?? alta.IDFactura.FechaExpedicionFactura,
             ),
+            ...(alta.Subsanacion !== undefined ? { subsanacion: alta.Subsanacion } : {}),
+            ...(alta.RechazoPrevio !== undefined ? { rechazoPrevio: alta.RechazoPrevio } : {}),
           });
         } else if (anulacion) {
           // Cancellation has no buyer list; preserve any previously stored issuer and recipients.
@@ -404,6 +438,18 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
               "AceptadoConErrores",
               2004,
               "El valor del campo FechaHoraHusoGenRegistro debe ser la fecha actual del sistema de la AEAT, admitiéndose un margen de error de:",
+              ref,
+              operacion,
+            ),
+          );
+        } else if (repeatedFirstRecord) {
+          anyAcceptedWithErrors = true;
+          lineas.push(
+            lineaXml(
+              idf,
+              "AceptadoConErrores",
+              2007,
+              REPEATED_FIRST_RECORD_MESSAGE,
               ref,
               operacion,
             ),
@@ -809,6 +855,12 @@ function consultaEnvelope(
         (s.refExterna !== undefined
           ? `<sfRC:RefExterna>${escapeXml(s.refExterna)}</sfRC:RefExterna>`
           : "") +
+        (details?.subsanacion !== undefined
+          ? `<sfRC:Subsanacion>${details.subsanacion}</sfRC:Subsanacion>`
+          : "") +
+        (details?.rechazoPrevio !== undefined
+          ? `<sfRC:RechazoPrevio>${details.rechazoPrevio}</sfRC:RechazoPrevio>`
+          : "") +
         (responseOptions?.MostrarSistemaInformatico === "S" && details
           ? sistemaConsultaXml(details.sistema)
           : "") +
@@ -817,6 +869,10 @@ function consultaEnvelope(
         "<sfRC:EstadoRegistro>" +
         "<sfRC:TimestampUltimaModificacion>2026-07-21T00:00:00+00:00</sfRC:TimestampUltimaModificacion>" +
         `<sfRC:EstadoRegistro>${s.estado}</sfRC:EstadoRegistro>` +
+        (s.codigoErrorRegistro !== undefined
+          ? `<sfRC:CodigoErrorRegistro>${s.codigoErrorRegistro}</sfRC:CodigoErrorRegistro>` +
+            `<sfRC:DescripcionErrorRegistro>${escapeXml(s.descripcionErrorRegistro ?? "")}</sfRC:DescripcionErrorRegistro>`
+          : "") +
         "</sfRC:EstadoRegistro>" +
         "</sfRC:RegistroRespuestaConsultaFactuSistemaFacturacion>"
       );

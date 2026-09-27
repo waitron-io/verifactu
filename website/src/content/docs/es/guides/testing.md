@@ -52,15 +52,22 @@ el transporte devuelve el error `3002`; usa `RechazoPrevio: "X"` para la operati
 registro previo.
 
 Al reintentar un alta rechazada, comprueba la línea de respuesta y después consulta la factura.
-En [una prueba de preproducción](https://github.com/waitron-io/verifactu/blob/main/COMPLIANCE-AUDIT.md#e32-state-transition-preproduction-probe),
+En la [prueba E32](https://github.com/waitron-io/verifactu/blob/main/COMPLIANCE-AUDIT.md#e32-state-transition-preproduction-probe),
 el reenvío de un alta idéntica devolvió `3000` con estado duplicado `Correcta`, y un alta con
-`RechazoPrevio: "S"` deliberadamente inválido devolvió `1161`, como el transporte falso. La AEAT
-almacenó la subsanación posterior con `Subsanacion: "S"` y `RechazoPrevio: "X"`, pero le asignó
-`AceptadoConErrores` y el código `2007`: esa prueba también declaró el registro como un segundo
-`PrimerRegistro: "S"` para el mismo emisor y sistema informático. El transporte falso devolvió
-`Correcto` en la secuencia local. Úsalo para probar la operativa de subsanación, y comprueba la
-línea y el estado almacenado antes de concluir que no hay avisos. Esta prueba no comprobó una
-subsanación encadenada correctamente ni la conservación prolongada del historial de rechazos.
+`RechazoPrevio: "S"` inválido devolvió `1161`. La subsanación quedó almacenada con el aviso
+`2007` porque también se declaró como un segundo `PrimerRegistro: "S"` para el mismo emisor y
+sistema informático. La [prueba E35](https://github.com/waitron-io/verifactu/blob/main/COMPLIANCE-AUDIT.md#e35-first-record-and-chained-correction-preproduction-plan)
+aisló ese aviso: la AEAT almacenó el segundo primer registro como `AceptadoConErrores`/`2007`,
+mientras que aceptó como `Correcto` un segundo alta bien encadenada. Un alta encadenada y
+deliberadamente rechazada no apareció en la consulta; su posterior subsanación con
+`Subsanacion: "S"` y `RechazoPrevio: "X"` quedó almacenada como `Correcto`, con ambos indicadores
+y la huella enviada. El transporte falso reproduce esas rutas para el mismo emisor e identidad
+del sistema informático. Su comparación de identidades es una regla de prueba: no establece la
+clave completa de identidad de la AEAT ni la duración de su historial de rechazos. El transporte
+falso no comprueba que `RegistroAnterior` apunte al registro anterior real.
+Su almacén de una fila por factura no permite establecer si una factura anulada sigue contando
+como primer registro anterior. Las pruebas en vivo tampoco aislaron una subsanación que repite
+`PrimerRegistro: "S"` para su propia factura ya almacenada.
 
 Una anulación ordinaria también requiere un registro existente. Si no lo hay,
 indica `SinRegistroPrevio: "S"`; sin este indicador, el transporte devuelve `3002`. Rechaza esa
