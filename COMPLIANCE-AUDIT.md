@@ -1488,6 +1488,30 @@ process it. The probe logs the parsed result status, pagination flag, returned i
 record states and errors, or the request error message, before choosing how the fake should
 behave. An absent ASCII baseline makes the comparison invalid, so the probe fails in that case.
 
+#### Unicode consultation-date probe result — 27 September 2026
+
+[Preproduction run 36338604405](https://github.com/waitron-io/verifactu/actions/runs/36338604405)
+used the read-only `unicode-dates` mode on main
+`6e3a4fc08d3d49daafd53ad574415dcbb4b7e338`. It queried the accepted
+`CI-DECIMAL/20260927/36337265120` record twice with `Periodo: "09"` and the same serial. The
+first request sent `Ejercicio: "2026"` and `FechaExpedicionFactura: "27-09-2026"`; the second
+sent `Ejercicio: "٢٠٢٦"` and `FechaExpedicionFactura: "٢٧-٠٩-٢٠٢٦"`. No record was submitted.
+
+Both responses were `ResultadoConsulta: ConDatos` with `IndicadorPaginacion: N`. Each returned
+that serial, `FechaExpedicionFactura: "27-09-2026"` and `EstadoRegistro: Correcto`. The issuer
+NIF was present in both returned identities but is masked in GitHub's public log. This is
+consistent with AEAT treating Arabic-Indic and ASCII digits alike in these two filters for an
+ASCII-dated record. The probe did not send a deliberately wrong date, so it does not independently
+prove that AEAT applied each filter. The fake now converts Arabic-Indic digits in consultation
+year and date filters to ASCII for comparison with stored ASCII dates, including range bounds and
+pagination cursors; those latter two forms were not tested live. It preserves the stored identity
+and the text returned to callers. This conversion applies only to consultation filters for
+ASCII-dated records. A record submitted with Arabic-Indic date digits remains stored in that
+spelling and does not match the fake's ASCII period comparison, even when queried with the same
+digits. Other Unicode decimal-digit scripts, such as Persian digits, pass request validation but
+are not converted by this fake. Neither case was tested against AEAT. No submission, hash or
+canonicalization rule changed.
+
 #### Decimal lexical probe design (E28)
 
 The `decimal-variant` workflow mode submits one first-in-chain preproduction alta with

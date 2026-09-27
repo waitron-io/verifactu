@@ -84,6 +84,23 @@ el código admisible `2004` para una `FechaHoraHusoGenRegistro` futura, como ind
 publicada. El transporte compara contra su reloj local sin margen; la tolerancia real de la AEAT no
 está publicada, así que compruébala en preproducción si tu flujo depende de ese límite.
 
+Si consultas un registro cuya fecha se guardó con dígitos ASCII usando dígitos arábigos-indios (٠–٩)
+en `Ejercicio` y `FechaExpedicionFactura`, el transporte falso encuentra el mismo registro y
+devuelve la fecha ASCII almacenada. Por ejemplo, un registro fechado el `20-07-2026` coincide con
+`Ejercicio: "٢٠٢٦"` y `FechaExpedicionFactura: "٢٠-٠٧-٢٠٢٦"`. El transporte también convierte esos
+dígitos en los límites de rango y las claves de paginación al compararlos con los registros
+almacenados, sin reescribir la identidad de la factura. Una
+[consulta de preproducción de solo lectura](https://github.com/waitron-io/verifactu/actions/runs/36338604405)
+devolvió el mismo registro aceptado con el año y la fecha exacta en ambos sistemas de dígitos.
+Esa prueba no verificó en la AEAT otros sistemas de dígitos, rangos ni claves de paginación. Usa
+fechas ASCII por defecto hasta disponer de pruebas en vivo para esos otros casos.
+La conversión solo se aplica a los filtros de consulta de registros fechados con dígitos ASCII. Si
+envías un registro cuya fecha usa dígitos arábigos-indios, el transporte falso conserva esa
+forma y su filtro de periodo devuelve `SinDatos`, incluso si consultas con los mismos dígitos.
+Otros dígitos decimales Unicode, como los persas, superan la validación de la petición, pero el
+transporte falso no los convierte; una consulta exacta no encuentra un registro con fecha ASCII.
+Ninguno de estos dos casos se ha comprobado en la AEAT.
+
 En particular, el transporte falso conserva los espacios al principio y al final del texto
 enviado. La AEAT los elimina antes de almacenar y devolver los campos de texto. Si tu prueba
 depende del valor almacenado de un campo como `RefExterna`, confírmalo en la preproducción de la
