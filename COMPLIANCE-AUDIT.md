@@ -1045,10 +1045,31 @@ along with the other XML metacharacters. `src/xml/serialize.test.ts` pins the es
 `src/xml/parse-request.test.ts` checks that escaped text round-trips without silently trimming the
 submitted literal. That parser represents what the caller sent, not AEAT's later stored value.
 
-The fake AEAT does not emulate AEAT's text trimming. A focused submission probe stored
-`RefExterna: "  ref & <1>  "` with its edge spaces intact. Use AEAT preproduction, not the fake, to
-check behavior that depends on the agency's trimmed response or stored value. The exact Unicode
-scope of AEAT's whitespace normalization remains unverified by a live response.
+Live preproduction run [36340902489](https://github.com/waitron-io/verifactu/actions/runs/36340902489)
+on main `83b40e2a12adea287bf7cc29c5e28b853696bb28` submitted four distinct first records in
+one batch. The batch had `EstadoEnvio=Correcto`; every response line had
+`EstadoRegistro=Correcto` and no error code or description. Each issuer consulta returned
+`ConDatos`, `EstadoRegistro=Correcto`, and the
+same `Huella` as submitted. The response-line and consulta `RefExterna` values were identical:
+
+| Serial suffix                    | Submitted `RefExterna` (JSON notation) | Response line and consulta          |
+| -------------------------------- | -------------------------------------- | ----------------------------------- |
+| `space/20260927/36340902489`     | `" CI-TRIM-36340902489 "`              | `"CI-TRIM-36340902489"`             |
+| `tab/20260927/36340902489`       | `"\tCI-TRIM-36340902489\t"`            | `"CI-TRIM-36340902489"`             |
+| `line-feed/20260927/36340902489` | `"\nCI-TRIM-36340902489\n"`            | `"CI-TRIM-36340902489"`             |
+| `nbsp/20260927/36340902489`      | `"\u00a0CI-TRIM-36340902489\u00a0"`    | `"\u00a0CI-TRIM-36340902489\u00a0"` |
+
+The complete serials begin `CI-TRIM-`. This observed boundary agrees with `trimValue` for these
+four characters; it does not establish AEAT's handling of every U+0000–U+0020 character, other
+Unicode whitespace, or hash-input fields beyond `RefExterna`. The fake now normalizes submitted
+and filtered `RefExterna` with that boundary, while `parseEnvio` preserves the submitted XML text.
+In the fake, a cancellation retry whose reference differs only in edge characters through U+0020
+is a duplicate; a different normalized reference still takes its replacement path. A present
+all-whitespace reference becomes an empty string, distinct from an omitted reference. Neither
+cancellation retries nor all-whitespace references were exercised against live AEAT.
+The existing read-only `consult` mode then passed on the same main SHA in
+[run 36340941073](https://github.com/waitron-io/verifactu/actions/runs/36340941073), returning
+`SinDatos` for its unrelated `CI-CHECK` serial.
 
 ### Consultation list values — service description §6.5.1 and `SuministroInformacion.xsd`
 

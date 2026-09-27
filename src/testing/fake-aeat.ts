@@ -1,4 +1,5 @@
 import { createClient, type VerifactuClient } from "../client.js";
+import { trimValue } from "../format.js";
 import { escapeXml } from "../xml/escape.js";
 import { parseConsulta, parseEnvioUnchecked } from "../xml/parse-request.js";
 import type { EstadoRegistroConsulta } from "../xml/parse-consulta.js";
@@ -202,7 +203,15 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
     // The synthetic petition ID and the CSV for a non-rejected batch share this sequence.
     const csv = `CSV-${String(++csvSequence).padStart(8, "0")}`;
     for (const entry of registros) {
-      const { idf, tipo, huella, ref, fecha, fechaHoraHusoGenRegistro } = identityOf(entry);
+      const {
+        idf,
+        tipo,
+        huella,
+        ref: submittedRef,
+        fecha,
+        fechaHoraHusoGenRegistro,
+      } = identityOf(entry);
+      const ref = submittedRef === undefined ? undefined : trimValue(submittedRef);
       const operacion = operacionXml(entry);
       const key = keyOfIdentity(idf);
       const existing = store.get(key);
@@ -487,7 +496,8 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
       });
     }
     if (filtro.RefExterna !== undefined) {
-      all = all.filter((s) => s.refExterna === filtro.RefExterna);
+      const ref = trimValue(filtro.RefExterna);
+      all = all.filter((s) => s.refExterna === ref);
     }
     // Continue after ClavePaginacion (match by the last-returned identity), ordered by insertion.
     // If that identity is no longer found (e.g. `forget`ten between pages), fall back to the full

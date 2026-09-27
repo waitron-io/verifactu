@@ -90,8 +90,12 @@ date itself uses Arabic-Indic digits, this fake stores that spelling and its per
 digits, pass request validation but the fake does not convert them, so an exact query does not
 match an ASCII-dated record. Neither case has been checked against AEAT.
 
-In particular, the fake keeps leading and trailing spaces in submitted text. AEAT trims those
-spaces before storing and returning text fields. If your test depends on the stored spelling of
-a value such as `RefExterna`, confirm it in AEAT preproduction. The publication does not define
-which non-ASCII Unicode whitespace characters AEAT trims, so do not infer that boundary from the
-fake or JavaScript's `trim()` behavior.
+The fake trims characters through U+0020 from the edges of `RefExterna` when it stores and echoes a
+record or applies a consulta filter. It keeps edge U+00A0. A preproduction probe confirmed the
+response-line and consulta values for ASCII space, tab, line feed, and U+00A0; see the
+[compliance audit](https://github.com/waitron-io/verifactu/blob/main/COMPLIANCE-AUDIT.md#xml-text-and-escaping--service-description-67-69).
+`parseEnvio` still gives you the submitted text unchanged. If your test needs the exact stored
+spelling of another text field or whitespace character, check it in AEAT preproduction.
+A cancellation retry whose reference differs only in edge padding is a duplicate in the fake.
+A present reference made only of those edge characters becomes an empty string; AEAT has not been
+probed for cancellation retries or all-whitespace references.
