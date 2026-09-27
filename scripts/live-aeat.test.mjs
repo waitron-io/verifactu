@@ -269,6 +269,197 @@ test("first-record probe marks a changed stored hash as incomplete", async () =>
   assert.equal(evidence.incomplete, true);
 });
 
+async function runFirstRecordAgainstFake(records, overrides = {}) {
+  const fake = createFakeAeat({ serverNow: new Date("2026-09-28T12:00:00Z") });
+  const real = fake.client();
+  let submissions = 0;
+  const consultations = [];
+  const evidence = await submitFirstRecordProbe(
+    {
+      async submit(header, submitted) {
+        submissions++;
+        const response = await real.submit(header, submitted);
+        return overrides.submit?.(response, submissions) ?? response;
+      },
+      async consultar(header, filter) {
+        consultations.push(filter.NumSerieFactura);
+        const response = await real.consultar(header, filter);
+        return overrides.consultar?.(response, filter, submissions) ?? response;
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    issuerConsultaHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    records,
+    "2026",
+    "09",
+    () => {},
+    async () => {},
+  );
+  return { evidence, submissions, consultations };
+}
+
+test("first-record probe stops if the controlled rejection has a different code", async () => {
+  const records = buildFirstRecordProbeRecords(decimalOptions);
+  const { evidence, submissions } = await runFirstRecordAgainstFake(records, {
+    submit(response, count) {
+      if (count === 6) response.RespuestaLinea[0].CodigoErrorRegistro = 1162;
+    },
+  });
+  assert.equal(submissions, 6);
+  assert.equal(evidence.stoppedAfter, "rejected");
+  assert.equal(evidence.corrected, undefined);
+});
+
+test("first-record probe stops if the controlled rejection has a contradictory batch state", async () => {
+  const records = buildFirstRecordProbeRecords(decimalOptions);
+  const { evidence, submissions } = await runFirstRecordAgainstFake(records, {
+    submit(response, count) {
+      if (count === 6) response.EstadoEnvio = "Correcto";
+    },
+  });
+  assert.equal(submissions, 6);
+  assert.equal(evidence.stoppedAfter, "rejected");
+  assert.equal(evidence.corrected, undefined);
+});
+
+test("first-record probe stops if a control line is correct but its batch is not", async () => {
+  const records = buildFirstRecordProbeRecords(decimalOptions);
+  const { evidence, submissions } = await runFirstRecordAgainstFake(records, {
+    submit(response, count) {
+      if (count === 1) response.EstadoEnvio = "Incorrecto";
+    },
+  });
+  assert.equal(submissions, 1);
+  assert.equal(evidence.stoppedAfter, "repeatedFirst");
+});
+
+test("first-record probe marks an unexpectedly stored rejected alta as incomplete", async () => {
+  const records = buildFirstRecordProbeRecords(decimalOptions);
+  const { evidence } = await runFirstRecordAgainstFake(records, {
+    consultar(response, filter, submissions) {
+      if (
+        submissions === 6 &&
+        filter.NumSerieFactura === records.correction.rejected.IDFactura.NumSerieFactura
+      ) {
+        response.ResultadoConsulta = "ConDatos";
+        response.registros = [
+          {
+            IDFactura: records.correction.rejected.IDFactura,
+            EstadoRegistro: "Correcto",
+            DatosRegistroFacturacion: { Huella: records.correction.rejected.Huella },
+          },
+        ];
+      }
+    },
+  });
+  assert.equal(evidence.consultaRejected.RegistroEncontrado, true);
+  assert.equal(evidence.incomplete, true);
+});
+
+test("first-record probe detects wrong correction flags returned by consulta", async () => {
+  const records = buildFirstRecordProbeRecords(decimalOptions);
+  const { evidence } = await runFirstRecordAgainstFake(records, {
+    consultar(response, filter, submissions) {
+      if (
+        submissions === 7 &&
+        filter.NumSerieFactura === records.correction.corrected.IDFactura.NumSerieFactura
+      ) {
+        response.registros[0].DatosRegistroFacturacion.Subsanacion = "N";
+        response.registros[0].DatosRegistroFacturacion.RechazoPrevio = "X";
+      }
+    },
+  });
+  assert.equal(evidence.consultaCorrected.SubsanacionConsultada, "N");
+  assert.equal(evidence.incomplete, true);
+});
+
+test("first-record probe detects a wrong RechazoPrevio flag returned by consulta", async () => {
+  const records = buildFirstRecordProbeRecords(decimalOptions);
+  const { evidence } = await runFirstRecordAgainstFake(records, {
+    consultar(response, filter, submissions) {
+      if (
+        submissions === 7 &&
+        filter.NumSerieFactura === records.correction.corrected.IDFactura.NumSerieFactura
+      ) {
+        response.registros[0].DatosRegistroFacturacion.Subsanacion = "S";
+        response.registros[0].DatosRegistroFacturacion.RechazoPrevio = "N";
+      }
+    },
+  });
+  assert.equal(evidence.consultaCorrected.RechazoPrevioConsultado, "N");
+  assert.equal(evidence.incomplete, true);
+});
+
+test("first-record probe consults the in-flight identity after a submit transport failure", async () => {
+  const records = buildFirstRecordProbeRecords(decimalOptions);
+  const consulted = [];
+  const stages = [];
+  let submissions = 0;
+  const evidence = await submitFirstRecordProbe(
+    {
+      async submit(_header, submitted) {
+        submissions++;
+        if (submissions === 2) throw new Error("socket hang up");
+        return {
+          EstadoEnvio: "Correcto",
+          TiempoEsperaEnvio: 0,
+          RespuestaLinea: [
+            { IDFactura: submitted[0].RegistroAlta.IDFactura, EstadoRegistro: "Correcto" },
+          ],
+        };
+      },
+      async consultar(_header, filter) {
+        consulted.push(filter.NumSerieFactura);
+        return { ResultadoConsulta: "SinDatos", IndicadorPaginacion: "N", registros: [] };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    issuerConsultaHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    records,
+    "2026",
+    "09",
+    (stage, entry) => stages.push([stage, entry]),
+    async () => {},
+  );
+  assert.equal(submissions, 2);
+  assert.deepEqual(consulted, [records.repeated.second.IDFactura.NumSerieFactura]);
+  assert.equal(evidence.stoppedAfter, "repeatedSecond");
+  assert.match(evidence.error, /socket hang up/);
+  assert.equal(stages.at(-1)[0], "failure");
+});
+
+test("first-record probe retains the first response and consults it after a missing wait", async () => {
+  const records = buildFirstRecordProbeRecords(decimalOptions);
+  const consulted = [];
+  let submissions = 0;
+  const evidence = await submitFirstRecordProbe(
+    {
+      async submit(_header, submitted) {
+        submissions++;
+        return {
+          EstadoEnvio: "Correcto",
+          RespuestaLinea: [
+            { IDFactura: submitted[0].RegistroAlta.IDFactura, EstadoRegistro: "Correcto" },
+          ],
+        };
+      },
+      async consultar(_header, filter) {
+        consulted.push(filter.NumSerieFactura);
+        return { ResultadoConsulta: "SinDatos", IndicadorPaginacion: "N", registros: [] };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    issuerConsultaHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    records,
+    "2026",
+    "09",
+  );
+  assert.equal(submissions, 1);
+  assert.deepEqual(consulted, [records.repeated.first.IDFactura.NumSerieFactura]);
+  assert.equal(evidence.stoppedAfter, "wait before repeatedSecond");
+  assert.match(evidence.error, /invalid submission wait/);
+});
+
 test("state-transition records isolate identities and keep the rejection XSD-valid", () => {
   const { accepted, rejected, correction } = buildStateTransitionProbeRecords(decimalOptions);
   assert.equal(accepted.IDFactura.NumSerieFactura, "CI-STATE-DUP/20260927/12345");

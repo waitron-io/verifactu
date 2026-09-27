@@ -446,21 +446,30 @@ export async function submitFirstRecordProbe(
 ) {
   const evidence = {};
   let priorResponse;
+  let pendingRecord;
+  let lastSubmittedRecord;
+  let activeStage;
   const send = async (key, record) => {
     if (priorResponse) {
+      activeStage = `wait before ${key}`;
       await withLiveStage(`wait before ${key}`, () =>
         waitForSubmission(priorResponse.TiempoEsperaEnvio),
       );
     }
+    activeStage = key;
+    pendingRecord = record;
     const response = await withLiveStage(key, () =>
       client.submit(cabecera, [{ RegistroAlta: record }]),
     );
     priorResponse = response;
+    lastSubmittedRecord = record;
+    pendingRecord = undefined;
     evidence[key] = stateSubmissionEvidence(response, record);
     report(key, evidence[key]);
     return evidence[key];
   };
   const consult = async (key, record) => {
+    activeStage = key;
     evidence[key] = await stateConsultaEvidence(client, consultaCabecera, record, year, month, key);
     report(key, evidence[key]);
     return evidence[key];
@@ -468,56 +477,87 @@ export async function submitFirstRecordProbe(
   const isControlCorrect = (entry) =>
     entry.EstadoEnvio === "Correcto" && entry.EstadoRegistro === "Correcto";
 
-  if (!isControlCorrect(await send("repeatedFirst", records.repeated.first))) {
-    evidence.stoppedAfter = "repeatedFirst";
+  const run = async () => {
+    if (!isControlCorrect(await send("repeatedFirst", records.repeated.first))) {
+      evidence.stoppedAfter = "repeatedFirst";
+      await consult("consultaRepeatedFirst", records.repeated.first);
+      return evidence;
+    }
+    await send("repeatedSecond", records.repeated.second);
     await consult("consultaRepeatedFirst", records.repeated.first);
-    return evidence;
-  }
-  await send("repeatedSecond", records.repeated.second);
-  await consult("consultaRepeatedFirst", records.repeated.first);
-  await consult("consultaRepeatedSecond", records.repeated.second);
+    await consult("consultaRepeatedSecond", records.repeated.second);
 
-  if (!isControlCorrect(await send("chainedFirst", records.chained.first))) {
-    evidence.stoppedAfter = "chainedFirst";
+    if (!isControlCorrect(await send("chainedFirst", records.chained.first))) {
+      evidence.stoppedAfter = "chainedFirst";
+      await consult("consultaChainedFirst", records.chained.first);
+      return evidence;
+    }
+    await send("chainedSecond", records.chained.second);
     await consult("consultaChainedFirst", records.chained.first);
-    return evidence;
-  }
-  await send("chainedSecond", records.chained.second);
-  await consult("consultaChainedFirst", records.chained.first);
-  await consult("consultaChainedSecond", records.chained.second);
+    await consult("consultaChainedSecond", records.chained.second);
 
-  if (!isControlCorrect(await send("correctionFirst", records.correction.first))) {
-    evidence.stoppedAfter = "correctionFirst";
+    if (!isControlCorrect(await send("correctionFirst", records.correction.first))) {
+      evidence.stoppedAfter = "correctionFirst";
+      await consult("consultaCorrectionFirst", records.correction.first);
+      return evidence;
+    }
+    const rejected = await send("rejected", records.correction.rejected);
+    await consult("consultaRejected", records.correction.rejected);
+    if (
+      rejected.EstadoEnvio !== "Incorrecto" ||
+      rejected.EstadoRegistro !== "Incorrecto" ||
+      rejected.CodigoErrorRegistro !== 1161
+    ) {
+      evidence.stoppedAfter = "rejected";
+      await consult("consultaCorrectionFirst", records.correction.first);
+      return evidence;
+    }
+    await send("corrected", records.correction.corrected);
     await consult("consultaCorrectionFirst", records.correction.first);
+    await consult("consultaCorrected", records.correction.corrected);
+    evidence.incomplete =
+      [
+        [evidence.consultaRepeatedFirst, records.repeated.first],
+        [evidence.consultaRepeatedSecond, records.repeated.second],
+        [evidence.consultaChainedFirst, records.chained.first],
+        [evidence.consultaChainedSecond, records.chained.second],
+        [evidence.consultaCorrectionFirst, records.correction.first],
+        [evidence.consultaCorrected, records.correction.corrected],
+      ].some(
+        ([entry, record]) => !entry.RegistroEncontrado || entry.HuellaConsultada !== record.Huella,
+      ) ||
+      evidence.consultaRejected.RegistroEncontrado ||
+      (evidence.consultaCorrected.SubsanacionConsultada !== undefined &&
+        evidence.consultaCorrected.SubsanacionConsultada !== "S") ||
+      (evidence.consultaCorrected.RechazoPrevioConsultado !== undefined &&
+        evidence.consultaCorrected.RechazoPrevioConsultado !== "X");
+    return evidence;
+  };
+  try {
+    return await run();
+  } catch (error) {
+    evidence.stoppedAfter = activeStage;
+    evidence.error = (error instanceof Error ? error.message : String(error)).replace(
+      /\b[A-Z0-9]{9}\b/g,
+      "[NIF]",
+    );
+    const uncertainRecord = pendingRecord ?? lastSubmittedRecord;
+    if (uncertainRecord) {
+      try {
+        await consult("consultaAfterFailure", uncertainRecord);
+      } catch (consultaError) {
+        evidence.consultaAfterFailureError = (
+          consultaError instanceof Error ? consultaError.message : String(consultaError)
+        ).replace(/\b[A-Z0-9]{9}\b/g, "[NIF]");
+      }
+    }
+    report("failure", {
+      stoppedAfter: evidence.stoppedAfter,
+      error: evidence.error,
+      consultaAfterFailureError: evidence.consultaAfterFailureError,
+    });
     return evidence;
   }
-  const rejected = await send("rejected", records.correction.rejected);
-  await consult("consultaRejected", records.correction.rejected);
-  if (rejected.EstadoRegistro !== "Incorrecto" || rejected.CodigoErrorRegistro !== 1161) {
-    evidence.stoppedAfter = "rejected";
-    await consult("consultaCorrectionFirst", records.correction.first);
-    return evidence;
-  }
-  await send("corrected", records.correction.corrected);
-  await consult("consultaCorrectionFirst", records.correction.first);
-  await consult("consultaCorrected", records.correction.corrected);
-  evidence.incomplete =
-    [
-      [evidence.consultaRepeatedFirst, records.repeated.first],
-      [evidence.consultaRepeatedSecond, records.repeated.second],
-      [evidence.consultaChainedFirst, records.chained.first],
-      [evidence.consultaChainedSecond, records.chained.second],
-      [evidence.consultaCorrectionFirst, records.correction.first],
-      [evidence.consultaCorrected, records.correction.corrected],
-    ].some(
-      ([entry, record]) => !entry.RegistroEncontrado || entry.HuellaConsultada !== record.Huella,
-    ) ||
-    evidence.consultaRejected.RegistroEncontrado ||
-    (evidence.consultaCorrected.SubsanacionConsultada !== undefined &&
-      evidence.consultaCorrected.SubsanacionConsultada !== "S") ||
-    (evidence.consultaCorrected.RechazoPrevioConsultado !== undefined &&
-      evidence.consultaCorrected.RechazoPrevioConsultado !== "X");
-  return evidence;
 }
 
 export async function submitStateTransitionProbe(
