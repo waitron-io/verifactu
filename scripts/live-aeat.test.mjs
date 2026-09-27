@@ -14,6 +14,7 @@ import {
   buildMixedRegimeTestRecord,
   buildTestCancellation,
   buildTestRecord,
+  buildTextTrimProbeRecords,
   certificateKind,
   consultStoredMixedRegimeProbe,
   consultUnicodeDateProbe,
@@ -28,6 +29,7 @@ import {
   representativeConsultaHeader,
   submitMixedRegimeProbe,
   submitDecimalVariantProbe,
+  submitTextTrimProbe,
   submissionHeader,
   waitForNextSubmission,
   withLiveStage,
@@ -50,6 +52,126 @@ const decimalOptions = {
   now: new Date("2026-09-27T12:00:00Z"),
   runId: "12345",
 };
+
+test("text trim probe sends four isolated, literal references and reports each read-back", async () => {
+  const probes = buildTextTrimProbeRecords(decimalOptions);
+  assert.deepEqual(
+    probes.map(({ variant }) => variant),
+    ["space", "tab", "line-feed", "nbsp"],
+  );
+  assert.equal(new Set(probes.map(({ record }) => record.IDFactura.NumSerieFactura)).size, 4);
+  const expectedRefs = [
+    " CI-TRIM-12345 ",
+    "\tCI-TRIM-12345\t",
+    "\nCI-TRIM-12345\n",
+    "\u00a0CI-TRIM-12345\u00a0",
+  ];
+  const calls = [];
+  for (const [{ record }, ref] of probes.map((probe, index) => [probe, expectedRefs[index]])) {
+    assert.equal(record.RefExterna, ref);
+    assert.deepEqual(record.Encadenamiento, { PrimerRegistro: "S" });
+    assert.equal(record.Huella, computeHuella(record));
+    const xml = serializeEnvio(
+      submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+      [{ RegistroAlta: record }],
+    );
+    assert.ok(xml.includes(`<sf:RefExterna>${ref}</sf:RefExterna>`));
+  }
+  const evidence = await submitTextTrimProbe(
+    {
+      async submit(_header, records) {
+        calls.push(["submit", records]);
+        return {
+          EstadoEnvio: "Correcto",
+          RespuestaLinea: records.map(({ RegistroAlta }) => ({
+            IDFactura: RegistroAlta.IDFactura,
+            EstadoRegistro: "Correcto",
+            RefExterna: RegistroAlta.RefExterna?.trim(),
+          })),
+        };
+      },
+      async consultar(_header, filter) {
+        calls.push(["consultar", filter]);
+        const probe = probes.find(
+          ({ record }) => record.IDFactura.NumSerieFactura === filter.NumSerieFactura,
+        );
+        return {
+          ResultadoConsulta: "ConDatos",
+          IndicadorPaginacion: "N",
+          registros: [
+            {
+              IDFactura: probe.record.IDFactura,
+              EstadoRegistro: "Correcto",
+              DatosRegistroFacturacion: { RefExterna: probe.record.RefExterna.trim() },
+            },
+          ],
+        };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    issuerConsultaHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    probes,
+    "2026",
+    "09",
+  );
+  assert.deepEqual(
+    calls.map(([operation]) => operation),
+    ["submit", "consultar", "consultar", "consultar", "consultar"],
+  );
+  assert.equal(calls[0][1].length, 4);
+  assert.deepEqual(
+    evidence.map(({ variant, EstadoRegistro, RefExternaRespuesta, RefExternaConsultada }) => ({
+      variant,
+      EstadoRegistro,
+      RefExternaRespuesta,
+      RefExternaConsultada,
+    })),
+    probes.map(({ variant }) => ({
+      variant,
+      EstadoRegistro: "Correcto",
+      RefExternaRespuesta: "CI-TRIM-12345",
+      RefExternaConsultada: "CI-TRIM-12345",
+    })),
+  );
+});
+
+test("text trim probe consults every variant after a partially rejected submission", async () => {
+  const probes = buildTextTrimProbeRecords(decimalOptions);
+  const consulted = [];
+  const evidence = await submitTextTrimProbe(
+    {
+      async submit() {
+        return {
+          EstadoEnvio: "ParcialmenteCorrecto",
+          RespuestaLinea: [
+            {
+              IDFactura: probes[0].record.IDFactura,
+              EstadoRegistro: "Incorrecto",
+              CodigoErrorRegistro: 2000,
+              DescripcionErrorRegistro: "Example rejection",
+            },
+          ],
+        };
+      },
+      async consultar(_header, filter) {
+        consulted.push(filter.NumSerieFactura);
+        return { ResultadoConsulta: "SinDatos", IndicadorPaginacion: "N", registros: [] };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    issuerConsultaHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    probes,
+    "2026",
+    "09",
+  );
+  assert.deepEqual(
+    consulted,
+    probes.map(({ record }) => record.IDFactura.NumSerieFactura),
+  );
+  assert.equal(evidence[0].CodigoErrorRegistro, 2000);
+  assert.equal(evidence[0].DescripcionErrorRegistro, "Example rejection");
+  assert.ok(evidence.every(({ ResultadoConsulta }) => ResultadoConsulta === "SinDatos"));
+});
 
 test("decimal probe submits one-decimal XML and hashes those exact literals with its own serial", () => {
   const probe = buildDecimalVariantTestRecord(decimalOptions);

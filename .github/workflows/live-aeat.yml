@@ -15,6 +15,7 @@ on:
           - mixed-regime-consult
           - decimal-variant
           - unicode-dates
+          - text-trim
         default: consult
         required: true
       excluded_regime:

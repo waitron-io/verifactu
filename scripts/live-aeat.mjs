@@ -312,6 +312,64 @@ export function buildDecimalVariantTestRecord(options) {
   return { ...record, Huella: computeHuella(record) };
 }
 
+export function buildTextTrimProbeRecords(options) {
+  const variants = [
+    ["space", " "],
+    ["tab", "\t"],
+    ["line-feed", "\n"],
+    ["nbsp", "\u00a0"],
+  ];
+  return variants.map(([variant, padding]) => {
+    const built = buildTestRecord(options);
+    const record = {
+      ...built,
+      IDFactura: {
+        ...built.IDFactura,
+        NumSerieFactura: built.IDFactura.NumSerieFactura.replace("CI/", `CI-TRIM-${variant}/`),
+      },
+      RefExterna: `${padding}CI-TRIM-${options.runId}${padding}`,
+    };
+    return { variant, record: { ...record, Huella: computeHuella(record) } };
+  });
+}
+
+export async function submitTextTrimProbe(client, cabecera, consultaCabecera, probes, year, month) {
+  const submitted = await withLiveStage("text-trim alta submission", () =>
+    client.submit(
+      cabecera,
+      probes.map(({ record }) => ({ RegistroAlta: record })),
+    ),
+  );
+  const evidence = [];
+  for (const { variant, record } of probes) {
+    const serial = record.IDFactura.NumSerieFactura;
+    const line = submitted.RespuestaLinea?.find(
+      (entry) => entry.IDFactura.NumSerieFactura === serial,
+    );
+    const consulted = await withLiveStage(`text-trim ${variant} issuer consulta`, () =>
+      client.consultar(consultaCabecera, minimalIssuerConsultaFilter(record, year, month)),
+    );
+    assertConsultation(consulted);
+    const stored = consulted.registros.find((entry) => entry.IDFactura.NumSerieFactura === serial);
+    evidence.push({
+      variant,
+      NumSerieFactura: serial,
+      RefExternaEnviada: record.RefExterna,
+      HuellaEnviada: record.Huella,
+      EstadoEnvio: submitted.EstadoEnvio,
+      EstadoRegistro: line?.EstadoRegistro,
+      CodigoErrorRegistro: line?.CodigoErrorRegistro,
+      DescripcionErrorRegistro: line?.DescripcionErrorRegistro,
+      RefExternaRespuesta: line?.RefExterna,
+      ResultadoConsulta: consulted.ResultadoConsulta,
+      EstadoConsultado: stored?.EstadoRegistro,
+      RefExternaConsultada: stored?.DatosRegistroFacturacion?.RefExterna,
+      HuellaConsultada: stored?.DatosRegistroFacturacion?.Huella,
+    });
+  }
+  return evidence;
+}
+
 export async function submitDecimalVariantProbe(
   client,
   cabecera,
@@ -712,10 +770,11 @@ async function main() {
       "mixed-regime-consult",
       "decimal-variant",
       "unicode-dates",
+      "text-trim",
     ].includes(mode)
   ) {
     throw new Error(
-      "Mode must be consult, submit, mixed-regime, mixed-regime-consult, decimal-variant, or unicode-dates",
+      "Mode must be consult, submit, mixed-regime, mixed-regime-consult, decimal-variant, unicode-dates, or text-trim",
     );
   }
   const nif = required("AEAT_TEST_NIF");
@@ -762,6 +821,29 @@ async function main() {
   };
   const cabecera = submissionHeader(obligadoEmision);
   const runId = process.env.GITHUB_RUN_ID ?? String(now.getTime());
+
+  if (mode === "text-trim") {
+    const probes = buildTextTrimProbeRecords({
+      nif,
+      name,
+      systemNif: required("AEAT_TEST_SYSTEM_NIF"),
+      systemName: required("AEAT_TEST_SYSTEM_NAME"),
+      recipientNif: recipient.NIF,
+      recipientName: recipient.NombreRazon,
+      now,
+      runId,
+    });
+    const evidence = await submitTextTrimProbe(
+      client,
+      cabecera,
+      consultaCabecera,
+      probes,
+      year,
+      month,
+    );
+    process.stdout.write(`AEAT text-trim response: ${JSON.stringify(evidence)}\n`);
+    return;
+  }
 
   if (mode === "mixed-regime-consult") {
     const excludedRegime = process.env.AEAT_TEST_EXCLUDED_REGIME ?? "03";
