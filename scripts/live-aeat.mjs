@@ -496,6 +496,76 @@ export async function consultStoredMixedRegimeProbe(client, options) {
   };
 }
 
+export async function consultUnicodeDateProbe(client, header, { runId, issueDate }) {
+  const date = /^(\d{2})-(\d{2})-(\d{4})$/.exec(issueDate);
+  if (!date || !/^\d+$/.test(runId)) {
+    throw new Error("Unicode-date probe needs an ASCII DD-MM-YYYY issue date and numeric run ID");
+  }
+  const [, day, month, year] = date;
+  const serial = `CI-DECIMAL/${year}${month}${day}/${runId}`;
+  const filter = {
+    Ejercicio: year,
+    Periodo: month,
+    NumSerieFactura: serial,
+    FechaExpedicionFactura: issueDate,
+  };
+  const sameRecord = (entry) =>
+    entry.IDFactura.NumSerieFactura === serial &&
+    entry.IDFactura.FechaExpedicionFactura === issueDate;
+  const evidence = (result) => ({
+    ResultadoConsulta: result.ResultadoConsulta,
+    IndicadorPaginacion: result.IndicadorPaginacion,
+    ...(result.ClavePaginacion !== undefined && { ClavePaginacion: result.ClavePaginacion }),
+    registros: result.registros.map((entry) => ({
+      IDFactura: entry.IDFactura,
+      ...(entry.EstadoRegistro !== undefined && { EstadoRegistro: entry.EstadoRegistro }),
+      ...(entry.CodigoErrorRegistro !== undefined && {
+        CodigoErrorRegistro: entry.CodigoErrorRegistro,
+      }),
+      ...(entry.DescripcionErrorRegistro !== undefined && {
+        DescripcionErrorRegistro: entry.DescripcionErrorRegistro,
+      }),
+    })),
+    found: result.registros.some(sameRecord),
+  });
+  const ascii = await withLiveStage("Unicode-date ASCII baseline", () =>
+    client.consultar(header, filter),
+  );
+  assertConsultation(ascii);
+  if (!ascii.registros.some(sameRecord)) {
+    throw new Error("ASCII baseline did not return the known decimal-variant record");
+  }
+  const arabicIndicDigits = (value) =>
+    value.replace(/[0-9]/g, (digit) => "٠١٢٣٤٥٦٧٨٩"[Number(digit)]);
+  let arabicIndicResult;
+  try {
+    arabicIndicResult = await withLiveStage("Unicode-date Arabic-Indic consulta", () =>
+      client.consultar(header, {
+        ...filter,
+        Ejercicio: arabicIndicDigits(year),
+        FechaExpedicionFactura: arabicIndicDigits(issueDate),
+      }),
+    );
+  } catch (error) {
+    return {
+      NumSerieFactura: serial,
+      ascii: evidence(ascii),
+      arabicIndic: {
+        requestError: {
+          name: error instanceof Error ? error.name : "UnknownError",
+          message: error instanceof Error ? error.message : String(error),
+        },
+      },
+    };
+  }
+  assertConsultation(arabicIndicResult);
+  return {
+    NumSerieFactura: serial,
+    ascii: evidence(ascii),
+    arabicIndic: evidence(arabicIndicResult),
+  };
+}
+
 export function assertStoredMixedRegimeEvidence(evidence) {
   if (evidence.EstadoRegistro !== "Correcto") {
     throw new Error(
@@ -635,10 +705,17 @@ export function describeRecipientConsulta(result, record) {
 async function main() {
   const mode = process.argv[2] ?? "consult";
   if (
-    !["consult", "submit", "mixed-regime", "mixed-regime-consult", "decimal-variant"].includes(mode)
+    ![
+      "consult",
+      "submit",
+      "mixed-regime",
+      "mixed-regime-consult",
+      "decimal-variant",
+      "unicode-dates",
+    ].includes(mode)
   ) {
     throw new Error(
-      "Mode must be consult, submit, mixed-regime, mixed-regime-consult, or decimal-variant",
+      "Mode must be consult, submit, mixed-regime, mixed-regime-consult, decimal-variant, or unicode-dates",
     );
   }
   const nif = required("AEAT_TEST_NIF");
@@ -667,6 +744,15 @@ async function main() {
     );
     assertConsultation(result);
     process.stdout.write(`AEAT preproduction consulta succeeded: ${result.ResultadoConsulta}\n`);
+    return;
+  }
+
+  if (mode === "unicode-dates") {
+    const evidence = await consultUnicodeDateProbe(client, consultaCabecera, {
+      runId: required("AEAT_TEST_EXISTING_RUN_ID"),
+      issueDate: required("AEAT_TEST_EXISTING_ISSUE_DATE"),
+    });
+    process.stdout.write(`AEAT Unicode-date consulta response: ${JSON.stringify(evidence)}\n`);
     return;
   }
 

@@ -14,6 +14,7 @@ on:
           - mixed-regime
           - mixed-regime-consult
           - decimal-variant
+          - unicode-dates
         default: consult
         required: true
       excluded_regime:
@@ -28,11 +29,11 @@ on:
         default: "03"
         required: true
       existing_run_id:
-        description: GitHub run ID embedded in the existing mixed-regime record
+        description: GitHub run ID embedded in an existing mixed-regime or decimal-variant record
         type: string
         required: false
       existing_issue_date:
-        description: Issue date of the existing mixed-regime record (DD-MM-YYYY)
+        description: Issue date of the existing mixed-regime or decimal-variant record (DD-MM-YYYY)
         type: string
         required: false
       legacy_mixed_prefix:

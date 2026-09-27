@@ -1470,6 +1470,24 @@ Production calls are not required to maintain the offline ledger.
 
 ### Existing live evidence
 
+#### Unicode consultation-date probe design (E29)
+
+The `unicode-dates` workflow mode makes read-only consultas for the known accepted
+`CI-DECIMAL/20260927/36337265120` preproduction record from E28. Supply that run ID and its
+`27-09-2026` issue date as workflow inputs. The first query uses ASCII digits in both
+`Ejercicio` and `FechaExpedicionFactura` and must return the record. The second changes only
+those two fields to Arabic-Indic digits; the month and serial stay identical. The XML serializer
+preserves the Arabic-Indic characters, which the pinned request XSD accepts. This mode sends no
+record and cannot affect the monthly submission chain.
+
+Before running it: `ConDatos` with the same serial and issue date would be consistent with AEAT
+treating these digit scripts as equivalent for these filters, though it would not prove that AEAT
+applies the date filter. `SinDatos` would show the two spellings do not match this stored record.
+A SOAP fault or other request error would show AEAT refuses the Arabic-Indic query or could not
+process it. The probe logs the parsed result status, pagination flag, returned invoice identities,
+record states and errors, or the request error message, before choosing how the fake should
+behave. An absent ASCII baseline makes the comparison invalid, so the probe fails in that case.
+
 #### Decimal lexical probe design (E28)
 
 The `decimal-variant` workflow mode submits one first-in-chain preproduction alta with
