@@ -49,7 +49,20 @@ operación que acabas de intentar.
 Para subsanar un alta, `Subsanacion: "S"` con `RechazoPrevio` omitido o `N` sustituye un
 registro existente en el transporte falso, incluso si estaba anulado. Sin ese registro previo,
 el transporte devuelve el error `3002`; usa `RechazoPrevio: "X"` para la operativa publicada sin
-registro previo. Una anulación ordinaria también requiere un registro existente. Si no lo hay,
+registro previo.
+
+Al reintentar un alta rechazada, comprueba la línea de respuesta y después consulta la factura.
+En [una prueba de preproducción](https://github.com/waitron-io/verifactu/blob/main/COMPLIANCE-AUDIT.md#e32-state-transition-preproduction-probe),
+el reenvío de un alta idéntica devolvió `3000` con estado duplicado `Correcta`, y un alta con
+`RechazoPrevio: "S"` deliberadamente inválido devolvió `1161`, como el transporte falso. La AEAT
+almacenó la subsanación posterior con `Subsanacion: "S"` y `RechazoPrevio: "X"`, pero le asignó
+`AceptadoConErrores` y el código `2007`: esa prueba también declaró el registro como un segundo
+`PrimerRegistro: "S"` para el mismo emisor y sistema informático. El transporte falso devolvió
+`Correcto` en la secuencia local. Úsalo para probar la operativa de subsanación, y comprueba la
+línea y el estado almacenado antes de concluir que no hay avisos. Esta prueba no comprobó una
+subsanación encadenada correctamente ni la conservación prolongada del historial de rechazos.
+
+Una anulación ordinaria también requiere un registro existente. Si no lo hay,
 indica `SinRegistroPrevio: "S"`; sin este indicador, el transporte devuelve `3002`. Rechaza esa
 operativa especial si ya existe un registro. En ese caso devuelve `3000` sin detalles del
 duplicado, por lo que `resolveEstadoEfectivo` devuelve `duplicate_unknown`, no `accepted`.
