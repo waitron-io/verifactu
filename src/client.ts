@@ -67,6 +67,13 @@ export class VerifactuTransportError extends Error {
 
 const SOAP_FAULT_TAG = /<(?:[\w.-]+:)?Fault(?:\s|\/?>)/;
 
+function bodyExcerpt(text: string): string {
+  const excerpt = text.slice(0, 500);
+  const last = excerpt.charCodeAt(excerpt.length - 1);
+  // A high surrogate at the limit needs its following code unit to form one character.
+  return last >= 0xd800 && last <= 0xdbff ? excerpt.slice(0, -1) : excerpt;
+}
+
 function soapText(value: unknown): string | undefined {
   if (typeof value === "string") return value || undefined;
   if (!value || typeof value !== "object") return undefined;
@@ -78,16 +85,16 @@ function soapFault(text: string, status: number): VerifactuTransportError | unde
   // Successful consulta pages can contain 10 000 records. Avoid building a
   // second full object tree unless the wire text contains an actual Fault tag.
   if (!SOAP_FAULT_TAG.test(text)) return undefined;
-  const bodyExcerpt = text.slice(0, 500);
+  const excerpt = bodyExcerpt(text);
   let body: Record<string, unknown> | undefined;
   try {
     body = (parser.parse(text) as { Envelope?: { Body?: Record<string, unknown> } }).Envelope?.Body;
   } catch (cause) {
     // A malformed fault must retain the HTTP context and its parse diagnostic.
-    return new VerifactuTransportError(`AEAT SOAP fault (HTTP ${status}): ${bodyExcerpt}`, {
+    return new VerifactuTransportError(`AEAT SOAP fault (HTTP ${status}): ${excerpt}`, {
       kind: "soap",
       status,
-      bodyExcerpt,
+      bodyExcerpt: excerpt,
       cause,
     });
   }
@@ -99,14 +106,14 @@ function soapFault(text: string, status: number): VerifactuTransportError | unde
   const faultReason = soapText(fields.faultstring) ?? soapText(fields.Reason);
   const message =
     !faultCode && !faultReason
-      ? `AEAT SOAP fault (HTTP ${status}): ${bodyExcerpt}`
+      ? `AEAT SOAP fault (HTTP ${status}): ${excerpt}`
       : `AEAT SOAP fault (HTTP ${status})${faultCode ? ` ${faultCode}` : ""}${faultReason ? `: ${faultReason}` : ""}`;
   return new VerifactuTransportError(message, {
     kind: "soap",
     status,
     faultCode,
     faultReason,
-    bodyExcerpt,
+    bodyExcerpt: excerpt,
   });
 }
 
@@ -134,10 +141,10 @@ async function post(options: ClientOptions, xml: string): Promise<string> {
   const fault = soapFault(text, response.status);
   if (fault) throw fault;
   if (!response.ok) {
-    const bodyExcerpt = text.slice(0, 500);
+    const excerpt = bodyExcerpt(text);
     throw new VerifactuTransportError(
-      `AEAT request failed with HTTP ${response.status}: ${bodyExcerpt}`,
-      { kind: "http", status: response.status, bodyExcerpt },
+      `AEAT request failed with HTTP ${response.status}: ${excerpt}`,
+      { kind: "http", status: response.status, bodyExcerpt: excerpt },
     );
   }
   return text;
