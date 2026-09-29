@@ -18,6 +18,39 @@ requiere revisión, pero no hace que `assertValid` lance una excepción porque l
 el registro. La validación comprueba formatos locales y algunas reglas de la AEAT. La respuesta de
 la AEAT sigue siendo la fuente definitiva; examina cada línea después de enviar.
 
+## Comprueba el XML sin firma con los esquemas fijados
+
+Si importas XML de otro sistema o quieres comprobar una solicitud construida, usa un validador de
+esquemas XML (XSD) antes del envío. El paquete incluye `SuministroLR.xsd` y `ConsultaLR.xsd` de
+la AEAT, con su importación local de `SuministroInformacion.xsd`. Es una comprobación opcional que
+ejecutas en tus propias herramientas; `submit` no la ejecuta. Instala `xmllint` de libxml2 por
+separado y ejecuta `npm ci` en un clon del repositorio para disponer del analizador XML del ejemplo:
+
+```sh
+# Extrae la solicitud, no el sobre SOAP que la contiene.
+node website/scripts/extract-soap-body.mjs filing-envelope.xml > filing-body.xml
+XML_CATALOG_FILES=test/xsd/catalog.xml \
+  xmllint --nonet --noout --schema schemas/SuministroLR.xsd filing-body.xml
+
+node website/scripts/extract-soap-body.mjs consulta-envelope.xml > consulta-body.xml
+XML_CATALOG_FILES=test/xsd/catalog.xml \
+  xmllint --nonet --noout --schema schemas/ConsultaLR.xsd consulta-body.xml
+```
+
+Ambos comandos terminan correctamente si la solicitud sin firma cumple el esquema y señalan el
+elemento que falla en caso contrario. El extractor conserva las declaraciones de espacio de
+nombres que se pierden con `xmllint --xpath`. Las rutas de los esquemas resuelven sus importaciones
+localmente. El catálogo de pruebas sustituye la importación opcional de la firma XML por un
+esquema mínimo **solo para solicitudes sin firma**; no comprueba mensajes firmados ni sus firmas.
+Para una solicitud firmada, configura tu validador con el esquema real de XML Signature y
+verifica la firma por separado. No envíes una solicitud solo porque supere esta prueba: cumplir
+el esquema no demuestra que cumpla las reglas de negocio, que el certificado sea válido ni que
+la AEAT vaya a aceptarla. El archivo de pruebas
+[`xsd-conformance.test.ts`](https://github.com/waitron-io/verifactu/blob/main/src/xsd-conformance.test.ts)
+ejecuta casos válidos e inválidos de envío y consulta con estas mismas importaciones. Si usas el
+paquete publicado en lugar de un clon, este incluye `schemas/`; tendrás que proporcionar tu
+propio catálogo y esquema mínimo para firmas ausentes, porque `test/xsd/` no se publica.
+
 Si modificas directamente un registro ya construido, mantén la forma correcta de los valores
 numéricos del XML. La AEAT no permite ceros a la izquierda: escribe `11.11`, no `011.11`, y
 `0.00`, no `00.00`. `validate` devuelve `AMOUNT_FORMAT` para un importe o `TIPO_RANGE` para un

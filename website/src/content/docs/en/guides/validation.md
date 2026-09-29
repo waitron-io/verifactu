@@ -18,6 +18,38 @@ review but does not make `assertValid` throw because AEAT may still accept the r
 catches local format and selected AEAT rules; AEAT's response remains authoritative. Inspect every
 returned line after submission.
 
+## Check unsigned XML against the pinned schemas
+
+If you import XML from another system or want an extra check on a constructed request, run an XML
+Schema (XSD) validator before sending it. The package includes AEAT's pinned `SuministroLR.xsd`
+and `ConsultaLR.xsd` with their local `SuministroInformacion.xsd` import. This is an optional
+check you run in your own tooling; `submit` does not run it. Install `xmllint` from libxml2
+separately, then run `npm ci` in a clone of this repository for the example's XML parser:
+
+```sh
+# Extract the request element, not the surrounding SOAP envelope.
+node website/scripts/extract-soap-body.mjs filing-envelope.xml > filing-body.xml
+XML_CATALOG_FILES=test/xsd/catalog.xml \
+  xmllint --nonet --noout --schema schemas/SuministroLR.xsd filing-body.xml
+
+node website/scripts/extract-soap-body.mjs consulta-envelope.xml > consulta-body.xml
+XML_CATALOG_FILES=test/xsd/catalog.xml \
+  xmllint --nonet --noout --schema schemas/ConsultaLR.xsd consulta-body.xml
+```
+
+Both commands exit successfully for a schema-valid unsigned request and report the failing
+element for a schema-invalid one. The extractor keeps namespace declarations that a bare
+`xmllint --xpath` copy loses. The schema paths resolve their imports locally. The test-only
+catalog resolves AEAT's optional XML-signature import to a placeholder **only for unsigned
+requests**; it cannot validate a signed message or its signature. For a signed request, configure
+your own validator with the real XML Signature schema and verify the signature separately. Do not
+send a request just because its XML passes this check: schema validity does not establish business
+validity, certificate authority, or AEAT acceptance. The repository's
+[`xsd-conformance.test.ts`](https://github.com/waitron-io/verifactu/blob/main/src/xsd-conformance.test.ts)
+exercises valid and invalid filing and consulta bodies with these same pinned imports. If you use
+the published package instead of a clone, its `schemas/` directory is included; supply your own
+catalog and unsigned-only signature stub, since `test/xsd/` is not published.
+
 If you edit a built record directly, keep numeric XML values in their canonical form. AEAT does
 not allow leading zeroes: write `11.11`, not `011.11`, and `0.00`, not `00.00`. `validate` reports
 `AMOUNT_FORMAT` for an amount or `TIPO_RANGE` for a tax rate that breaks this rule. The record
