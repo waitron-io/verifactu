@@ -384,6 +384,19 @@ describe("structured transport failures", () => {
     expect(error).toHaveProperty("cause", expect.any(Error));
   });
 
+  it("keeps a malformed SOAP fault excerpt on a character boundary", async () => {
+    const opening = "<Envelope><Body><Fault>";
+    const prefix = opening + "x".repeat(499 - opening.length);
+    const body = `${prefix}😀<faultco`;
+    const error = await invoke(fakeFetch(body), "submit").catch((failure: unknown) => failure);
+    expect(error).toMatchObject({
+      kind: "soap",
+      bodyExcerpt: prefix,
+      message: `AEAT SOAP fault (HTTP 200): ${prefix}`,
+      cause: expect.any(Error),
+    });
+  });
+
   it.each([
     ["<Envelope><Body><Fault><faultcode>Server</faultcode>", "Server", undefined],
     [
