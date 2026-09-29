@@ -46,6 +46,24 @@ export default defineConfig({
       ],
       sidebar: [
         {
+          // English-only draft of simpler docs, kept beside the current pages for comparison.
+          ...t("Simpler docs (draft)", "Simpler docs (draft)"),
+          items: [
+            { label: "Overview", slug: "simple" },
+            { label: "Getting started", slug: "simple/getting-started" },
+            { label: "Invoice records", slug: "simple/guides/records" },
+            { label: "Linking records", slug: "simple/guides/chain" },
+            { label: "Checking records", slug: "simple/guides/checking" },
+            { label: "Sending to AEAT", slug: "simple/guides/sending" },
+            { label: "AEAT's reply", slug: "simple/guides/replies" },
+            { label: "Looking up records", slug: "simple/guides/lookup" },
+            { label: "QR codes", slug: "simple/guides/qr" },
+            { label: "Testing", slug: "simple/guides/testing" },
+            { label: "Lower-level tools", slug: "simple/guides/tools" },
+            { label: "What your application does", slug: "simple/guides/your-application" },
+          ],
+        },
+        {
           ...t("Start here", "Empieza aquí"),
           items: [
             { ...t("Getting started", "Primeros pasos"), slug: "start/getting-started" },

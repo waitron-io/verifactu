@@ -11,7 +11,10 @@ const files = [];
 
 function blocks(locale, page, section = "guides", extension = "md") {
   const path = join(website, "src/content/docs", locale, section, `${page}.${extension}`);
-  const markdown = readFileSync(path, "utf8");
+  return tsBlocks(readFileSync(path, "utf8"));
+}
+
+function tsBlocks(markdown) {
   return [...markdown.matchAll(/^```ts\n([\s\S]*?)^```/gm)].map((match) =>
     match[1]
       .replaceAll('from "@waitron/verifactu/testing"', 'from "../../dist/testing/fake-aeat.js"')
@@ -34,7 +37,7 @@ function snippetPages(locale) {
     }
   }
   visit(root);
-  return pages.sort();
+  return pages.filter((page) => !page.startsWith("simple/")).sort();
 }
 
 function save(name, source) {
@@ -58,6 +61,181 @@ function run(command, args) {
   }
 }
 
+// The draft docs under simple/ are checked generically: each page's TypeScript blocks run
+// together against the offline AEAT, every `console.log(...); // output` comment must match
+// what the line prints (text after " (" is explanation), and names the page does not define
+// (or only `declare`s, for functions the reader writes) come from the fixtures below.
+const SIMPLE_PAGES = [
+  "getting-started.mdx",
+  "guides/chain.md",
+  "guides/checking.md",
+  "guides/lookup.md",
+  "guides/qr.md",
+  "guides/records.md",
+  "guides/replies.md",
+  "guides/sending.md",
+  "guides/testing.md",
+  "guides/tools.md",
+];
+
+const SIMPLE_EXTRAS = {
+  "getting-started.mdx": {
+    after: `__assert.equal(__savedRecords[0], record);
+__assert.equal(__savedReplies[0], reply);
+__assert.equal(new URL(qrUrl).searchParams.get("importe"), "12.10");
+const __testReply = await testClient.submit({ ObligadoEmision: seller }, [{ RegistroAlta: record }]);
+__assert.equal(__testReply.RespuestaLinea[0]?.EstadoRegistro, "Correcto");`,
+  },
+  "guides/lookup.md": { before: "await client.submit(cabecera, [{ RegistroAlta: record }]);" },
+  "guides/sending.md": {
+    after: `__assert.equal(typeof createCertificateFetch(Buffer.from("test-only"), "test-only"), "function");`,
+  },
+};
+
+const SIMPLE_FIXTURES = [
+  ["software", "__software"],
+  ["seller", "__seller"],
+  ["cabecera", "__cabecera"],
+  ["sale", "__sale"],
+  ["record", "__record"],
+  ["aeat", "__aeat"],
+  ["client", "__client"],
+  ["certificateFetch", "__aeat.fetch"],
+  ["loadPreviousRecord", "__loadPreviousRecord"],
+  ["saveRecord", "__saveRecord"],
+  ["saveReply", "__saveReply"],
+];
+
+const SIMPLE_PRELUDE = `import __assert from "node:assert/strict";
+import * as __vf from "../../dist/index.js";
+import * as __testing from "../../dist/testing/fake-aeat.js";
+const __software: __vf.SistemaInformatico = {
+  NombreRazon: "Example SL",
+  NIF: "89890001K",
+  NombreSistemaInformatico: "Example POS",
+  IdSistemaInformatico: "01",
+  Version: "1.0",
+  NumeroInstalacion: "001",
+  TipoUsoPosibleSoloVerifactu: "S",
+  TipoUsoPosibleMultiOT: "N",
+  IndicadorMultiplesOT: "N",
+};
+const __seller = { NombreRazon: "Example SL", NIF: "89890001K" };
+const __cabecera: __vf.Cabecera = { ObligadoEmision: __seller };
+const __issuedAt = new Date("2026-07-20T12:00:00Z");
+const __sale = {
+  IDEmisorFactura: __seller.NIF,
+  NombreRazonEmisor: __seller.NombreRazon,
+  FechaExpedicionFactura: __issuedAt,
+  TipoFactura: "F2" as const,
+  DescripcionOperacion: "Coffee and lunch",
+  Desglose: [{ ClaveRegimen: "01", CalificacionOperacion: "S1", TipoImpositivo: "21", BaseImponibleOimporteNoSujeto: "10.00", CuotaRepercutida: "2.10" }],
+  CuotaTotal: "2.10",
+  ImporteTotal: "12.10",
+  SistemaInformatico: __software,
+  generadoEn: __issuedAt,
+  offsetMinutes: 120,
+};
+const __record = __vf.buildAltaRecord({ ...__sale, NumSerieFactura: "T01/000123", Encadenamiento: { PrimerRegistro: "S" } });
+const __aeat = __testing.createFakeAeat({ serverNow: new Date() });
+const __client = __aeat.client();
+const __savedRecords: unknown[] = [];
+const __savedReplies: unknown[] = [];
+async function __loadPreviousRecord(): Promise<__vf.RegistroAnterior | null> { return null; }
+async function __saveRecord(record: unknown) { __savedRecords.push(record); }
+async function __saveReply(reply: unknown) { __savedReplies.push(reply); }
+const __outputs: string[] = [];
+const console = {
+  log: (...items: unknown[]) => { __outputs.push(items.map(String).join(" ")); },
+  warn: (..._items: unknown[]) => {},
+};
+`;
+
+const IMPORT_STATEMENT = /^import\s+(type\s+)?([\s\S]*?)\s+from\s+"([^"]+)";[ \t]*\n?/gm;
+
+// Blocks on one page repeat imports of the same module; TypeScript rejects a name imported twice,
+// so the imports are hoisted and merged per module.
+function mergeImports(sources) {
+  const modules = new Map();
+  const entry = (from) => {
+    if (!modules.has(from))
+      modules.set(from, { defaults: new Set(), stars: new Set(), named: new Set() });
+    return modules.get(from);
+  };
+  const bodies = sources.map((source) =>
+    source.replace(IMPORT_STATEMENT, (_, typeOnly, clause, from) => {
+      const target = entry(from);
+      let rest = clause.trim();
+      if (rest.startsWith("* as ")) {
+        target.stars.add(rest.slice(5).trim());
+        return "";
+      }
+      const brace = rest.indexOf("{");
+      const head = (brace === -1 ? rest : rest.slice(0, brace)).replace(/,\s*$/, "").trim();
+      if (head) target.defaults.add(head);
+      if (brace !== -1) {
+        for (const name of rest.slice(brace + 1, rest.lastIndexOf("}")).split(",")) {
+          const trimmed = name.trim();
+          if (trimmed)
+            target.named.add(
+              typeOnly && !trimmed.startsWith("type ") ? `type ${trimmed}` : trimmed,
+            );
+        }
+      }
+      return "";
+    }),
+  );
+  const imports = [];
+  for (const [from, { defaults, stars, named }] of modules) {
+    for (const name of defaults) imports.push(`import ${name} from "${from}";`);
+    for (const name of stars) imports.push(`import * as ${name} from "${from}";`);
+    if (named.size) imports.push(`import { ${[...named].join(", ")} } from "${from}";`);
+  }
+  return { imports: imports.join("\n"), bodies };
+}
+
+function checkSimplePages() {
+  const root = join(website, "src/content/docs/en/simple");
+  const pages = [];
+  (function visit(dir) {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) visit(path);
+      else if (/\.mdx?$/.test(entry.name) && /^```ts$/m.test(readFileSync(path, "utf8"))) {
+        pages.push(relative(root, path));
+      }
+    }
+  })(root);
+  assert.deepEqual(pages.sort(), SIMPLE_PAGES, "simple/ pages with TypeScript examples");
+
+  for (const page of SIMPLE_PAGES) {
+    const { imports, bodies } = mergeImports(tsBlocks(readFileSync(join(root, page), "utf8")));
+    const code = bodies.join("\n");
+    const fixtures = SIMPLE_FIXTURES.flatMap(([name, value]) => {
+      if (new RegExp(`\\bdeclare\\s+(?:const|function)\\s+${name}\\b`).test(code)) {
+        return [`(globalThis as any).${name} = ${value};`];
+      }
+      if (new RegExp(`\\b(?:const|let|function|class)\\s+${name}\\b`).test(code)) return [];
+      return [`const ${name} = ${value};`];
+    });
+    const expected = [...code.matchAll(/^\s*console\.log\(.*\);\s*\/\/\s*(.+)$/gm)].map((match) =>
+      match[1].replace(/\s+\(.*\)$/, "").trim(),
+    );
+    const extras = SIMPLE_EXTRAS[page] ?? {};
+    save(
+      `en-simple-${page.replace(/[/.]/g, "-")}`,
+      `${imports}
+${SIMPLE_PRELUDE}
+${fixtures.join("\n")}
+${extras.before ?? ""}
+${code}
+__assert.deepEqual(__outputs, ${JSON.stringify(expected)}, ${JSON.stringify(`simple/${page} printed output`)});
+${extras.after ?? ""}
+`,
+    );
+  }
+}
+
 try {
   const readme = [
     ...readFileSync(join(website, "..", "README.md"), "utf8").matchAll(/^```ts\n([\s\S]*?)^```/gm),
@@ -73,33 +251,7 @@ assert.doesNotThrow(() => assertValid(rectificativa));
 `,
   );
 
-  const simple = blocks("en", "index", "simple", "mdx");
-  assert.equal(simple.length, 8, "simple landing page must have eight TypeScript blocks");
-  save(
-    "en-simple",
-    `import assert from "node:assert/strict";
-import { createFakeAeat as harnessFakeAeat } from "../../dist/testing/fake-aeat.js";
-const outputs: unknown[][] = [];
-const console = { log: (...items: unknown[]) => outputs.push(items) };
-const saved: unknown[] = [];
-const replies: unknown[] = [];
-async function loadPreviousRecord() { return null; }
-async function saveRecord(record: unknown) { saved.push(record); }
-async function saveReply(reply: unknown) { replies.push(reply); }
-const aeat = harnessFakeAeat({ serverNow: new Date() });
-const certificateFetch = aeat.fetch;
-${simple.join("\n")}
-assert.equal(saved[0], record);
-assert.equal(replies[0], reply);
-assert.equal(new URL(qrUrl).searchParams.get("importe"), "12.10");
-assert.deepEqual(outputs[0], ["T01/000123", "accepted"]);
-assert.equal(typeof reply.TiempoEsperaEnvio, "number");
-assert.equal(outputs[1]?.[0], reply.TiempoEsperaEnvio);
-assert.equal(aeat.stored().length, 1);
-const testReply = await testClient.submit({ ObligadoEmision: seller }, [{ RegistroAlta: record }]);
-assert.equal(testReply.RespuestaLinea[0]?.EstadoRegistro, "Correcto");
-`,
-  );
+  checkSimplePages();
 
   for (const locale of ["en", "es"]) {
     assert.deepEqual(snippetPages(locale), [
@@ -111,7 +263,6 @@ assert.equal(testReply.RespuestaLinea[0]?.EstadoRegistro, "Correcto");
       "guides/submit.md",
       "guides/testing.md",
       "guides/validation.md",
-      ...(locale === "en" ? ["simple/index.mdx"] : []),
       "start/getting-started.md",
     ]);
     const submit = blocks(locale, "submit");
