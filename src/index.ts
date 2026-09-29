@@ -26,7 +26,7 @@ export {
 } from "./xml/parse-suministro.js";
 export { parseRespuestaConsulta } from "./xml/parse-consulta.js";
 export { parseConsulta, parseEnvio } from "./xml/parse-request.js";
-export { createClient } from "./client.js";
+export { createClient, VerifactuTransportError } from "./client.js";
 
 export type * from "./types.js";
 export type { Environment } from "./endpoints.js";
@@ -62,4 +62,4 @@ export type {
   RegistroConsultado,
   RespuestaConsulta,
 } from "./xml/parse-consulta.js";
-export type { ClientOptions, VerifactuClient } from "./client.js";
+export type { ClientOptions, VerifactuClient, TransportErrorKind } from "./client.js";
