@@ -5,7 +5,8 @@
 - `createClient` and the `submitRecords` facade now throw the exported
   `VerifactuTransportError` for network, HTTP and SOAP failures. Its `kind`
   distinguishes those stages; `status`, `faultCode`, `faultReason` and a
-  bounded `bodyExcerpt` retain response diagnostics when available. Network
+  bounded `bodyExcerpt` retain response diagnostics when available. A body-read
+  failure has `kind: "network"` and retains the received HTTP status. Network
   failures now wrap the original exception in `cause` (including its own
   cause), preserving its message rather than its object identity or subclass.
   Existing HTTP/SOAP messages remain useful; malformed faults also retain

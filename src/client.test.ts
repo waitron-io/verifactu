@@ -360,7 +360,7 @@ describe("structured transport failures", () => {
   });
 
   it.each([200, 500])("retains diagnostics for a malformed Fault at HTTP %s", async (status) => {
-    const body = "<Envelope><Body><Fault><faultcode>Server</faultcode>";
+    const body = "<Envelope><Body><Fault><faultco";
     const error = await invoke(fakeFetch(body, { status }), "consultar").catch(
       (error: unknown) => error,
     );
@@ -368,6 +368,40 @@ describe("structured transport failures", () => {
     expect(error).toHaveProperty("faultCode", undefined);
     expect(error).toHaveProperty("faultReason", undefined);
     expect(error).toHaveProperty("cause", expect.any(Error));
+  });
+
+  it.each([
+    ["<Envelope><Body><Fault><faultcode>Server</faultcode>", "Server", undefined],
+    [
+      '\n<?xml version="1.0"?><Envelope><Body><Fault><faultcode>Client</faultcode><faultstring>bad filter</faultstring></Fault></Body></Envelope>',
+      "Client",
+      "bad filter",
+    ],
+    [
+      "<Envelope><Body><Fault><faultcode>Client</faultcode><faultstring>A & B</faultstring></Fault></Body></Envelope>",
+      "Client",
+      "A & B",
+    ],
+  ])(
+    "retains recoverable fault fields from imperfect XML: %s",
+    async (body, faultCode, faultReason) => {
+      const error = await invoke(fakeFetch(body as string, { status: 500 }), "submit").catch(
+        (error: unknown) => error,
+      );
+      expect(error).toMatchObject({ kind: "soap", status: 500, faultCode, faultReason });
+      expect((error as Error).message).toBe(
+        `AEAT SOAP fault (HTTP 500) ${faultCode}${faultReason ? `: ${faultReason}` : ""}`,
+      );
+    },
+  );
+
+  it("supplies a diagnostic for a cause with an empty message", async () => {
+    const original = new Error();
+    const error = await invoke(() => Promise.reject(original), "submit").catch(
+      (error: unknown) => error,
+    );
+    expect(error).toMatchObject({ kind: "network", message: "AEAT network request failed" });
+    expect((error as Error).cause).toBe(original);
   });
 
   it("keeps an unknown fault diagnosable with a bounded excerpt", async () => {

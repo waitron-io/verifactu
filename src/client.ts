@@ -81,8 +81,7 @@ function soapFault(text: string, status: number): VerifactuTransportError | unde
   const bodyExcerpt = text.slice(0, 500);
   let body: Record<string, unknown> | undefined;
   try {
-    body = (parser.parse(text, true) as { Envelope?: { Body?: Record<string, unknown> } }).Envelope
-      ?.Body;
+    body = (parser.parse(text) as { Envelope?: { Body?: Record<string, unknown> } }).Envelope?.Body;
   } catch (cause) {
     // A malformed fault must retain the HTTP context and its parse diagnostic.
     return new VerifactuTransportError(`AEAT SOAP fault (HTTP ${status}): ${bodyExcerpt}`, {
@@ -121,14 +120,14 @@ async function post(options: ClientOptions, xml: string): Promise<string> {
         "Content-Type": "text/xml; charset=utf-8",
         // The WSDL declares soapAction="" on every operation; dispatch is by
         // message body, not by this header.
-        SOAPAction: '\"\"',
+        SOAPAction: '""',
       },
       body: xml,
     });
     text = await response.text();
   } catch (cause) {
     throw new VerifactuTransportError(
-      cause instanceof Error ? cause.message : "AEAT network request failed",
+      cause instanceof Error && cause.message ? cause.message : "AEAT network request failed",
       { kind: "network", status: response?.status, cause },
     );
   }
