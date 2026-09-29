@@ -20,6 +20,10 @@ It has one dependency, `fast-xml-parser`, and no native code.
 
 - Builds invoice records and cancellations, including corrections and invoices that replace
   simplified invoices.
+- Covers every tax and special scheme in AEAT's rules, not just standard VAT: the Canary Islands'
+  IGIC, Ceuta and Melilla's IPSI, and schemes such as second-hand goods, travel agencies, cash
+  accounting, the equivalence surcharge and farming, along with exempt sales, reverse charge and
+  customers from abroad. See [Taxes and special schemes](/verifactu/en/simple/guides/tax/).
 - Calculates the fingerprint (hash) that links each record to the one before it, and checks a single
   record's fingerprint.
 - Checks each record before you send it, and reports every problem as an error or a warning, with a
@@ -44,9 +48,12 @@ It has one dependency, `fast-xml-parser`, and no native code.
 
 [What your application does](/verifactu/en/simple/guides/your-application/) goes into more detail.
 
-The library supports Veri\*Factu mode, where each record goes to AEAT as soon as you issue the
-invoice. It doesn't sign records, so it doesn't support the other mode, where records stay on your
-system and are signed there.
+## What it doesn't do
+
+It doesn't support the offline mode, which AEAT calls _NO VERI\*FACTU_. In that mode your system
+keeps the records itself, signs each one electronically, keeps a log of events, and sends records
+to AEAT only when AEAT asks for them. The library supports only _VERI\*FACTU_ mode, where every
+record goes to AEAT as soon as you issue the invoice.
 
 ## Install
 

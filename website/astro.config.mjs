@@ -52,6 +52,7 @@ export default defineConfig({
             { label: "Overview", slug: "simple" },
             { label: "Getting started", slug: "simple/getting-started" },
             { label: "Invoice records", slug: "simple/guides/records" },
+            { label: "Taxes and special schemes", slug: "simple/guides/tax" },
             { label: "Linking records", slug: "simple/guides/chain" },
             { label: "Checking records", slug: "simple/guides/checking" },
             { label: "Sending to AEAT", slug: "simple/guides/sending" },

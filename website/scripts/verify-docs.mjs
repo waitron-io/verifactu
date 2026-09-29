@@ -74,6 +74,7 @@ const SIMPLE_PAGES = [
   "guides/records.md",
   "guides/replies.md",
   "guides/sending.md",
+  "guides/tax.md",
   "guides/testing.md",
   "guides/tools.md",
 ];
