@@ -74,6 +74,38 @@ describe("checkChain", () => {
     expect(check([first, second, third])).toEqual({ scope: "complete", issues: [] });
   });
 
+  it("compares a cancellation predecessor against independently specified pointer fields", () => {
+    const boundary = api.buildAnulacionRecord({
+      IDEmisorFacturaAnulada: "89890001K",
+      NumSerieFacturaAnulada: "OLD/7",
+      FechaExpedicionFacturaAnulada: new Date("2023-03-15T12:00:00Z"),
+      Encadenamiento: { PrimerRegistro: "S" },
+      SistemaInformatico: SISTEMA,
+      generadoEn: ALTA_INPUT.generadoEn,
+      offsetMinutes: 60,
+    });
+    const next = api.buildAltaRecord({
+      ...ALTA_INPUT,
+      Encadenamiento: {
+        RegistroAnterior: {
+          IDEmisorFactura: "89890001K",
+          NumSerieFactura: "OLD/7",
+          FechaExpedicionFactura: "15-03-2023",
+          Huella: boundary.Huella,
+        },
+      },
+    });
+    expect(check([next], boundary)).toEqual({ scope: "partial", issues: [] });
+  });
+
+  it("does not claim to verify content outside the hash input", () => {
+    const first = alta();
+    expect(check([{ ...first, DescripcionOperacion: "Changed unhashed description" }])).toEqual({
+      scope: "complete",
+      issues: [],
+    });
+  });
+
   it("checks an explicit boundary while keeping the result partial", () => {
     const first = alta();
     const boundary = cancellation(first);
@@ -157,6 +189,23 @@ describe("checkChain", () => {
     ]);
     expect(check([alta(first)], first).issues).toEqual([
       issue(-1, "FECHA_HORA_FORMAT", "FechaHoraHusoGenRegistro"),
+    ]);
+  });
+
+  it("skips only adjacent time comparisons around an invalid time and then resumes", () => {
+    const first = alta();
+    const second = rehash({ ...alta(first), FechaHoraHusoGenRegistro: "invalid" });
+    const third = rehash({
+      ...cancellation(second),
+      FechaHoraHusoGenRegistro: "2024-01-01T00:00:00+00:00",
+    });
+    const fourth = rehash({
+      ...alta(third),
+      FechaHoraHusoGenRegistro: "2023-12-31T23:59:59+00:00",
+    });
+    expect(check([first, second, third, fourth]).issues).toEqual([
+      issue(1, "FECHA_HORA_FORMAT", "FechaHoraHusoGenRegistro"),
+      issue(3, "GENERATION_TIME_ORDER", "FechaHoraHusoGenRegistro"),
     ]);
   });
 

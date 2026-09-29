@@ -47,7 +47,8 @@ export interface ChainCheckResult {
  * Hashes use verifyHuella's existing rules and cover only the hashed fields.
  * Predecessor identities and hashes are compared literally, without trimming.
  * Times use validate's numeric-offset format and real calendar checks, including
- * 24:00:00; equal instants are allowed. No current-clock comparison is made.
+ * 24:00:00; equal instants are allowed. A malformed time is reported and skips
+ * order comparisons with its immediate neighbours. No current clock is read.
  *
  * Supply options.predecessor when the first record points outside the array;
  * otherwise PREDECESSOR_MISSING reports the unchecked boundary. This does not
