@@ -34,7 +34,7 @@ for (const line of reply.RespuestaLinea) {
 | Resultado              | Qué significa                                              | Qué hacer                                                                                               |
 | ---------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | `accepted`             | La AEAT guardó el registro.                                | Nada.                                                                                                   |
-| `accepted_with_errors` | La AEAT guardó el registro, pero encontró un problema.     | Revisa el código de error. Puede que tengas que [enviar una corrección](/verifactu/es/guides/records/). |
+| `accepted_with_errors` | La AEAT guardó el registro, pero encontró un problema.     | Revisa el código de error. Puede que tengas que [enviar una corrección](/verifactu/es/guides/records/#corregir-un-registro-que-la-aeat-rechazó-o-marcó). |
 | `rejected`             | La AEAT no guardó el registro.                             | Corrige el problema y envía un registro nuevo.                                                          |
 | `duplicate_annulled`   | La AEAT ya tiene esta factura, y está anulada.             | Averigua por qué antes de enviar nada más para esta factura.                                            |
 | `duplicate_unknown`    | La AEAT ya tiene esta factura, pero no dijo en qué estado. | [Consúltala](/verifactu/es/guides/lookup/) y compara las huellas.                                       |
@@ -106,7 +106,7 @@ La regla de la AEAT es sencilla: si un envío no recibe respuesta,
 2. Vuelve a enviar los mismos registros más tarde, respetando cualquier espera que te haya indicado
    la AEAT. Sigue intentándolo hasta que llegue una respuesta. Si el servicio de la AEAT o tu
    conexión dejan de funcionar durante un tiempo, mira
-   [Trabajar sin conexión](/verifactu/es/guides/sif/).
+   [Trabajar sin conexión](/verifactu/es/guides/sif/#un-sif-o-varios).
 3. Cuando llegue la respuesta, un registro que la AEAT ya tenía aparece como duplicado, y
    `resolveEstadoEfectivo` te dice en qué estado está.
 
@@ -133,7 +133,7 @@ La biblioteca nunca reintenta por su cuenta. Nunca le des a un registro un núme
 huella nuevos solo para que pase. Si la AEAT ya lo tiene, un reenvío vuelve como duplicado, y
 `resolveEstadoEfectivo` te dice si el registro guardado está bien.
 
-[Entrega fiable](/verifactu/es/guides/delivery/) muestra cómo mantener juntos cada registro y su
+[Envío fiable](/verifactu/es/guides/delivery/) muestra cómo mantener juntos cada registro y su
 lugar en la cola de envío, para que una caída o una respuesta perdida nunca pierda un registro ni
 cree uno de más.
 

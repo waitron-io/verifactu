@@ -61,8 +61,9 @@ separate SIF; [Your invoicing system (SIF)](/verifactu/en/guides/sif/) has the d
 - **A reinstall is a new system.** Even the same software reinstalled on the same computer needs a
   new installation number, and its chain starts again with `PrimerRegistro: "S"`.
 
-Only the first record of each chain uses `PrimerRegistro`. If you send a second first record with
-the same software details (`SistemaInformatico`), AEAT stores it but flags it with warning code 2007.
+Only the first record of each chain uses `PrimerRegistro`. If you send a second first record for the
+same seller with the same software details (`SistemaInformatico`), AEAT stores it but flags it with
+warning code 2007.
 
 ## Invoice series
 

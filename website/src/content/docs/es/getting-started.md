@@ -32,8 +32,9 @@ declare const certificateFetch: typeof fetch;
 ## 1. Describe tu software
 
 Esto lo rellenas una sola vez. Indica el nombre de tu software de facturación y de la empresa que lo
-produce, e identifica tu SIF, el término de la AEAT para el sistema que emite tus facturas. Consulta
-[Tu sistema de facturación (SIF)](/verifactu/es/guides/sif/) para saber cuándo necesitas más de uno.
+produce, y, junto con el NIF del emisor, identifica tu SIF, el término de la AEAT para el sistema
+que emite tus facturas. Consulta [Tu sistema de facturación (SIF)](/verifactu/es/guides/sif/) para
+saber cuándo necesitas más de uno.
 
 ```ts
 import type { SistemaInformatico } from "@waitron/verifactu";
@@ -138,7 +139,7 @@ imprímelo en la factura.
 ```ts
 import { buildQrPayload } from "@waitron/verifactu";
 
-const environment = "preproduction"; // el servicio de pruebas de la AEAT; usa "production" cuando pases a real
+const environment = "preproduction"; // el entorno de pruebas de la AEAT; usa "production" cuando pases a real
 const qrUrl = buildQrPayload(record, environment);
 ```
 

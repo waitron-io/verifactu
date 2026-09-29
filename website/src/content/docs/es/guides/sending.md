@@ -1,5 +1,5 @@
 ---
-title: Envío a la AEAT
+title: Enviar a la AEAT
 description: Conéctate con tu certificado, elige la dirección correcta y envía registros por lotes.
 ---
 
@@ -24,7 +24,7 @@ function createCertificateFetch(pfx: Buffer, passphrase: string): typeof fetch {
 ```
 
 Carga el archivo y su contraseña desde donde guardes tus secretos y luego llama a
-`createCertificateFetch(file, passphrase)`. Pruébalo con el servicio de pruebas de la AEAT antes de
+`createCertificateFetch(file, passphrase)`. Pruébalo con el entorno de pruebas de la AEAT antes de
 usarlo en producción.
 
 ## Qué dirección

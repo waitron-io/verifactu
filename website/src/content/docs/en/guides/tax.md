@@ -11,7 +11,7 @@ adviser.
 
 Each record breaks its tax down into one or more lines in `Desglose`. The library accepts
 every tax and special-scheme code in AEAT's record format, not only standard VAT, and checks each
-line against the rules AEAT publishes for it. Passing those checks doesn't guarantee that AEAT
+line against many of the rules AEAT publishes for it. Passing those checks doesn't guarantee that AEAT
 accepts the record.
 
 ## Which tax

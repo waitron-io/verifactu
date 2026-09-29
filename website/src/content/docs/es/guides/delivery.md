@@ -1,5 +1,5 @@
 ---
-title: Entrega fiable
+title: Envío fiable
 description: No pierdas nunca un registro, ni crees uno de más, entre emitir una factura y recibir la respuesta de la AEAT.
 ---
 

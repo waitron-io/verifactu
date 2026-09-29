@@ -61,8 +61,8 @@ console.log(resolveEstadoEfectivo(rejected.RespuestaLinea[0])); // rejected
 
 ## What it doesn't prove
 
-The offline AEAT follows AEAT's published rules and what we have seen the real service do. It is
-still a copy. Before you go live, test with your real certificate against AEAT's test service
+The offline AEAT follows many of AEAT's published rules and what we have seen the real service do.
+It is still a copy. Before you go live, test with your real certificate against AEAT's test service
 (preproduction).
 
 It also doesn't:

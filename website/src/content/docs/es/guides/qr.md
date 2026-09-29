@@ -19,7 +19,7 @@ const qrUrl = buildQrPayload(record, "production");
 console.log(qrUrl); // https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR?nif=89890001K&numserie=T01%2F000123&fecha=20-07-2026&importe=12.10
 ```
 
-Usa `"preproduction"` para las facturas que crees mientras pruebas con el servicio de pruebas de la
+Usa `"preproduction"` para las facturas que crees mientras pruebas con el entorno de pruebas de la
 AEAT.
 
 ## Dibújalo

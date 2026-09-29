@@ -39,7 +39,7 @@ Pick the address by the kind of certificate you have. Each has a `production` an
 
 ## Send a batch
 
-The header names the seller whose invoices you are sending. Every record's issuer must match it.
+The header names the seller whose invoices you are sending. Every record's seller must match it.
 A batch holds up to 1,000 records, invoices and cancellations mixed, in the order you created them.
 
 ```ts

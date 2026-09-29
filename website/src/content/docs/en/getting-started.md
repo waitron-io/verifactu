@@ -31,9 +31,10 @@ declare const certificateFetch: typeof fetch;
 
 ## 1. Describe your software
 
-You fill this in once. It names your invoicing software and the company that makes it, and
-identifies your _SIF_, AEAT's term for the system that issues your invoices. See
-[Your invoicing system (SIF)](/verifactu/en/guides/sif/) for when you need more than one.
+You fill this in once. It names your invoicing software and the company that makes it, and, together
+with the seller's tax ID, identifies your _SIF_, AEAT's term for the system that issues your
+invoices. See [Your invoicing system (SIF)](/verifactu/en/guides/sif/) for when you need more than
+one.
 
 ```ts
 import type { SistemaInformatico } from "@waitron/verifactu";

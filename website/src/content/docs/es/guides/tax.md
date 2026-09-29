@@ -11,7 +11,7 @@ asesor fiscal.
 
 Cada registro desglosa su impuesto en una o más líneas en `Desglose`. La biblioteca acepta todos
 los códigos de impuesto y de régimen especial del formato de registro de la AEAT, no solo el IVA
-general, y comprueba cada línea con las reglas que la AEAT publica para ella. Pasar esas
+general, y comprueba cada línea con muchas de las reglas que la AEAT publica para ella. Pasar esas
 comprobaciones no garantiza que la AEAT acepte el registro.
 
 ## Qué impuesto
@@ -136,8 +136,8 @@ assertValid(surchargeInvoice);
 
 Una factura con más de un tipo o régimen tiene una línea para cada uno. `CuotaTotal` es la suma del
 impuesto (y del recargo, si lo hay) de todas las líneas, e `ImporteTotal` es el total de bases e
-impuesto. La AEAT admite una diferencia de hasta 10 €, trata una mayor como un aviso y no como un
-rechazo, y no hace esta comprobación en algunos regímenes.
+impuesto. La AEAT admite una diferencia de hasta 10 €, trata una mayor como una advertencia y no
+como un rechazo, y no hace esta comprobación en algunos regímenes.
 
 ## Qué comprueba
 

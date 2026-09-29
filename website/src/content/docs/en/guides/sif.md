@@ -15,11 +15,14 @@ AEAT's rules are written around the _SIF_ (_sistema informático de facturación
 and software you use to issue invoices. It takes in invoice data, keeps it and processes it,
 wherever that happens: on a till, on your own servers, or in the cloud.
 
-AEAT tells one SIF from another by three values in `SistemaInformatico`:
+AEAT tells one SIF from another by three values:
 
-- the seller's tax ID
-- your software's ID, `IdSistemaInformatico`
-- the installation number, `NumeroInstalacion`
+- the seller's tax ID, `IDEmisorFactura`
+- your software's ID, `IdSistemaInformatico` in `SistemaInformatico`
+- the installation number, `NumeroInstalacion` in `SistemaInformatico`
+
+The `NIF` in `SistemaInformatico` is the tax ID of whoever produces the software, which is not
+necessarily the seller.
 
 A new version of your software is still the same SIF. Each SIF keeps one chain of records for each
 seller; see [Linking records](/verifactu/en/guides/chain/).

@@ -44,7 +44,7 @@ installation.
 ## What the library doesn't do
 
 - Decide whether AEAT's rules apply to a business, or which tax codes fit a sale.
-- Support the offline mode (_NO VERI\*FACTU_), where your system keeps and signs the records
+- Support the no-send mode (_NO VERI\*FACTU_), where your system keeps and signs the records
   itself instead of sending each one to AEAT. It doesn't sign records or keep an event log.
 
 Read the project's [provenance and disclaimer](https://github.com/waitron-io/verifactu/blob/main/PROVENANCE.md)

@@ -4,10 +4,10 @@ TypeScript implementation of Spain's Veri\*Factu invoicing records: construction
 chaining, validation, QR payloads, SOAP submission and consulta.
 
 Read the [English documentation](https://waitron-io.github.io/verifactu/en/) or
-[Spanish documentation](https://waitron-io.github.io/verifactu/es/) for a complete submission
-walkthrough and API reference.
-For a shorter stateless build and submit flow, see the
-[getting started guide](https://waitron-io.github.io/verifactu/en/getting-started/).
+[Spanish documentation](https://waitron-io.github.io/verifactu/es/). Start with Getting started
+([English](https://waitron-io.github.io/verifactu/en/getting-started/),
+[Spanish](https://waitron-io.github.io/verifactu/es/getting-started/)); both sites include the API
+reference.
 
 > **This library is a tool for building SIFs. It is not itself a SIF.**
 > A _sistema informático de facturación_ is a deployed system. Its duties vary by operating mode
@@ -22,11 +22,11 @@ persistence, no ambient state and no I/O except through an injected `fetch`. Cha
 ordering, retries and storage belong to the caller — chain append has to join the host's
 transaction, which a stateful library could not do.
 
-Allocate `NumeroInstalacion` durably and never reuse it for the same invoice issuer, including
+Allocate `NumeroInstalacion` durably and never reuse it for the same seller, including
 after reinstalling the same software. Set `IndicadorMultiplesOT` from the invoicing operations of
 the current SaaS user, not from the software's global tenant count. Drafts and imported invoices
 stay outside the record-building boundary; once you issue an invoice, never delete it and reuse
-its issuer/serial/date identity.
+its seller/serial/date identity.
 
 Types mirror AEAT's schema names exactly (`RegistroAlta`, `Encadenamiento`, `DetalleDesglose`);
 functions are named in English.
@@ -236,7 +236,7 @@ import { createClient, SOAP_ENDPOINTS } from "@waitron/verifactu";
 const client = createClient({ endpoint: SOAP_ENDPOINTS.production, fetch });
 
 const respuesta = await client.submit(
-  { ObligadoEmision: { NombreRazon: sistema.NombreRazon, NIF: "B12345674" } },
+  { ObligadoEmision: { NombreRazon: sistema.NombreRazon, NIF: "89890001K" } },
   [{ RegistroAlta: record }],
 );
 ```

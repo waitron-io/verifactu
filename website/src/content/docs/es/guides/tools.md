@@ -68,7 +68,7 @@ El paquete incluye los archivos de esquema (XSD) de la AEAT en su carpeta `schem
 otro sistema. Con `xmllint`, desde un clon de este repositorio:
 
 ```sh
-# Pass the request inside the SOAP envelope, not the whole envelope.
+# Pasa la petición que va dentro del sobre SOAP, no el sobre completo.
 node website/scripts/extract-soap-body.mjs filing-envelope.xml > filing-body.xml
 XML_CATALOG_FILES=test/xsd/catalog.xml \
   xmllint --nonet --noout --schema schemas/SuministroLR.xsd filing-body.xml

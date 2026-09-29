@@ -40,7 +40,7 @@ julio de 2026.
 Los dos constructores escriben las fechas como `DD-MM-YYYY` y los importes con dos decimales, y
 calculan la huella del registro (`Huella`). Pasa los importes como cadenas de texto, por ejemplo
 `"12.10"`, para no perder nada por el redondeo. No cambies un registro después de crearlo: la huella
-cubre sus campos, y la AEAT la comprueba.
+cubre muchos de sus campos, y la AEAT la comprueba.
 
 ## Tipos de factura
 

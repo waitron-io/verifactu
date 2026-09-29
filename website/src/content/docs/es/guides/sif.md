@@ -15,11 +15,14 @@ Las reglas de la AEAT giran en torno al SIF (sistema informático de facturació
 software que usas para emitir facturas. Recibe los datos de las facturas, los guarda y los procesa,
 dondequiera que eso ocurra: en una caja registradora, en tus propios servidores o en la nube.
 
-La AEAT distingue un SIF de otro por tres valores de `SistemaInformatico`:
+La AEAT distingue un SIF de otro por tres valores:
 
-- el NIF del emisor
-- el identificador de tu software, `IdSistemaInformatico`
-- el número de instalación, `NumeroInstalacion`
+- el NIF del emisor, `IDEmisorFactura`
+- el identificador de tu software, `IdSistemaInformatico` en `SistemaInformatico`
+- el número de instalación, `NumeroInstalacion` en `SistemaInformatico`
+
+El `NIF` de `SistemaInformatico` es el NIF de quien produce el software, que no tiene por qué ser el
+emisor.
 
 Una versión nueva de tu software sigue siendo el mismo SIF. Cada SIF mantiene una cadena de
 registros por cada emisor; consulta [Encadenar registros](/verifactu/es/guides/chain/).

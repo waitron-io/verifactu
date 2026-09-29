@@ -30,7 +30,7 @@ Tiene una sola dependencia, `fast-xml-parser`, y nada de código nativo.
   solo el IVA general: el IGIC de Canarias, el IPSI de Ceuta y Melilla, y regímenes como los de
   bienes usados, agencias de viajes, criterio de caja, recargo de equivalencia y agricultura,
   ganadería y pesca, además de las ventas exentas, la inversión del sujeto pasivo y los clientes del
-  extranjero. Y los comprueba con las normas que publica la AEAT. Consulta
+  extranjero. Y los comprueba con muchas de las normas que publica la AEAT. Consulta
   [Impuestos y regímenes especiales](/verifactu/es/guides/tax/).
 - Calcula la huella (hash) que enlaza cada registro con el anterior, y comprueba un registro suelto
   o una cadena de registros que le pases.

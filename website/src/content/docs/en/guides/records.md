@@ -38,8 +38,8 @@ In these examples, `sale` holds the invoice fields from [Getting started](/verif
 
 Both builders format dates as `DD-MM-YYYY` and amounts with two decimal places, and calculate the
 record's fingerprint (`Huella`). Pass amounts as strings, such as `"12.10"`, so nothing is lost to
-rounding. Don't change a record after it is built: the fingerprint covers its fields, and AEAT
-checks it.
+rounding. Don't change a record after it is built: the fingerprint covers many of its fields, and
+AEAT checks it.
 
 ## Invoice types
 

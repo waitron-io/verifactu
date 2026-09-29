@@ -46,9 +46,9 @@ try {
 
 ## Primero crea, luego comprueba
 
-Comprueba el registro que devuelve el constructor, no los datos que le pasaste. Si cambias un
-registro después de crearlo, su huella deja de coincidir y recibes una advertencia
-`HUELLA_MISMATCH`.
+Comprueba el registro que devuelve el constructor, no los datos que le pasaste. Si después de crear
+el registro cambias un campo que entra en la huella, la huella deja de coincidir y recibes una
+advertencia `HUELLA_MISMATCH`.
 
 ## Comprobaciones que dependen de la fecha de hoy
 

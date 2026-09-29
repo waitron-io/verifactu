@@ -1,5 +1,5 @@
 ---
-title: Qué hace tu aplicación
+title: Lo que hace tu aplicación
 description: Las partes de un sistema de facturación que cumple las reglas y que la biblioteca deja en tus manos.
 ---
 

@@ -62,9 +62,9 @@ es un SIF distinto; [Tu sistema de facturación (SIF)](/verifactu/es/guides/sif/
   ordenador necesita un número de instalación nuevo, y su cadena vuelve a empezar con
   `PrimerRegistro: "S"`.
 
-Solo el primer registro de cada cadena usa `PrimerRegistro`. Si envías un segundo primer registro con
-los mismos datos de software (`SistemaInformatico`), la AEAT lo guarda pero lo marca con el código de
-advertencia 2007.
+Solo el primer registro de cada cadena usa `PrimerRegistro`. Si envías un segundo primer registro
+del mismo emisor con los mismos datos de software (`SistemaInformatico`), la AEAT lo guarda pero lo
+marca con el código de advertencia 2007.
 
 ## Series de facturas
 

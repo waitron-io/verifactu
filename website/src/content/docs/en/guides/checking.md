@@ -46,8 +46,9 @@ try {
 
 ## Build first, then check
 
-Check the record the builder returned, not your input. If you change a record after building it,
-its fingerprint no longer matches and you get a `HUELLA_MISMATCH` warning.
+Check the record the builder returned, not your input. If you change a field that goes into the
+fingerprint after building the record, the fingerprint no longer matches and you get a
+`HUELLA_MISMATCH` warning.
 
 ## Checks that depend on today's date
 
@@ -71,4 +72,4 @@ AEAT's reply is the final word on every record, so read it even when checking pa
 ## Checks when you send
 
 `client.submit` also checks the batch before sending anything. It throws if the header's tax ID
-doesn't match every record's issuer, or if the batch is empty or has more than 1,000 records.
+doesn't match every record's seller, or if the batch is empty or has more than 1,000 records.

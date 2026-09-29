@@ -61,9 +61,9 @@ console.log(resolveEstadoEfectivo(rejected.RespuestaLinea[0])); // rejected
 
 ## Lo que no demuestra
 
-La AEAT sin conexión sigue las reglas que publica la AEAT y lo que hemos visto hacer al servicio
-real. Aun así, es una copia. Antes de empezar a funcionar en real, prueba con tu certificado real
-contra el entorno de pruebas de la AEAT (preproducción).
+La AEAT sin conexión sigue muchas de las reglas que publica la AEAT y lo que hemos visto hacer al
+servicio real. Aun así, es una copia. Antes de empezar a funcionar en real, prueba con tu
+certificado real contra el entorno de pruebas de la AEAT (preproducción).
 
 Además, no:
 
