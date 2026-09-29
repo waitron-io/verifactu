@@ -96,29 +96,32 @@ If two invoices are built at the same time without that lock, both link to the s
 record and the chain breaks. The library doesn't keep the chain in memory because a crash or
 restart would lose it.
 
-## How the links fit together
+## Check a stored chain
 
-`verifyHuella` recalculates one record's fingerprint and compares it with the stored one. The
-library doesn't check the links across your stored records. This sketch shows how the fingerprints
-line up; it is **not** an integrity check:
+`checkChain` checks records you pass it, in the order you created them. For each record it
+recalculates the fingerprint, compares the link's four fields with the record before it, and checks
+that the creation times don't go backwards:
 
 ```ts
-import { verifyHuella, type RegistroAnulacion } from "@waitron/verifactu";
+import { checkChain } from "@waitron/verifactu";
 
-function fingerprintsLineUp(records: Array<RegistroAlta | RegistroAnulacion>): boolean {
-  return (
-    records.length > 0 &&
-    records.every((current, i) => {
-      if (!verifyHuella(current)) return false;
-      if (i === 0) return current.Encadenamiento.PrimerRegistro === "S";
-      return current.Encadenamiento.RegistroAnterior?.Huella === records[i - 1].Huella;
-    })
-  );
-}
-
-console.log(fingerprintsLineUp([record, next])); // true
+const result = checkChain([record, next]);
+console.log(result.scope, result.issues.length); // complete 0
 ```
 
-A real check of your stored chain also needs to compare the other three fields of each link (the
-seller's tax ID, invoice number and issue date, which cancellations store under different names),
-and confirm that the records are complete and in the order you created them.
+Each problem in `issues` has the record's position (`recordIndex`), a `code` such as
+`PREDECESSOR_HUELLA_MISMATCH`, and the `field` that failed. `scope` says what you gave it:
+
+- `"complete"`: the records start with the chain's first record.
+- `"partial"`: they start part-way through. Pass the record just before them as `predecessor` so
+  the first link can be checked too.
+- `"empty"`: there was nothing to check.
+
+```ts
+console.log(checkChain([next]).issues[0]?.code); // PREDECESSOR_MISSING
+console.log(checkChain([next], { predecessor: record }).issues.length); // 0
+```
+
+It checks only the records you pass. Choosing which records belong to one chain (one seller on one
+SIF), making sure none are missing from the end, and checking fields outside the fingerprint are up
+to you. `verifyHuella(record)` checks a single record's fingerprint on its own.

@@ -32,7 +32,7 @@ It has one dependency, `fast-xml-parser`, and no native code.
   customers from abroad, and checks them against the rules AEAT publishes. See
   [Taxes and special schemes](/verifactu/en/simple/guides/tax/).
 - Calculates the fingerprint (hash) that links each record to the one before it, and checks a single
-  record's fingerprint.
+  record or a chain of records you supply.
 - Checks each record before you send it, and reports every problem as an error or a warning, with a
   code and the field it applies to.
 - Turns records into the XML that AEAT expects, and reads that XML back, for both requests and
@@ -51,7 +51,7 @@ It has one dependency, `fast-xml-parser`, and no native code.
 - Loads your certificate and makes the HTTPS call, by passing in a `fetch` function.
 - Draws the QR code and lays out the invoice.
 - Retries after a failure, and checks with AEAT when a result is unclear.
-- Checks a whole stored chain of records. The library checks one record at a time.
+- Decides which records belong in each chain, and hands them to the chain check in order.
 
 [What your application does](/verifactu/en/simple/guides/your-application/) goes into more detail.
 
