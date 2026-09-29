@@ -69,6 +69,7 @@ const SIMPLE_PAGES = [
   "getting-started.md",
   "guides/chain.md",
   "guides/checking.md",
+  "guides/delivery.md",
   "guides/lookup.md",
   "guides/qr.md",
   "guides/records.md",
@@ -88,6 +89,23 @@ const __testReply = await testClient.submit({ ObligadoEmision: seller }, [{ Regi
 __assert.equal(__testReply.RespuestaLinea[0]?.EstadoRegistro, "Correcto");`,
   },
   "guides/lookup.md": { before: "await client.submit(cabecera, [{ RegistroAlta: record }]);" },
+  "guides/delivery.md": {
+    before: `const __db = { records: [] as __vf.RegistroAlta[], outbox: [] as __vf.RegistroAlta[], count: 0 };
+(globalThis as any).inTransaction = async (work: (tx: unknown) => Promise<unknown>) =>
+  work({
+    nextInvoiceNumber: async () => \`T01/\${String(++__db.count).padStart(6, "0")}\`,
+    latestRecord: async () => {
+      const last = __db.records.at(-1);
+      return last ? { ...last.IDFactura, Huella: last.Huella } : null;
+    },
+    saveRecord: async (record: __vf.RegistroAlta) => { __db.records.push(record); },
+    addToOutbox: async (record: __vf.RegistroAlta) => { __db.outbox.push(record); },
+  });
+(globalThis as any).setJobState = async (job: { state: string }, state: string) => { job.state = state; };`,
+    after: `__assert.equal(__db.records.length, 2);
+__assert.equal(__db.outbox.length, 2);
+__assert.deepEqual(__vf.checkChain(__db.records), { scope: "complete", issues: [] });`,
+  },
   "guides/sending.md": {
     after: `__assert.equal(typeof createCertificateFetch(Buffer.from("test-only"), "test-only"), "function");`,
   },

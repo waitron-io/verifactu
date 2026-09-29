@@ -60,3 +60,21 @@ console.log(resolveEstadoEfectivo(reply.RespuestaLinea[0])); // accepted
 
 When you do the sending yourself, you also handle network failures, HTTP errors and SOAP faults,
 which `client.submit` otherwise turns into a `VerifactuTransportError`.
+
+## Check XML against AEAT's schemas
+
+The package includes AEAT's schema files (XSD) in its `schemas/` folder. `client.submit` doesn't
+run a schema check, but you can run one yourself, for example on XML that comes from another
+system. With `xmllint`, from a clone of this repository:
+
+```sh
+# Pass the request inside the SOAP envelope, not the whole envelope.
+node website/scripts/extract-soap-body.mjs filing-envelope.xml > filing-body.xml
+XML_CATALOG_FILES=test/xsd/catalog.xml \
+  xmllint --nonet --noout --schema schemas/SuministroLR.xsd filing-body.xml
+```
+
+Use `ConsultaLR.xsd` for a lookup request. AEAT's schema imports its XML-signature schema, and
+without a copy `xmllint` can't load it. The catalog in `test/xsd/` stands in for it, which works for
+unsigned requests only; it isn't in the published package, so outside a clone you need your own.
+Passing the schema check doesn't mean AEAT will accept the record.

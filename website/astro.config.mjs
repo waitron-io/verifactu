@@ -56,6 +56,7 @@ export default defineConfig({
             { label: "Checking records", slug: "simple/guides/checking" },
             { label: "Sending to AEAT", slug: "simple/guides/sending" },
             { label: "AEAT's reply", slug: "simple/guides/replies" },
+            { label: "Reliable delivery", slug: "simple/guides/delivery" },
             { label: "Looking up records", slug: "simple/guides/lookup" },
             { label: "QR codes", slug: "simple/guides/qr" },
             { label: "Testing", slug: "simple/guides/testing" },

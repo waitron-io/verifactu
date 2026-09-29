@@ -96,25 +96,28 @@ what you log rather than logging the whole error.
 
 ### After a failure
 
-1. Keep the records exactly as they are, and mark them as sent with an unknown outcome. Don't change
-   them or build replacements.
-2. [Look them up](/verifactu/en/simple/guides/lookup/) and compare AEAT's fingerprint with yours. If
-   the lookup fails too, try again later; the outcome stays unknown until a lookup succeeds.
-3. If AEAT has a record with your fingerprint, it was stored. You won't get a receipt (`CSV`) for
-   that send.
-4. If AEAT has no record after a send that received no response, keep the outcome uncertain.
-   [AEAT instructs you to resend the same records until you obtain a
-   response](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes/sistemas-verifactu.html).
-   Use your saved records and respect any known AEAT wait; your delivery procedure sets the timing.
+AEAT's rule is simple: if a send gets no reply,
+[send the same records again until you get one](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes/sistemas-verifactu.html). So:
 
-Some failures point to a problem to investigate before sending anything again. Read a SOAP
-`faultCode` and `faultReason` or an HTTP status without treating them as proof that no record was
-stored. An HTTP 4xx code may point to setup, such as the certificate or address.
+1. Keep the records exactly as they are, and mark them as sent with an unknown outcome. Don't
+   change them or build new ones.
+2. Send the same records again later, waiting any time AEAT has given you. Keep trying until a reply
+   arrives. If AEAT's service or your connection is down for a while, see
+   [Working offline](/verifactu/en/simple/guides/sif/#one-sif-or-several).
+3. When the reply comes, a record AEAT already had shows up as a duplicate, and
+   `resolveEstadoEfectivo` tells you what state it's in.
 
-Records you sent because AEAT asked for them (a _requerimiento_) cannot be looked up. Keep the
-uncertain outcome for your separate reconciliation procedure. After a send without a response,
-resend the same saved records under that procedure and inspect every response line, including
-duplicate detail.
+While you wait, you can [look the records up](/verifactu/en/simple/guides/lookup/). A match with
+your fingerprint means AEAT stored it, though you won't get a receipt (`CSV`) for that send.
+Finding nothing doesn't prove AEAT never got it.
+
+Some failures point to something to fix before you send again. A SOAP fault whose `faultCode` ends
+in `Client` means AEAT couldn't accept the message, and `faultReason` says why. An HTTP 4xx code
+usually means a setup problem, such as the certificate or the address. Even then, don't assume
+nothing was stored: fix the problem, then send the same records.
+
+Records you sent because AEAT asked for them (a _requerimiento_) can't be looked up, but the same
+rule applies: send them again until you get a reply, and read each line's result.
 
 Other errors come from elsewhere. Before sending, the client throws a plain `Error` if the batch
 breaks a rule it checks, such as the header's tax ID not matching a record; nothing was sent. After
@@ -125,8 +128,9 @@ The library never retries by itself. Never give a record a new invoice number or
 get it through. If AEAT already has it, a resend comes back as a duplicate, and
 `resolveEstadoEfectivo` tells you whether the stored record is fine.
 
-The [durable delivery example](/verifactu/en/guides/durable-delivery/) keeps the saved record and
-outbox job together, respects the wait, and tests both kinds of uncertain network failure offline.
+[Reliable delivery](/verifactu/en/simple/guides/delivery/) shows how to keep each record and its
+place in the sending queue together, so a crash or a lost reply never loses a record or creates a
+second one.
 
 ## Keeping AEAT's raw XML
 
