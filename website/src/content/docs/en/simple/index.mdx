@@ -1,0 +1,160 @@
+---
+title: "@waitron/verifactu"
+description: Build, check and send Veri*Factu invoice records from your TypeScript invoicing system.
+template: splash
+hero:
+  tagline: Build, check and send Veri*Factu invoice records from TypeScript.
+---
+
+## What's different
+
+This package does the Veri\*Factu work and nothing more. It builds each invoice record, checks it,
+turns it into the XML that the Spanish tax agency (AEAT) expects, and reads the agency's reply.
+
+Everything else stays your choice: your database, how you load your certificate, how you draw the
+QR code, and how you present and deliver your invoices. The package keeps nothing between calls,
+so you decide how records are stored and in what order they are sent.
+
+It has one dependency, `fast-xml-parser`, and no native code.
+
+It covers every invoice type, corrections and cancellations, looking up records you have already
+sent, and an offline copy of the AEAT service for your tests.
+
+```sh
+npm install @waitron/verifactu
+```
+
+## The steps
+
+**Describe your software → Build the record → Check it → Save it → Print the QR code → Send it → Save the reply**
+
+## 1. Describe your software
+
+You fill this in once. It names your invoicing software and the company that makes it.
+
+```ts
+import type { SistemaInformatico } from "@waitron/verifactu";
+
+const software: SistemaInformatico = {
+  NombreRazon: "Example SL",
+  NIF: "89890001K",
+  NombreSistemaInformatico: "Example POS",
+  IdSistemaInformatico: "01",
+  Version: "1.0",
+  NumeroInstalacion: "001",
+  TipoUsoPosibleSoloVerifactu: "S",
+  TipoUsoPosibleMultiOT: "N",
+  IndicadorMultiplesOT: "N",
+};
+```
+
+## 2. Build the record
+
+Each record links to the one before it. Load the previous record from your database, or pass
+`null` for the very first one.
+
+```ts
+import { buildAlta } from "@waitron/verifactu/facade";
+
+const seller = { NombreRazon: "Example SL", NIF: "89890001K" };
+const previous = await loadPreviousRecord(); // from your database
+
+const record = buildAlta({
+  IDEmisorFactura: seller.NIF,
+  NombreRazonEmisor: seller.NombreRazon,
+  NumSerieFactura: "T01/000123",
+  FechaExpedicionFactura: new Date(),
+  TipoFactura: "F2",
+  DescripcionOperacion: "Coffee and lunch",
+  Desglose: [
+    {
+      ClaveRegimen: "01",
+      CalificacionOperacion: "S1",
+      TipoImpositivo: "21",
+      BaseImponibleOimporteNoSujeto: "10.00",
+      CuotaRepercutida: "2.10",
+    },
+  ],
+  CuotaTotal: "2.10",
+  ImporteTotal: "12.10",
+  SistemaInformatico: software,
+  generadoEn: new Date(),
+  offsetMinutes: 120, // minutes ahead of UTC: 120 in Madrid in summer
+  previous,
+});
+```
+
+## 3. Check it
+
+This throws if the record has any errors, and the error lists all of them. Use `validate(record)`
+instead if you also want to see warnings.
+
+```ts
+import { assertValid } from "@waitron/verifactu";
+
+assertValid(record);
+```
+
+## 4. Save it
+
+Save the record before you send it. If sending fails, you can retry with exactly the same record,
+and your next invoice can link to it.
+
+```ts
+await saveRecord(record); // to your database
+```
+
+## 5. Print the QR code
+
+This gives you the web address that goes in the QR code. Draw it with any QR library and print it
+on the invoice.
+
+```ts
+import { buildQrPayload } from "@waitron/verifactu";
+
+const qrUrl = buildQrPayload(record, "production");
+```
+
+## 6. Send it
+
+AEAT only accepts connections that present your certificate, so you pass in a `fetch` that does
+that. The [submission guide](/verifactu/en/guides/submit/#supply-a-certificate-bearing-fetch)
+shows one way to write it.
+
+```ts
+import { createClient, SOAP_ENDPOINTS } from "@waitron/verifactu";
+
+const client = createClient({ endpoint: SOAP_ENDPOINTS.production, fetch: certificateFetch });
+const reply = await client.submit({ ObligadoEmision: seller }, [{ RegistroAlta: record }]);
+```
+
+## 7. Save the reply
+
+Save the whole reply straight away. Its `CSV` is AEAT's receipt, and AEAT won't give it to you
+again. The reply also tells you how long to wait before you send the next batch.
+
+```ts
+import { resolveEstadoEfectivo } from "@waitron/verifactu";
+
+await saveReply(reply); // to your database
+
+for (const line of reply.RespuestaLinea) {
+  console.log(line.IDFactura.NumSerieFactura, resolveEstadoEfectivo(line)); // T01/000123 accepted
+}
+console.log(reply.TiempoEsperaEnvio); // seconds to wait before the next send
+```
+
+## Testing
+
+In your tests, use the offline AEAT in place of the real one. It needs no certificate or network.
+Its clock is fixed at 21 July 2026 unless you set it, which keeps test results the same from day to
+day.
+
+```ts
+import { createFakeAeat } from "@waitron/verifactu/testing";
+
+const testClient = createFakeAeat({ serverNow: new Date() }).client();
+```
+
+For what each field means and which values to use, see
+[AEAT's Veri\*Factu documentation](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu.html).

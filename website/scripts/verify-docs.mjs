@@ -73,6 +73,34 @@ assert.doesNotThrow(() => assertValid(rectificativa));
 `,
   );
 
+  const simple = blocks("en", "index", "simple", "mdx");
+  assert.equal(simple.length, 8, "simple landing page must have eight TypeScript blocks");
+  save(
+    "en-simple",
+    `import assert from "node:assert/strict";
+import { createFakeAeat as harnessFakeAeat } from "../../dist/testing/fake-aeat.js";
+const outputs: unknown[][] = [];
+const console = { log: (...items: unknown[]) => outputs.push(items) };
+const saved: unknown[] = [];
+const replies: unknown[] = [];
+async function loadPreviousRecord() { return null; }
+async function saveRecord(record: unknown) { saved.push(record); }
+async function saveReply(reply: unknown) { replies.push(reply); }
+const aeat = harnessFakeAeat({ serverNow: new Date() });
+const certificateFetch = aeat.fetch;
+${simple.join("\n")}
+assert.equal(saved[0], record);
+assert.equal(replies[0], reply);
+assert.equal(new URL(qrUrl).searchParams.get("importe"), "12.10");
+assert.deepEqual(outputs[0], ["T01/000123", "accepted"]);
+assert.equal(typeof reply.TiempoEsperaEnvio, "number");
+assert.equal(outputs[1]?.[0], reply.TiempoEsperaEnvio);
+assert.equal(aeat.stored().length, 1);
+const testReply = await testClient.submit({ ObligadoEmision: seller }, [{ RegistroAlta: record }]);
+assert.equal(testReply.RespuestaLinea[0]?.EstadoRegistro, "Correcto");
+`,
+  );
+
   for (const locale of ["en", "es"]) {
     assert.deepEqual(snippetPages(locale), [
       "guides/alta-record.md",
@@ -83,6 +111,7 @@ assert.doesNotThrow(() => assertValid(rectificativa));
       "guides/submit.md",
       "guides/testing.md",
       "guides/validation.md",
+      ...(locale === "en" ? ["simple/index.mdx"] : []),
       "start/getting-started.md",
     ]);
     const submit = blocks(locale, "submit");
