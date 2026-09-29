@@ -3,6 +3,7 @@ import {
   buildAltaRecord,
   checkChain,
   createClient,
+  ERROR_DUPLICADO,
   resolveEstadoEfectivo,
   VerifactuTransportError,
 } from "../../dist/index.js";
@@ -12,10 +13,12 @@ import { createFakeAeat } from "../../dist/testing/fake-aeat.js";
 /** @typedef {import("../../dist/index.js").RespuestaLinea} RespuestaLinea */
 /** @typedef {import("../../dist/index.js").RespuestaSuministro} RespuestaSuministro */
 /** @typedef {import("../../dist/index.js").VerifactuClient} VerifactuClient */
-/** @typedef {{ record: RegistroAlta, state: string, reply?: { csv: string | undefined, line: RespuestaLinea, outcome: import("../../dist/index.js").EstadoEfectivo }, failure?: { kind: string, status: number | undefined, faultCode: string | undefined } }} Job */
+/** @typedef {"queued" | "sending" | "unknown" | import("../../dist/index.js").EstadoEfectivo} JobState */
+/** @typedef {{ record: RegistroAlta, state: JobState, sends: number, reply?: { csv: string | undefined, line: RespuestaLinea }, failure?: { kind: string, status: number | undefined, faultCode: string | undefined } }} Job */
 
 // The in-memory store makes the example executable. Replace its transaction with one durable
-// transaction in your database, and serialize transactions and delivery for each issuer/system.
+// transaction in your database, and serialize transactions and delivery for each seller and
+// installation.
 class ExampleStore {
   /** @type {RegistroAlta[]} */
   records = [];
@@ -27,7 +30,7 @@ class ExampleStore {
 
   /** @template T @param {(draft: { records: RegistroAlta[], outbox: Job[], number: number }) => T} makeChanges @returns {T} */
   transaction(makeChanges) {
-    if (this.busy) throw new Error("Concurrent issuance for one issuer/system");
+    if (this.busy) throw new Error("Concurrent issuance for one seller and installation");
     this.busy = true;
     try {
       const records = [...this.records];
@@ -96,7 +99,7 @@ function issue(store) {
         : { PrimerRegistro: "S" },
     });
     records.push(record);
-    outbox.push({ record, state: "queued", reply: undefined });
+    outbox.push({ record, state: "queued", sends: 0 });
     return record;
   });
 }
@@ -106,65 +109,37 @@ function saveReply(store, job, reply, now) {
   const line = reply.RespuestaLinea.find(
     (item) => item.IDFactura.NumSerieFactura === job.record.IDFactura.NumSerieFactura,
   );
+  store.nextSendAt =
+    reply.TiempoEsperaEnvio === undefined
+      ? Number.POSITIVE_INFINITY
+      : now + reply.TiempoEsperaEnvio * 1000;
   if (!line) {
     job.state = "unknown";
     return;
   }
-  const outcome = resolveEstadoEfectivo(line);
-  job.reply = { csv: reply.CSV, line, outcome };
-  job.state =
-    outcome === "accepted"
-      ? "accepted"
-      : outcome === "accepted_with_errors"
-        ? "flagged"
-        : outcome === "rejected"
-          ? "rejected"
-          : "unknown";
-  if (reply.TiempoEsperaEnvio === undefined) {
-    store.nextSendAt = Number.POSITIVE_INFINITY;
-  } else {
-    store.nextSendAt = now + reply.TiempoEsperaEnvio * 1000;
-  }
+  job.reply = { csv: reply.CSV, line };
+  job.state = resolveEstadoEfectivo(line);
 }
 
+// Jobs go out one at a time in the order they were issued. An `unknown` job is always the
+// oldest unfinished one, so it is sent again, unchanged, before any later job for this seller.
 /** @param {ExampleStore} store @param {VerifactuClient} client @param {number} now */
 async function sendNext(store, client, now) {
-  if (store.outbox.some((job) => job.state === "unknown" || job.state === "sending")) return;
   if (now < store.nextSendAt) return;
-  const job = store.outbox.find((item) => item.state === "queued");
+  if (store.outbox.some((job) => job.state === "sending")) return;
+  const job = store.outbox.find((item) => item.state === "unknown" || item.state === "queued");
   if (!job) return;
   job.state = "sending"; // Persist before network I/O; recover an interrupted send as unknown.
+  job.sends += 1;
   try {
     const reply = await client.submit(header, [{ RegistroAlta: job.record }]);
     saveReply(store, job, reply, now);
   } catch (error) {
-    // A thrown request or parser error cannot establish whether AEAT received this exact record.
     job.state = "unknown";
     if (error instanceof VerifactuTransportError) {
       job.failure = { kind: error.kind, status: error.status, faultCode: error.faultCode };
     }
   }
-}
-
-/** @param {ExampleStore} store @param {Job} job @param {VerifactuClient} client */
-async function reconcile(store, job, client) {
-  if (job.state !== "unknown") throw new Error("Only uncertain submissions need reconciliation");
-  const record = job.record;
-  // This example has no FechaOperacion; otherwise derive the imputation period from that date.
-  const [, month, year] = record.IDFactura.FechaExpedicionFactura.split("-");
-  const result = await client.consultar(header, {
-    Ejercicio: year,
-    Periodo: month,
-    NumSerieFactura: record.IDFactura.NumSerieFactura,
-    FechaExpedicionFactura: record.IDFactura.FechaExpedicionFactura,
-  });
-  const found = result.registros.find(
-    (item) =>
-      item.IDFactura.NumSerieFactura === record.IDFactura.NumSerieFactura &&
-      item.IDFactura.FechaExpedicionFactura === record.IDFactura.FechaExpedicionFactura,
-  );
-  if (found?.DatosRegistroFacturacion.Huella === record.Huella) job.state = "confirmed_present";
-  // No match is still uncertain: do not invent a new record or schedule an automatic retry.
 }
 
 const store = new ExampleStore();
@@ -182,10 +157,12 @@ const second = issue(store);
 assert.equal(store.records.length, store.outbox.length);
 assert.deepEqual(checkChain(store.records), { scope: "complete", issues: [] });
 assert.equal(second.Encadenamiento.RegistroAnterior?.Huella, first.Huella);
+
+// A crash while the first job was marked `sending`: it comes back as `unknown`, and the worker
+// sends the same saved record before anything else.
 store.outbox[0].state = "sending";
 store.recoverInterrupted();
 assert.equal(store.outbox[0].state, "unknown");
-store.outbox[0].state = "queued"; // Test setup only: real recovery requires reconciliation.
 
 const fake = createFakeAeat({ serverNow: new Date("2026-07-21T00:00:00Z") });
 const client = createClient({ endpoint: "https://fake.aeat.test/soap", fetch: fake.fetch });
@@ -193,42 +170,78 @@ await sendNext(store, client, 0);
 assert.equal(store.outbox[0].state, "accepted");
 assert.equal(store.outbox[0].reply?.csv, "CSV-00000001");
 await sendNext(store, client, 1);
-assert.equal(store.outbox[1].state, "queued"); // Respect AEAT's wait before the next send.
+assert.equal(store.outbox[1].state, "queued"); // AEAT's wait has not passed yet.
+assert.equal(store.outbox[1].sends, 0);
 await sendNext(store, client, store.nextSendAt);
 assert.equal(store.outbox[1].state, "accepted");
 
+/** @param {RegistroAlta} record */
+const storedHashes = (record) =>
+  fake
+    .stored()
+    .filter((item) => item.key.includes(record.IDFactura.NumSerieFactura))
+    .map((item) => item.huella);
+
+// Case 1: AEAT stores the record but its reply is lost. Sending the same record again gets a
+// duplicate reply, which resolveEstadoEfectivo reads as the stored record's state.
 const third = issue(store);
-const responseLost = createClient({
+issue(store);
+const replyLost = createClient({
   endpoint: "https://fake.aeat.test/soap",
   fetch: async (url, init) => {
     await fake.fetch(url, init);
-    throw new TypeError("response lost");
+    throw new TypeError("connection reset");
   },
 });
-await sendNext(store, responseLost, store.nextSendAt);
+const waitBeforeFailure = store.nextSendAt;
+await sendNext(store, replyLost, store.nextSendAt);
 assert.equal(store.outbox[2].state, "unknown");
 assert.equal(store.outbox[2].failure?.kind, "network");
-assert.equal(store.outbox[2].record, third); // The stored identity and hash did not change.
-await reconcile(store, store.outbox[2], client);
-assert.equal(store.outbox[2].state, "confirmed_present");
+assert.deepEqual(storedHashes(third), [third.Huella]);
+assert.equal(store.nextSendAt, waitBeforeFailure); // No reply, so AEAT gave no new wait.
+await sendNext(store, client, store.nextSendAt);
+assert.equal(store.outbox[2].sends, 2);
+assert.equal(store.outbox[2].record, third);
+assert.equal(store.outbox[2].reply?.line.CodigoErrorRegistro, ERROR_DUPLICADO);
+assert.equal(store.outbox[2].reply?.line.EstadoRegistro, "Incorrecto");
+assert.equal(store.outbox[2].state, "accepted");
+assert.deepEqual(storedHashes(third), [third.Huella]);
+assert.equal(store.outbox[3].sends, 0);
+await sendNext(store, client, store.nextSendAt);
+assert.equal(store.outbox[3].state, "accepted");
 
-const fourth = issue(store);
+// Case 2: the request never reaches AEAT. The job is sent again, unchanged, for as long as no
+// reply arrives, and the later job waits behind it.
+const fifth = issue(store);
+issue(store);
 const requestLost = createClient({
   endpoint: "https://fake.aeat.test/soap",
   fetch: async () => {
-    throw new TypeError("request lost");
+    throw new TypeError("fetch failed");
   },
 });
 await sendNext(store, requestLost, store.nextSendAt);
-assert.equal(store.outbox[3].state, "unknown");
-await reconcile(store, store.outbox[3], client);
-assert.equal(store.outbox[3].state, "unknown");
-assert.equal(store.outbox[3].record, fourth);
+await sendNext(store, requestLost, store.nextSendAt);
+assert.equal(store.outbox[4].state, "unknown");
+assert.equal(store.outbox[4].sends, 2);
+assert.equal(store.outbox[5].sends, 0);
+assert.deepEqual(storedHashes(fifth), []);
+await sendNext(store, client, store.nextSendAt);
+assert.equal(store.outbox[4].sends, 3);
+assert.equal(store.outbox[4].record, fifth);
+assert.equal(store.outbox[4].reply?.line.CodigoErrorRegistro, undefined);
+assert.equal(store.outbox[4].state, "accepted");
+assert.deepEqual(storedHashes(fifth), [fifth.Huella]);
+assert.equal(store.outbox[5].state, "queued");
+await sendNext(store, client, store.nextSendAt);
+assert.equal(store.outbox[5].state, "accepted");
+assert.equal(store.outbox[5].sends, 1);
+assert.deepEqual(checkChain(store.records), { scope: "complete", issues: [] });
 
 /** @type {RespuestaLinea} */
 const exampleLine = { IDFactura: first.IDFactura, EstadoRegistro: "AceptadoConErrores" };
 /** @type {Job} */
-const sampleJob = { record: first, state: "sending" };
+const sampleJob = { record: first, state: "sending", sends: 1 };
 saveReply(
   store,
   sampleJob,
@@ -241,8 +254,7 @@ saveReply(
   },
   0,
 );
-assert.equal(sampleJob.state, "flagged");
-assert.equal(sampleJob.reply?.outcome, "accepted_with_errors");
+assert.equal(sampleJob.state, "accepted_with_errors");
 exampleLine.EstadoRegistro = "Incorrecto";
 saveReply(
   store,
@@ -256,6 +268,7 @@ saveReply(
   0,
 );
 assert.equal(sampleJob.state, "rejected");
+// An unreadable wait stops sending, as the replies guide says.
 saveReply(
   store,
   sampleJob,
@@ -280,9 +293,8 @@ saveReply(
   0,
 );
 assert.equal(sampleJob.state, "unknown");
+assert.equal(store.nextSendAt, 60_000);
 
 console.log(
-  "Durable-delivery example: atomic issue, wait, outcomes and uncertain reconciliation pass",
+  "Delivery worker example: atomic issue, crash recovery, wait, and resending unknown jobs pass",
 );
-
-export { first, header };
