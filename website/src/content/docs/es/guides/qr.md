@@ -1,23 +1,31 @@
 ---
 title: Códigos QR
-description: Construye la URL de cotejo y dibújala como un QR legible.
+description: Genera la dirección web del código QR, dibújalo y colócalo en la factura.
 ---
 
-La biblioteca produce la URL que debe contener el QR. Tu generador de facturas dibuja la imagen.
+Toda factura lleva un código QR. Al escanearlo, se envían los datos de la factura a la AEAT, que los
+compara con los registros que envió el emisor y responde "Factura encontrada" o "Factura no
+encontrada".
+
+## Genera la dirección
+
+La biblioteca genera la dirección web que va en el código QR. Toma del registro el NIF del emisor,
+el número de factura, la fecha y el importe total, para que coincidan con lo que envías.
 
 ```ts
 import { buildQrPayload } from "@waitron/verifactu";
 
-const payload = buildQrPayload(record, "production");
-console.log(payload);
+const qrUrl = buildQrPayload(record, "production");
+console.log(qrUrl); // https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR?nif=89890001K&numserie=T01%2F000123&fecha=20-07-2026&importe=12.10
 ```
 
-Usa `"preproduction"` en las pruebas. La URL toma NIF, número, fecha e importe del registro
-construido, de modo que coinciden con lo enviado. Mantén solo esos cuatro parámetros en la URL
-del QR impreso. Las opciones `idioma` y `formato=json` de la AEAT corresponden a peticiones de
-cotejo separadas, no a la URL codificada en el QR de la factura.
+Usa `"preproduction"` para las facturas que crees mientras pruebas con el entorno de pruebas de la
+AEAT.
 
-Para obtener un SVG, instala `qrcode-generator` en tu aplicación:
+## Dibújalo
+
+La biblioteca no dibuja imágenes, así que usa la biblioteca de QR que prefieras. Por ejemplo, con
+`qrcode-generator`:
 
 ```sh
 npm install qrcode-generator
@@ -27,61 +35,25 @@ npm install qrcode-generator
 import qrcode from "qrcode-generator";
 
 const qr = qrcode(0, "M");
-qr.addData(payload);
+qr.addData(qrUrl);
 qr.make();
 const svg = qr.createSvgTag();
 ```
 
-Añade a tus pruebas una comprobación que dibuje y decodifique el QR. `jsqr` lee una imagen de
-píxeles de la misma matriz que usa `createSvgTag()`. La prueba deja cuatro módulos blancos
-alrededor para que el lector encuentre el código:
+El nivel `"M"` es el nivel de corrección de errores que exige la AEAT. En tus pruebas, decodifica la
+imagen que generes y comprueba que devuelve exactamente la misma dirección.
 
-```sh
-npm install --save-dev jsqr
-```
+## Colócalo en la factura
 
-```ts
-import jsQR from "jsqr";
+La [especificación del código QR](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf)
+de la AEAT establece qué aspecto debe tener. En resumen:
 
-const modules = qr.getModuleCount();
-const scale = 8;
-const quiet = 4;
-const width = (modules + quiet * 2) * scale;
-const pixels = new Uint8ClampedArray(width * width * 4);
-for (let y = 0; y < width; y++) {
-  for (let x = 0; x < width; x++) {
-    const mx = Math.floor(x / scale) - quiet;
-    const my = Math.floor(y / scale) - quiet;
-    const dark = mx >= 0 && my >= 0 && mx < modules && my < modules && qr.isDark(my, mx);
-    const at = (y * width + x) * 4;
-    pixels[at] = pixels[at + 1] = pixels[at + 2] = dark ? 0 : 255;
-    pixels[at + 3] = 255;
-  }
-}
-if (jsQR(pixels, width, width)?.data !== payload) throw new Error("El QR cambió la URL");
-```
+- Entre 30 × 30 mm y 40 × 40 mm, con al menos 2 mm de espacio en blanco alrededor. La AEAT
+  recomienda 6 mm.
+- "QR tributario:" encima, y "VERI\*FACTU" o "Factura verificable en la sede electrónica de la
+  AEAT" debajo, con un texto al menos tan grande como el resto de la factura.
+- Una sola vez, en la primera página, cerca de la parte superior.
 
-La [comprobación de los ejemplos publicados](https://github.com/waitron-io/verifactu/blob/main/website/scripts/verify-docs.mjs)
-realiza esta prueba. El valor decodificado debe coincidir **exactamente** con `payload`,
-incluidos signos y escapes de porcentaje. `M` es el nivel de corrección de errores del ejemplo.
-Los cuatro módulos blancos de la prueba ayudan al lector, pero no demuestran el margen impreso
-en milímetros.
-
-Al colocar el QR en la factura, usa un QR conforme a ISO/IEC 18004:2015 con nivel `M` de
-corrección de errores y dale un tamaño de entre 30 × 30 y 40 × 40 mm. Deja al menos 2 mm de
-espacio vacío a cada lado; la AEAT recomienda 6 mm. Asegura un buen contraste, colócalo de forma
-destacada antes del contenido y muéstralo solo una vez en la primera página. En una factura
-vertical, colócalo cerca de la parte superior, preferiblemente centrado o a la izquierda. En una
-factura apaisada, colócalo a la izquierda, preferiblemente cerca de la esquina superior o centrado
-verticalmente.
-
-No es obligatorio expedir la factura en papel. En una factura electrónica estructurada, la AEAT
-permite incluir el contenido del QR o la URL de cotejo en el propio formato en lugar de incrustar
-una imagen. Si también produces un PDF o una imagen legible, aplica a esa representación las reglas
-visuales anteriores. El formato y el generador de tu factura deciden esta opción;
-`buildQrPayload` devuelve la misma URL.
-
-Escribe `QR tributario:` encima y `Factura verificable en la sede electrónica de la AEAT` o
-`VERI*FACTU` debajo. Usa un tamaño de letra legible, igual o superior al de los demás datos de la
-factura. Tu generador de facturas, no esta función de URL, debe cumplir estas
-[reglas de presentación de la AEAT](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf).
+Una factura electrónica en un formato estructurado puede llevar la propia dirección en lugar de una
+imagen del código. Si además generas un PDF o una imagen de la factura, las reglas anteriores se
+aplican a ese PDF o imagen.

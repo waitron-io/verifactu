@@ -1,4 +1,10 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { DOMParser } from "@xmldom/xmldom";
 import { Agent } from "undici";
 import qrcode from "qrcode-generator";
 import jsQR from "jsqr";
@@ -9,6 +15,7 @@ import {
   createClient,
   MAX_REGISTROS_POR_ENVIO,
   resolveEstadoEfectivo,
+  serializeEnvio,
   SOAP_ENDPOINTS,
   SOAP_ENDPOINTS_SELLO,
   validate,
@@ -140,6 +147,42 @@ for (let y = 0; y < width; y += 1) {
   }
 }
 assert.equal(jsQR(pixels, width, width)?.data, payload);
+
+// The tools guide runs extract-soap-body.mjs from the repository root on a saved envelope.
+const repository = join(dirname(fileURLToPath(import.meta.url)), "../..");
+const scratch = mkdtempSync(join(tmpdir(), "verifactu-soap-body-"));
+try {
+  const extract = (envelope) => {
+    const path = join(scratch, "filing-envelope.xml");
+    writeFileSync(path, envelope);
+    return spawnSync(process.execPath, ["website/scripts/extract-soap-body.mjs", path], {
+      cwd: repository,
+      encoding: "utf8",
+    });
+  };
+  const envelope = serializeEnvio(cabecera, [{ RegistroAlta: first }]);
+  const extracted = extract(envelope);
+  assert.equal(extracted.status, 0, extracted.stderr);
+  const request = new DOMParser().parseFromString(extracted.stdout, "text/xml").documentElement;
+  assert.equal(request?.localName, "RegFactuSistemaFacturacion");
+  assert.equal(
+    request?.namespaceURI,
+    "https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/SuministroLR.xsd",
+  );
+  assert.ok(extracted.stdout.includes(first.Huella));
+
+  const signed = extract(
+    envelope.replace(
+      "<soapenv:Body>",
+      '<soapenv:Header><ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#"/></soapenv:Header><soapenv:Body>',
+    ),
+  );
+  assert.notEqual(signed.status, 0);
+  assert.match(signed.stderr, /cannot validate XML signatures/);
+} finally {
+  rmSync(scratch, { recursive: true, force: true });
+}
+
 console.log(
-  "Submission, duplicate, consulta, cancellation, certificate adapter, and QR examples pass",
+  "Submission, duplicate, consulta, cancellation, certificate adapter, QR and SOAP-body examples pass",
 );

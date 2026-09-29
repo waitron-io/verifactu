@@ -17,8 +17,7 @@ export default defineConfig({
   integrations: [
     starlight({
       title: "@waitron/verifactu",
-      description:
-        "A TypeScript library for Spain's Veri*Factu invoicing records: huella hash chaining, QR payloads, XML, and AEAT submission.",
+      description: "Build, check and send Veri*Factu invoice records from TypeScript.",
       social: [
         { icon: "github", label: "GitHub", href: "https://github.com/waitron-io/verifactu" },
       ],
@@ -48,33 +47,39 @@ export default defineConfig({
         {
           ...t("Start here", "Empieza aquí"),
           items: [
-            { ...t("Introduction", "Introducción"), slug: "start/introduction" },
-            { ...t("Getting started", "Primeros pasos"), slug: "start/getting-started" },
-            { ...t("Is this a SIF?", "¿Esto es un SIF?"), slug: "start/not-a-sif" },
+            { ...t("Overview", "Introducción"), slug: "" },
+            { ...t("Getting started", "Primeros pasos"), slug: "getting-started" },
           ],
         },
         {
           ...t("Guides", "Guías"),
           items: [
+            { ...t("Invoice records", "Registros de facturación"), slug: "guides/records" },
+            { ...t("Linking records", "Encadenar registros"), slug: "guides/chain" },
+            { ...t("Checking records", "Comprobar registros"), slug: "guides/checking" },
+            { ...t("Sending to AEAT", "Enviar a la AEAT"), slug: "guides/sending" },
+            { ...t("AEAT's reply", "La respuesta de la AEAT"), slug: "guides/replies" },
+            { ...t("Reliable delivery", "Envío fiable"), slug: "guides/delivery" },
+            { ...t("Looking up records", "Consultar registros"), slug: "guides/lookup" },
+            { ...t("QR codes", "Códigos QR"), slug: "guides/qr" },
+            { ...t("Testing", "Pruebas"), slug: "guides/testing" },
+          ],
+        },
+        {
+          ...t("More", "Más"),
+          items: [
             {
-              ...t("Build an alta record", "Crear un registro de alta"),
-              slug: "guides/alta-record",
+              ...t("Taxes and special schemes", "Impuestos y regímenes especiales"),
+              slug: "guides/tax",
+            },
+            { ...t("Lower-level tools", "Herramientas de bajo nivel"), slug: "guides/tools" },
+            {
+              ...t("Your invoicing system (SIF)", "Tu sistema de facturación (SIF)"),
+              slug: "guides/sif",
             },
             {
-              ...t("Build and submit with fewer steps", "Crear y enviar con menos pasos"),
-              slug: "guides/facade",
-            },
-            { ...t("The huella hash chain", "La cadena de huellas"), slug: "guides/huella-chain" },
-            { ...t("Validation", "Validación"), slug: "guides/validation" },
-            { ...t("QR payloads and images", "Códigos QR"), slug: "guides/qr" },
-            {
-              ...t("Submit and query AEAT", "Enviar y consultar a la AEAT"),
-              slug: "guides/submit",
-            },
-            { ...t("Query AEAT", "Consultar a la AEAT"), slug: "guides/consulta" },
-            {
-              ...t("Testing with a fake AEAT", "Pruebas con una AEAT falsa"),
-              slug: "guides/testing",
+              ...t("What your application does", "Lo que hace tu aplicación"),
+              slug: "guides/your-application",
             },
           ],
         },

@@ -1,118 +1,71 @@
 ---
-title: Test without a network
-description: Exercise submission, duplicates, and consulta with the fake AEAT transport.
+title: Testing
+description: Test your whole flow against an offline copy of AEAT.
 ---
 
-Use the `./testing` entry point to test the whole client flow without a certificate or network:
+`@waitron/verifactu/testing` includes an offline copy of the AEAT service. It reads the same XML
+the real service does and replies the way AEAT does, so your tests run the library's real client
+without a certificate or a network.
+
+## Send to the offline AEAT
 
 ```ts
 import { createFakeAeat } from "@waitron/verifactu/testing";
 
 const aeat = createFakeAeat({ serverNow: new Date("2026-07-21T00:00:00Z") });
 const client = aeat.client();
-const response = await client.submit(cabecera, [{ RegistroAlta: record }]);
 
-console.log(response.EstadoEnvio); // Correcto
-console.log(response.CSV); // CSV-00000001
-console.log(aeat.stored()[0].huella === record.Huella); // true
+const reply = await client.submit(cabecera, [{ RegistroAlta: record }]);
+console.log(reply.CSV); // CSV-00000001
+console.log(aeat.stored().length); // 1
 ```
 
-The fake accepts the same XML that `createClient` sends and returns parsed SOAP responses. It can
-also force a rejection, omit duplicate detail, and return paged consulta results. Use it for
-application tests; it does not replace AEAT preproduction checks with your real certificate.
-Its filing responses use the pinned schema's namespaces, echo the submitted header, and follow the
-required element order; the offline suite validates accepted, rejected, and duplicate examples
-against `RespuestaSuministro.xsd`. That proves the fake's tested XML shape, not AEAT behavior.
+Its clock is fixed at 21 July 2026 unless you pass `serverNow`, which keeps your tests the same
+from day to day. Like AEAT, it rejects an invoice dated after its clock. Move the clock during a
+test with `aeat.setServerNow(date)`.
 
-The fake has one shared record store and answers consulta regardless of the endpoint URL. It does
-not separate AEAT's requirement service from the ordinary service. Do not use it as evidence of
-requirement-service behavior, including record separation, consulta availability, or response
-severity. It accepts a `RemisionRequerimiento` header so you can test the request and response XML,
-but it still applies voluntary Veri*Factu correction and rejection rules. AEAT's separate
-requirement service admits business-rule errors in preserved records, except for NIF or `IDOtro`
-identity errors. Confirm that behavior against preproduction if your workflow depends on it.
+If your code creates its own client, pass it `aeat.fetch` in place of your certificate fetch:
 
-Inspect each response line as well as `EstadoEnvio`. The fake returns `Correcto` only when every
-line is correct, `ParcialmenteCorrecto` if a line is accepted with errors or accepted and rejected
-lines are mixed, and `Incorrecto` if every line is rejected. An all-rejected batch has no `CSV`.
-A duplicate-only retry is also rejected as a submission even when the original record was accepted;
-use `resolveEstadoEfectivo` on its response line to distinguish that case from a record that was
-never registered. If it returns `duplicate_unknown`, use a consulta to check the stored record;
-do not treat the attempted operation as accepted.
+```ts
+import { createClient } from "@waitron/verifactu";
 
-For an alta correction, `Subsanacion: "S"` with `RechazoPrevio` omitted or `N` replaces an
-existing fake record, including one that was annulled. Without that prior record, the fake
-returns error `3002`; use `RechazoPrevio: "X"` for the published no-prior-record path.
+const yourClient = createClient({ endpoint: "https://aeat.test/", fetch: aeat.fetch });
+```
 
-Check the response line and then consult the invoice when you retry a rejected alta. In the
-[E32 preproduction probe](https://github.com/waitron-io/verifactu/blob/main/COMPLIANCE-AUDIT.md#e32-state-transition-preproduction-probe),
-an identical alta retry returned `3000` with duplicate state `Correcta`, and an invalid
-`RechazoPrevio: "S"` alta returned `1161`. Its correction was stored with warning `2007` because
-it also claimed to be a second `PrimerRegistro: "S"` for the same issuer and software system.
-The [E35 probe](https://github.com/waitron-io/verifactu/blob/main/COMPLIANCE-AUDIT.md#e35-first-record-and-chained-correction-preproduction-plan)
-isolated that warning: a repeated first-record claim was stored as `AceptadoConErrores`/`2007`;
-a correctly chained second alta returned `Correcto`. A deliberately rejected, correctly chained
-alta was absent from consulta, then its `Subsanacion: "S"` / `RechazoPrevio: "X"` correction was
-stored as `Correcto` with both flags and the submitted hash. The fake now models these paths for
-the same issuer and software-system identity. Its software identity comparison is a test rule,
-not a proven definition of AEAT's complete identity key or long-lived rejection history. The fake
-does not verify that `RegistroAnterior` points to the actual preceding record. Its one-row store
-cannot establish whether a cancelled invoice still counts as a prior first record; the live probes
-also did not isolate a correction that repeats `PrimerRegistro: "S"` for its own stored invoice.
+## Make AEAT misbehave
 
-The fake also requires an existing record for an ordinary cancellation. If none exists, set
-`SinRegistroPrevio: "S"`; without it, the fake returns `3002`. It rejects that special path
-when a record already exists. That refusal returns `3000` without duplicate details, so
-`resolveEstadoEfectivo` returns `duplicate_unknown`, not `accepted`. An invalid
-`SinRegistroPrevio` value returns `1276`. If you put a cancellation before its matching alta in
-one batch, the fake rejects the cancellation first; submission order matters.
+Use these to test how your code handles each kind of result. Each takes the invoice's key from
+`keyOf(record)`.
 
-An ordinary cancellation can replace a stored cancellation. Change its hash or external
-reference to test that path: the fake stores the new cancellation, petition ID, reference, and
-software-system details. The original invoice's issuer and recipients remain available to
-consulta, while each accepted cancellation reports its own software system. Resending the same
-hash with the same reference, or omitting the reference, remains a duplicate in the fake; an
-omitted reference keeps the stored one. This is a test-double rule, not proof of AEAT's exact
-retry behavior or of changes to other non-hashed fields.
+| Call                                    | What happens                                                 |
+| --------------------------------------- | ------------------------------------------------------------ |
+| `aeat.reject(key, code, message)`       | Every send of that invoice is rejected with your error code. |
+| `aeat.dropRegistroDuplicadoDetail(key)` | A resend is reported as a duplicate with no details.         |
+| `aeat.annul(key)`                       | The stored invoice is marked as cancelled.                   |
+| `aeat.forget(key)`                      | AEAT loses the invoice, so a lookup finds nothing.           |
 
-The fake uses published error-code meanings, but the annex does not assign numeric codes to
-these cancellation-table outcomes. Do not assume that AEAT returns the same code for each case.
-For `RechazoPrevio: "S"`, the fake requires an earlier rejected operation of the same kind and
-invoice identity. An alta retry still needs an existing record. A cancellation retry needs an
-existing record unless you also set `SinRegistroPrevio: "S"`; that special retry requires no
-stored record. Any accepted operation of the same kind consumes the fake's rejection marker, and
-`forget()` clears the marker with the stored invoice trace. For a shaped retry without matching
-history, the fake uses published generic invalid-value code `1275`; an alta that sets
-`RechazoPrevio: "S"` without `Subsanacion: "S"` gets published code `1161`. This covers the state transitions in
-[AEAT's annex §6](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Validaciones_Errores_Veri-Factu.pdf),
-but not AEAT's retention period or exact error code for every other table cell.
+```ts
+import { keyOf } from "@waitron/verifactu/testing";
+import { buildAltaRecord, resolveEstadoEfectivo } from "@waitron/verifactu";
 
-The fake returns rejecting code `1112` for a future invoice date. It reserves accepted-with-errors
-code `2004` for a future `FechaHoraHusoGenRegistro`, matching the published list. The fake uses an
-exact local clock comparison; AEAT's live tolerance is not published, so test its boundary in
-preproduction if your workflow depends on it.
+const next = buildAltaRecord({
+  ...sale,
+  NumSerieFactura: "T01/000124",
+  Encadenamiento: { RegistroAnterior: { ...record.IDFactura, Huella: record.Huella } },
+});
+aeat.reject(keyOf(next), 1100, "Test rejection");
 
-If you query an ASCII-dated record with Arabic-Indic digits in `Ejercicio` and
-`FechaExpedicionFactura`, the fake finds the same record and returns its stored ASCII date. For
-example, a record dated `20-07-2026` matches `Ejercicio: "٢٠٢٦"` and
-`FechaExpedicionFactura: "٢٠-٠٧-٢٠٢٦"`. The fake also converts Arabic-Indic date digits in range
-bounds and pagination cursors when comparing them with stored records; it does not rewrite the
-stored invoice identity. A [read-only preproduction check](https://github.com/waitron-io/verifactu/actions/runs/36338604405)
-returned the same accepted record for ASCII and Arabic-Indic year and exact-date filters. That
-check did not test other digit scripts, range bounds or cursor spellings against AEAT. Use ASCII
-dates for general interoperability until you have live evidence for those other cases. The
-conversion applies only to query filters for ASCII-dated records. If you submit a record whose
-date itself uses Arabic-Indic digits, this fake stores that spelling and its period filter returns
-`SinDatos`, even when you query with the same digits. Other Unicode decimal digits, such as Persian
-digits, pass request validation but the fake does not convert them, so an exact query does not
-match an ASCII-dated record. Neither case has been checked against AEAT.
+const rejected = await client.submit(cabecera, [{ RegistroAlta: next }]);
+console.log(resolveEstadoEfectivo(rejected.RespuestaLinea[0])); // rejected
+```
 
-The fake trims characters through U+0020 from the edges of `RefExterna` when it stores and echoes a
-record or applies a consulta filter. It keeps edge U+00A0. A preproduction probe confirmed the
-response-line and consulta values for ASCII space, tab, line feed, and U+00A0; see the
-[compliance audit](https://github.com/waitron-io/verifactu/blob/main/COMPLIANCE-AUDIT.md#xml-text-and-escaping--service-description-67-69).
-`parseEnvio` still gives you the submitted text unchanged. If your test needs the exact stored
-spelling of another text field or whitespace character, check it in AEAT preproduction.
-A cancellation retry whose reference differs only in edge padding is a duplicate in the fake.
-A present reference made only of those edge characters becomes an empty string; AEAT has not been
-probed for cancellation retries or all-whitespace references.
+## What it doesn't prove
+
+The offline AEAT follows many of AEAT's published rules and what we have seen the real service do.
+It is still a copy. Before you go live, test with your real certificate against AEAT's test service
+(preproduction).
+
+It also doesn't:
+
+- check that each record links to the actual previous record
+- keep records sent because AEAT asked for them (a _requerimiento_) separate from ordinary ones

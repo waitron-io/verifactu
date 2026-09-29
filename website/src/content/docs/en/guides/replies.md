@@ -1,0 +1,151 @@
+---
+title: AEAT's reply
+description: Save the receipt, read each invoice's result, and handle failures and duplicates.
+---
+
+## Save the receipt first
+
+When AEAT accepts at least one record in a batch, the reply includes a receipt code, `CSV`. Save it
+before doing anything else. AEAT won't give it to you again, and you can't get it by looking the
+record up. If AEAT rejects the whole batch, there is no receipt.
+
+## Read each invoice's result
+
+The reply has one line per record. Pass each line to `resolveEstadoEfectivo` to get its real
+result, rather than reading AEAT's status field yourself. When you resend a record AEAT already
+has, AEAT marks the line as rejected even if the stored record is fine. `resolveEstadoEfectivo`
+reads the extra details AEAT sends in that case.
+
+```ts
+import { resolveEstadoEfectivo } from "@waitron/verifactu";
+
+const reply = await client.submit(cabecera, [{ RegistroAlta: record }]);
+await saveReply(reply); // you write this
+
+for (const line of reply.RespuestaLinea) {
+  const result = resolveEstadoEfectivo(line);
+  console.log(line.IDFactura.NumSerieFactura, result); // T01/000123 accepted
+  if (result !== "accepted") {
+    console.log(line.CodigoErrorRegistro, line.DescripcionErrorRegistro);
+  }
+}
+```
+
+| Result                 | What it means                                               | What to do                                                                                                                  |
+| ---------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `accepted`             | AEAT stored the record.                                     | Nothing.                                                                                                                    |
+| `accepted_with_errors` | AEAT stored the record but found a problem.                 | Check the error code. You may need to [send a fix](/verifactu/en/guides/records/#fixing-a-record-aeat-rejected-or-flagged). |
+| `rejected`             | AEAT did not store the record.                              | Fix the problem and send a new record.                                                                                      |
+| `duplicate_annulled`   | AEAT already has this invoice, and it is cancelled.         | Find out why before sending anything else for this invoice.                                                                 |
+| `duplicate_unknown`    | AEAT already has this invoice but didn't say in what state. | [Look it up](/verifactu/en/guides/lookup/) and compare fingerprints.                                                        |
+| `status_unknown`       | AEAT sent a status the library doesn't recognise.           | Don't treat it as rejected. Look the record up.                                                                             |
+
+AEAT publishes [the meaning of every error code](https://prewww2.aeat.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1.0/cont/ws/errores.properties).
+Some codes in the 2000s, such as 2004 for a record created slightly in the future, need no fix.
+
+## Wait before sending again
+
+`TiempoEsperaEnvio` is the number of seconds AEAT asks you to wait before the next send. If it is
+missing, the library couldn't read it: save the rest of the reply, stop sending, and look at
+`TiempoEsperaEnvioRaw`. Don't treat a missing wait as zero.
+
+```ts
+if (reply.TiempoEsperaEnvio === undefined) {
+  throw new Error(`Unusable wait from AEAT: ${JSON.stringify(reply.TiempoEsperaEnvioRaw)}`);
+}
+console.log(reply.TiempoEsperaEnvio); // 60
+```
+
+## When sending fails
+
+If `client.submit` or `client.consultar` can't get a usable reply, it throws a
+`VerifactuTransportError`. There is no reply to save, so keep the records as they are. The error's
+`kind` says where it failed:
+
+```ts
+import { createClient, SOAP_ENDPOINTS, VerifactuTransportError } from "@waitron/verifactu";
+
+const unreachable = createClient({
+  endpoint: SOAP_ENDPOINTS.preproduction,
+  fetch: async () => {
+    throw new TypeError("fetch failed");
+  },
+});
+
+try {
+  await unreachable.submit(cabecera, [{ RegistroAlta: record }]);
+} catch (error) {
+  if (!(error instanceof VerifactuTransportError)) throw error;
+  console.log(error.kind, error.message); // network fetch failed
+}
+```
+
+`kind` says where the failure happened:
+
+- `"network"`: no reply arrived, or it broke off while being read.
+- `"http"`: AEAT's server answered with an HTTP error. `status` has the code.
+- `"soap"`: AEAT answered with a SOAP fault, its error message format. `faultCode` and
+  `faultReason` say what it reported.
+
+None of these tells you whether AEAT stored the records. A connection can drop after AEAT has
+already processed the batch, so treat the outcome as unknown until you have checked.
+
+The error also keeps what it could: `status`, `faultCode`, `faultReason`, the start of AEAT's reply in
+`bodyExcerpt`, and the original error in `cause`. These can contain sensitive details, so choose
+what you log rather than logging the whole error.
+
+### After a failure
+
+AEAT's rule is simple: if a send gets no reply,
+[send the same records again until you get one](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes/sistemas-verifactu.html). So:
+
+1. Keep the records exactly as they are, and mark them as sent with an unknown outcome. Don't
+   change them or build new ones.
+2. Send the same records again later, waiting any time AEAT has given you. Keep trying until a reply
+   arrives. If AEAT's service or your connection is down for a while, see
+   [Working offline](/verifactu/en/guides/sif/#one-sif-or-several).
+3. When the reply comes, a record AEAT already had shows up as a duplicate, and
+   `resolveEstadoEfectivo` tells you what state it's in.
+
+While you wait, you can [look the records up](/verifactu/en/guides/lookup/). A match with
+your fingerprint means AEAT stored it, though you won't get a receipt (`CSV`) for that send.
+Finding nothing doesn't prove AEAT never got it.
+
+Some failures point to something to fix before you send again. A SOAP fault whose `faultCode` ends
+in `Client` means AEAT couldn't accept the message, and `faultReason` says why. An HTTP 4xx code
+usually means a setup problem, such as the certificate or the address. Even then, don't assume
+nothing was stored: fix the problem, then send the same records.
+
+Records you sent because AEAT asked for them (a _requerimiento_) can't be looked up, but the same
+rule applies: send them again until you get a reply, and read each line's result.
+
+Other errors come from elsewhere. Before sending, the client throws a plain `Error` if the batch
+breaks a rule it checks, such as the header's tax ID not matching a record; nothing was sent. After
+sending, it throws one if AEAT's reply isn't in the expected shape. AEAT may have stored the
+records, so follow the same steps.
+
+The library never retries by itself. Never give a record a new invoice number or fingerprint just to
+get it through. If AEAT already has it, a resend comes back as a duplicate, and
+`resolveEstadoEfectivo` tells you whether the stored record is fine.
+
+[Reliable delivery](/verifactu/en/guides/delivery/) shows how to keep each record and its
+place in the sending queue together, so a crash or a lost reply never loses a record or creates a
+second one.
+
+## Keeping AEAT's raw XML
+
+The library reads AEAT's XML and returns the result. If you also want to keep the XML itself, keep
+a copy in your `fetch` before returning the response:
+
+```ts
+declare function saveRawReply(xml: string): Promise<void>;
+
+const keepingFetch: typeof fetch = async (url, init) => {
+  const response = await certificateFetch(url, init);
+  await saveRawReply(await response.clone().text()); // you write this
+  return response;
+};
+```
+
+This also helps when AEAT sends something the library can't read. In that case `client.submit`
+throws, but you still have the XML.
