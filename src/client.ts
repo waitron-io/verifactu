@@ -28,6 +28,43 @@ export interface VerifactuClient {
   consultar(cabecera: CabeceraConsulta, filtro: ConsultaFiltro): Promise<RespuestaConsulta>;
 }
 
+/** The failure stage, not a retry policy or proof that a submitted record was rejected. */
+export type TransportErrorKind = "network" | "http" | "soap";
+
+/**
+ * A request or response-body failure. Response parser and serializer failures
+ * remain separate errors. No request options, headers or certificate data are
+ * attached. The caller's original cause and server diagnostics may themselves
+ * contain sensitive data; choose what to log rather than dumping the error.
+ */
+export class VerifactuTransportError extends Error {
+  readonly kind: TransportErrorKind;
+  readonly status: number | undefined;
+  readonly faultCode: string | undefined;
+  readonly faultReason: string | undefined;
+  readonly bodyExcerpt: string | undefined;
+
+  constructor(
+    message: string,
+    details: {
+      kind: TransportErrorKind;
+      status?: number;
+      faultCode?: string;
+      faultReason?: string;
+      bodyExcerpt?: string;
+      cause?: unknown;
+    },
+  ) {
+    super(message, { cause: details.cause });
+    this.name = "VerifactuTransportError";
+    this.kind = details.kind;
+    this.status = details.status;
+    this.faultCode = details.faultCode;
+    this.faultReason = details.faultReason;
+    this.bodyExcerpt = details.bodyExcerpt;
+  }
+}
+
 const SOAP_FAULT_TAG = /<(?:[\w.-]+:)?Fault(?:\s|\/?>)/;
 
 function soapText(value: unknown): string | undefined {
@@ -37,38 +74,72 @@ function soapText(value: unknown): string | undefined {
   return soapText(nested.Text) ?? soapText(nested.Value);
 }
 
-function soapFaultMessage(text: string, status: number): string | undefined {
+function soapFault(text: string, status: number): VerifactuTransportError | undefined {
   // Successful consulta pages can contain 10 000 records. Avoid building a
   // second full object tree unless the wire text contains an actual Fault tag.
   if (!SOAP_FAULT_TAG.test(text)) return undefined;
-  const body = (parser.parse(text) as { Envelope?: { Body?: Record<string, unknown> } }).Envelope
-    ?.Body;
+  const bodyExcerpt = text.slice(0, 500);
+  let body: Record<string, unknown> | undefined;
+  try {
+    body = (parser.parse(text, true) as { Envelope?: { Body?: Record<string, unknown> } }).Envelope
+      ?.Body;
+  } catch (cause) {
+    // A malformed fault must retain the HTTP context and its parse diagnostic.
+    return new VerifactuTransportError(`AEAT SOAP fault (HTTP ${status}): ${bodyExcerpt}`, {
+      kind: "soap",
+      status,
+      bodyExcerpt,
+      cause,
+    });
+  }
   if (!body || !Object.prototype.hasOwnProperty.call(body, "Fault")) return undefined;
 
   const fault = body.Fault;
   const fields = fault && typeof fault === "object" ? (fault as Record<string, unknown>) : {};
-  const code = soapText(fields.faultcode) ?? soapText(fields.Code);
-  const reason = soapText(fields.faultstring) ?? soapText(fields.Reason);
-  if (!code && !reason) return `AEAT SOAP fault (HTTP ${status}): ${text.slice(0, 500)}`;
-  return `AEAT SOAP fault (HTTP ${status})${code ? ` ${code}` : ""}${reason ? `: ${reason}` : ""}`;
+  const faultCode = soapText(fields.faultcode) ?? soapText(fields.Code);
+  const faultReason = soapText(fields.faultstring) ?? soapText(fields.Reason);
+  const message =
+    !faultCode && !faultReason
+      ? `AEAT SOAP fault (HTTP ${status}): ${bodyExcerpt}`
+      : `AEAT SOAP fault (HTTP ${status})${faultCode ? ` ${faultCode}` : ""}${faultReason ? `: ${faultReason}` : ""}`;
+  return new VerifactuTransportError(message, {
+    kind: "soap",
+    status,
+    faultCode,
+    faultReason,
+    bodyExcerpt,
+  });
 }
 
 async function post(options: ClientOptions, xml: string): Promise<string> {
-  const response = await options.fetch(options.endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "text/xml; charset=utf-8",
-      // The WSDL declares soapAction="" on every operation; dispatch is by
-      // message body, not by this header.
-      SOAPAction: '""',
-    },
-    body: xml,
-  });
-  const text = await response.text();
-  const fault = soapFaultMessage(text, response.status);
-  if (fault) throw new Error(fault);
+  let response: Response | undefined;
+  let text: string;
+  try {
+    response = await options.fetch(options.endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/xml; charset=utf-8",
+        // The WSDL declares soapAction="" on every operation; dispatch is by
+        // message body, not by this header.
+        SOAPAction: '\"\"',
+      },
+      body: xml,
+    });
+    text = await response.text();
+  } catch (cause) {
+    throw new VerifactuTransportError(
+      cause instanceof Error ? cause.message : "AEAT network request failed",
+      { kind: "network", status: response?.status, cause },
+    );
+  }
+  const fault = soapFault(text, response.status);
+  if (fault) throw fault;
   if (!response.ok) {
-    throw new Error(`AEAT request failed with HTTP ${response.status}: ${text.slice(0, 500)}`);
+    const bodyExcerpt = text.slice(0, 500);
+    throw new VerifactuTransportError(
+      `AEAT request failed with HTTP ${response.status}: ${bodyExcerpt}`,
+      { kind: "http", status: response.status, bodyExcerpt },
+    );
   }
   return text;
 }

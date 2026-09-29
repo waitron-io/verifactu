@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "./client.js";
+import * as api from "./index.js";
+import { submitRecords } from "./facade.js";
 import { buildAltaRecord } from "./records.js";
 import { ALTA_INPUT, CABECERA } from "../test/fixtures.js";
 import type { ConsultaFiltro, EnvioRegistro } from "./xml/serialize.js";
@@ -314,5 +316,132 @@ describe("createClient", () => {
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(fetch.mock.calls[0]?.[0]).toBe("https://example.test/soap");
     expect(fetch.mock.calls[1]?.[0]).toBe("https://example.test/soap");
+  });
+});
+
+describe("structured transport failures", () => {
+  const invoke = (fetch: typeof globalThis.fetch, operation: "submit" | "consultar") => {
+    const client = createClient({ endpoint: "https://user:secret@example.test/soap", fetch });
+    return operation === "submit"
+      ? client.submit(CABECERA, REGISTROS)
+      : client.consultar(CABECERA, { Ejercicio: "2024", Periodo: "01" });
+  };
+
+  it.each(["submit", "consultar"] as const)(
+    "exposes HTTP diagnostics for %s without request details or retry",
+    async (operation) => {
+      const fetch = fakeFetch("upstream unavailable", { status: 503 });
+      const error = await invoke(fetch, operation).catch((error: unknown) => error);
+      expect(error).toMatchObject({
+        name: "VerifactuTransportError",
+        kind: "http",
+        status: 503,
+        bodyExcerpt: "upstream unavailable",
+        message: "AEAT request failed with HTTP 503: upstream unavailable",
+      });
+      expect(error).toBeInstanceOf(api.VerifactuTransportError);
+      expect(error).toBeInstanceOf(Error);
+      expect(JSON.stringify(error)).not.toContain("secret");
+      expect(fetch).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each([
+    [SOAP_FAULT, 200, "soapenv:Client", "El valor del campo no es válido"],
+    [SOAP_FAULT, 500, "soapenv:Client", "El valor del campo no es válido"],
+    [SOAP_12_FAULT, 200, "env:Sender", "Filtro no válido"],
+    [SOAP_12_FAULT, 500, "env:Sender", "Filtro no válido"],
+  ] as const)("exposes SOAP fields at HTTP %s/%s", async (body, status, faultCode, faultReason) => {
+    const error = await invoke(fakeFetch(body, { status }), "submit").catch(
+      (error: unknown) => error,
+    );
+    expect(error).toMatchObject({ kind: "soap", status, faultCode, faultReason });
+    expect(error).toBeInstanceOf(api.VerifactuTransportError);
+  });
+
+  it.each([200, 500])("retains diagnostics for a malformed Fault at HTTP %s", async (status) => {
+    const body = "<Envelope><Body><Fault><faultcode>Server</faultcode>";
+    const error = await invoke(fakeFetch(body, { status }), "consultar").catch(
+      (error: unknown) => error,
+    );
+    expect(error).toMatchObject({ kind: "soap", status, bodyExcerpt: body });
+    expect(error).toHaveProperty("faultCode", undefined);
+    expect(error).toHaveProperty("faultReason", undefined);
+    expect(error).toHaveProperty("cause", expect.any(Error));
+  });
+
+  it("keeps an unknown fault diagnosable with a bounded excerpt", async () => {
+    const body = `<Envelope><Body><Fault><detail>${"x".repeat(600)}</detail></Fault></Body></Envelope>`;
+    const error = await invoke(fakeFetch(body), "submit").catch((error: unknown) => error);
+    expect(error).toMatchObject({
+      kind: "soap",
+      status: 200,
+      bodyExcerpt: body.slice(0, 500),
+      message: `AEAT SOAP fault (HTTP 200): ${body.slice(0, 500)}`,
+    });
+    expect(error).toHaveProperty("faultCode", undefined);
+    expect(error).toHaveProperty("faultReason", undefined);
+  });
+
+  it.each([false, true])(
+    "preserves the injected fetch cause (synchronous: %s)",
+    async (synchronous) => {
+      const socket = new Error("socket closed");
+      const original = new TypeError("fetch failed", { cause: socket });
+      const fetch = vi.fn<typeof globalThis.fetch>(() => {
+        if (synchronous) throw original;
+        return Promise.reject(original);
+      });
+      const error = await invoke(fetch, "submit").catch((error: unknown) => error);
+      expect(error).toMatchObject({ kind: "network", message: "fetch failed" });
+      expect(error).toHaveProperty("status", undefined);
+      expect(error).toHaveProperty("cause", original);
+      expect((error as Error).cause).toBe(original);
+      expect(original.cause).toBe(socket);
+      expect(fetch).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("retains a non-Error rejection without stringifying arbitrary caller data", async () => {
+    const original = { secret: "private" };
+    const error = await invoke(() => Promise.reject(original), "submit").catch(
+      (error: unknown) => error,
+    );
+    expect(error).toMatchObject({ kind: "network", message: "AEAT network request failed" });
+    expect((error as Error).cause).toBe(original);
+  });
+
+  it("retains status and cause when reading the response body fails", async () => {
+    const original = new Error("body interrupted");
+    const response = new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.error(original);
+        },
+      }),
+      { status: 502 },
+    );
+    const error = await invoke(async () => response, "consultar").catch((error: unknown) => error);
+    expect(error).toMatchObject({ kind: "network", status: 502, message: "body interrupted" });
+    expect((error as Error).cause).toBe(original);
+  });
+
+  it("passes the same structured error through the facade", async () => {
+    const error = await submitRecords(
+      { endpoint: "https://example.test", fetch: fakeFetch("unavailable", { status: 503 }) },
+      CABECERA,
+      [record],
+    ).catch((error: unknown) => error);
+    expect(error).toMatchObject({ kind: "http", status: 503 });
+    expect(error).toBeInstanceOf(api.VerifactuTransportError);
+  });
+
+  it("keeps ordinary response parser failures distinct", async () => {
+    const error = await invoke(fakeFetch("<unexpected/>"), "submit").catch(
+      (error: unknown) => error,
+    );
+    expect(error).toBeInstanceOf(Error);
+    expect(error).not.toHaveProperty("kind");
+    expect(error).not.toHaveProperty("status");
   });
 });
