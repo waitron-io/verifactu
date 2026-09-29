@@ -211,7 +211,13 @@ function checkSimplePages() {
 
   for (const page of SIMPLE_PAGES) {
     const { imports, bodies } = mergeImports(tsBlocks(readFileSync(join(root, page), "utf8")));
-    const code = bodies.join("\n");
+    let code = bodies.join("\n");
+    if (page === "getting-started.md") {
+      // The fake's clock is created before this example runs; crossing a second boundary
+      // can make a real-time generated record look future-dated to that fixed clock.
+      assert.ok(code.includes("const issuedAt = new Date();"));
+      code = code.replace("const issuedAt = new Date();", "const issuedAt = __issuedAt;");
+    }
     const fixtures = SIMPLE_FIXTURES.flatMap(([name, value]) => {
       if (new RegExp(`\\bdeclare\\s+(?:const|function)\\s+${name}\\b`).test(code)) {
         return [`(globalThis as any).${name} = ${value};`];
