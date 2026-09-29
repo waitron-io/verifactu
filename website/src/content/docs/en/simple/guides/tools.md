@@ -58,5 +58,5 @@ const reply = parseRespuestaSuministro(await response.text());
 console.log(resolveEstadoEfectivo(reply.RespuestaLinea[0])); // accepted
 ```
 
-When you do the sending yourself, you also handle HTTP errors and SOAP faults, which `client.submit`
-otherwise turns into thrown errors.
+When you do the sending yourself, you also handle network failures, HTTP errors and SOAP faults,
+which `client.submit` otherwise turns into a `VerifactuTransportError`.

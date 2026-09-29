@@ -58,17 +58,45 @@ console.log(reply.TiempoEsperaEnvio); // 60
 
 ## When sending fails
 
-If `client.submit` throws, there is no reply to save. Keep the records as they are and look at the
-error:
+If `client.submit` or `client.consultar` can't get a usable reply, it throws a
+`VerifactuTransportError`. There is no reply to save, so keep the records as they are. The error's
+`kind` says where it failed:
 
-- A timeout, a lost connection, a reply that isn't XML, or a SOAP `Server` fault: send the same
-  records again later.
-- A SOAP `Client` fault: AEAT couldn't accept the message. Its message says why. Fix the problem
-  before sending again.
+```ts
+import { createClient, SOAP_ENDPOINTS, VerifactuTransportError } from "@waitron/verifactu";
 
-The library never retries by itself.
+const unreachable = createClient({
+  endpoint: SOAP_ENDPOINTS.preproduction,
+  fetch: async () => {
+    throw new TypeError("fetch failed");
+  },
+});
 
-Never give a record a new invoice number or fingerprint just to get a retry through. If AEAT
+try {
+  await unreachable.submit(cabecera, [{ RegistroAlta: record }]);
+} catch (error) {
+  if (!(error instanceof VerifactuTransportError)) throw error;
+  console.log(error.kind, error.message); // network fetch failed
+}
+```
+
+| `kind`      | What happened                                                     | What to do                                                                                                                                       |
+| ----------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `"network"` | No reply arrived, or it broke off while being read.               | Send the same records again later.                                                                                                               |
+| `"http"`    | AEAT's server answered with an HTTP error. `status` has the code. | For a 5xx code, send the same records again later. Other codes usually point to your setup, such as the certificate or address.                  |
+| `"soap"`    | AEAT answered with a SOAP fault, its error message format.        | `faultCode` ends in `Server`: send again later. It ends in `Client`: AEAT couldn't accept the message, and `faultReason` says why. Fix it first. |
+
+The error also keeps what it could: `status`, `faultCode`, `faultReason`, the start of AEAT's reply in
+`bodyExcerpt`, and the original error in `cause`. These can contain sensitive details, so choose
+what you log rather than logging the whole error.
+
+Other errors come from elsewhere. Before sending, the client throws a plain `Error` if the batch
+breaks a rule it checks, such as the header's tax ID not matching a record. After sending, it throws
+one if AEAT's reply isn't in the expected shape. In that case AEAT may have received the records, so
+send the same records again: if AEAT already has them, the reply says so.
+
+A failure doesn't tell you whether AEAT received the records, and the library never retries by
+itself. Never give a record a new invoice number or fingerprint just to get a retry through. If AEAT
 already received it, the retry comes back as a duplicate, and `resolveEstadoEfectivo` tells you
 whether the stored record is fine.
 
