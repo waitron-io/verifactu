@@ -151,6 +151,20 @@ describe("createClient", () => {
     );
   });
 
+  it("drops a dangling surrogate from an HTTP error excerpt", async () => {
+    const prefix = "x".repeat(499);
+    const client = createClient({
+      endpoint: "https://example.test/soap",
+      fetch: fakeFetch(`${prefix}😀tail`, { status: 500 }),
+    });
+    const error = await client.submit(CABECERA, REGISTROS).catch((failure: unknown) => failure);
+    expect(error).toMatchObject({
+      kind: "http",
+      bodyExcerpt: prefix,
+      message: `AEAT request failed with HTTP 500: ${prefix}`,
+    });
+  });
+
   it("uses the injected fetch rather than a global", async () => {
     // Injection is what makes the client runtime-agnostic and testable
     // without a network. Asserting only that the injected mock "was called"
@@ -415,6 +429,18 @@ describe("structured transport failures", () => {
     });
     expect(error).toHaveProperty("faultCode", undefined);
     expect(error).toHaveProperty("faultReason", undefined);
+  });
+
+  it("drops a dangling surrogate from a SOAP fault excerpt", async () => {
+    const opening = "<Envelope><Body><Fault><detail>";
+    const prefix = opening + "x".repeat(499 - opening.length);
+    const body = `${prefix}😀tail</detail></Fault></Body></Envelope>`;
+    const error = await invoke(fakeFetch(body), "submit").catch((failure: unknown) => failure);
+    expect(error).toMatchObject({
+      kind: "soap",
+      bodyExcerpt: prefix,
+      message: `AEAT SOAP fault (HTTP 200): ${prefix}`,
+    });
   });
 
   it.each([false, true])(

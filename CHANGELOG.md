@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- HTTP and SOAP transport error excerpts remain at most 500 UTF-16 code units
+  and now drop a high surrogate at the boundary instead of exposing half of a
+  character in `bodyExcerpt` or the error message.
+
 - Export `checkChain` to check caller-supplied alta/cancellation records in order.
   It reports own-hash, predecessor identity/hash and generation-time issues with
   a zero-based record position (`-1` for an explicit predecessor boundary).
