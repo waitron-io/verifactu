@@ -19,6 +19,9 @@ its maker signs a statement saying it does (a _declaración responsable_).
 
 ## Your software's identity
 
+See [Your invoicing system (SIF)](/verifactu/en/simple/guides/sif/) for when you need more than one
+installation.
+
 - Give each installation its own `NumeroInstalacion`, and never reuse it for the same seller, even
   after reinstalling.
 - If you run a service for many businesses, set `IndicadorMultiplesOT` to `"S"` for a user who has

@@ -44,7 +44,8 @@ The first record in a chain has nothing to point to, so it uses
 ## What counts as one chain
 
 There is one chain for each seller on each invoicing system. AEAT calls an invoicing system a
-_SIF_, and each installation of your software is a separate one.
+_SIF_, and each installation of your software is a separate one; see
+[Your invoicing system (SIF)](/verifactu/en/simple/guides/sif/).
 
 - **Invoice series share the chain.** Your `T01` till receipts and `A01` full invoices go in the
   same chain, one after another in the order you create them.
@@ -63,16 +64,23 @@ _SIF_, and each installation of your software is a separate one.
 Only the first record of each chain uses `PrimerRegistro`. If you send a second first record with
 the same software details (`SistemaInformatico`), AEAT stores it but flags it with warning code 2007.
 
-## Invoice series when you change system
+## Invoice series
 
-AEAT's rules don't tie invoice series to a system. You don't have to keep a series until you change
-system, and you don't have to start a new series when you do. The new system simply starts a new
-chain.
+A series is a numbering sequence, such as `T01` for till receipts. Series and chains are separate
+things: however many series you use, each SIF keeps one chain per seller, and every series feeds
+into it.
 
-What you must not do is issue the same invoice number twice. AEAT identifies an invoice by the
-seller, the invoice number and the issue date, not by the system that issued it. If two systems
-issue invoices at the same time, such as two independent tills, give each its own series so their
-numbers can't collide.
+Spain's invoicing regulation ([RD 1619/2012](https://www.boe.es/buscar/act.php?id=BOE-A-2012-14696),
+articles 6 and 7) says numbers within a series run consecutively, and requires separate series for:
+
+- corrections of full invoices
+- invoices issued for you by the customer or by a third party, with a series for each
+- simplified and full invoices, when you issue both in the same calendar year
+
+Nothing in AEAT's rules ties a series to one SIF, so you don't have to start a new series when you
+change system. What you must not do is issue the same invoice number twice: AEAT identifies an
+invoice by the seller, the invoice number and the issue date, not by the system that issued it. If
+two SIFs issue invoices at the same time, such as two independent tills, give each its own series.
 
 ## Your database's job
 
