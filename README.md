@@ -7,7 +7,7 @@ Read the [English documentation](https://waitron-io.github.io/verifactu/en/) or
 [Spanish documentation](https://waitron-io.github.io/verifactu/es/) for a complete submission
 walkthrough and API reference.
 For a shorter stateless build and submit flow, see the
-[facade guide](https://waitron-io.github.io/verifactu/en/guides/facade/).
+[getting started guide](https://waitron-io.github.io/verifactu/en/getting-started/).
 
 > **This library is a tool for building SIFs. It is not itself a SIF.**
 > A _sistema informático de facturación_ is a deployed system. Its duties vary by operating mode

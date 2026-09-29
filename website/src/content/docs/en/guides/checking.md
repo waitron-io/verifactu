@@ -64,7 +64,7 @@ console.log(validate(record, { now: lastYear }).some((issue) => issue.severity =
 - Whether a tax ID belongs to a real, registered business. Only AEAT knows that.
 - Whether you chose the right tax codes for the sale. It checks that the codes are allowed
   together, not that they fit the facts.
-- Whether your stored chain is complete. See [Linking records](/verifactu/en/simple/guides/chain/).
+- Whether your stored chain is complete. See [Linking records](/verifactu/en/guides/chain/).
 
 AEAT's reply is the final word on every record, so read it even when checking passed.
 

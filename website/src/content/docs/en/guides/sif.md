@@ -22,7 +22,7 @@ AEAT tells one SIF from another by three values in `SistemaInformatico`:
 - the installation number, `NumeroInstalacion`
 
 A new version of your software is still the same SIF. Each SIF keeps one chain of records for each
-seller; see [Linking records](/verifactu/en/simple/guides/chain/).
+seller; see [Linking records](/verifactu/en/guides/chain/).
 
 ## One SIF or several?
 

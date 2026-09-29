@@ -11,15 +11,15 @@ its maker signs a statement saying it does (a _declaración responsable_).
 
 - Number invoices, and never reuse a number, even for a cancelled or test invoice.
 - Link each new record to the previous one, in one database transaction. See
-  [Linking records](/verifactu/en/simple/guides/chain/).
+  [Linking records](/verifactu/en/guides/chain/).
 - Save each record before you send it, and save AEAT's reply and receipt as soon as they arrive.
 - Send each record when you issue the invoice, not in a batch at the end of the day.
 - Retry with the same record after a failure, and look records up when a result is unclear. See
-  [AEAT's reply](/verifactu/en/simple/guides/replies/).
+  [AEAT's reply](/verifactu/en/guides/replies/).
 
 ## Your software's identity
 
-See [Your invoicing system (SIF)](/verifactu/en/simple/guides/sif/) for when you need more than one
+See [Your invoicing system (SIF)](/verifactu/en/guides/sif/) for when you need more than one
 installation.
 
 - Give each installation its own `NumeroInstalacion`, and never reuse it for the same seller, even
@@ -33,7 +33,7 @@ installation.
 - Don't create records for drafts or quotes. A draft becomes an invoice, with a record and a QR
   code, only when you issue it.
 - Don't delete an issued invoice. Cancel it with a cancellation record.
-- Lay out the invoice, including the QR code. See [QR codes](/verifactu/en/simple/guides/qr/).
+- Lay out the invoice, including the QR code. See [QR codes](/verifactu/en/guides/qr/).
 - Keep the invoices themselves, as your accounting rules require.
 
 ## Other responsibilities

@@ -1,24 +1,30 @@
 ---
-title: QR payloads and images
-description: Build the AEAT validation URL and render it as a scannable QR.
+title: QR codes
+description: Build the QR code's web address, draw it, and place it on the invoice.
 ---
 
-The library produces the URL that belongs in the QR. It deliberately leaves image rendering to
-your invoice renderer.
+Every invoice carries a QR code. Scanning it sends the invoice's details to AEAT, which compares
+them with the records the seller sent and answers either "found" (_Factura encontrada_) or "not
+found" (_Factura no encontrada_).
+
+## Build the address
+
+The library builds the web address that goes in the QR code. It takes the seller's tax ID, invoice
+number, date and total from the record, so they match what you send.
 
 ```ts
 import { buildQrPayload } from "@waitron/verifactu";
 
-const payload = buildQrPayload(record, "production");
-console.log(payload);
+const qrUrl = buildQrPayload(record, "production");
+console.log(qrUrl); // https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR?nif=89890001K&numserie=T01%2F000123&fecha=20-07-2026&importe=12.10
 ```
 
-Use `"preproduction"` for tests. The payload takes its NIF, invoice number, date, and total from
-the built record, so it matches the values you send. Keep the printed QR URL to those four
-parameters. AEAT's optional `idioma` and `formato=json` options belong to separate lookup
-requests, not to the URL encoded in the invoice's QR.
+Use `"preproduction"` for invoices you create while testing against AEAT's test service.
 
-To render an SVG, install the small `qrcode-generator` package in your application:
+## Draw it
+
+The library doesn't draw images, so use any QR library you like. For example, with
+`qrcode-generator`:
 
 ```sh
 npm install qrcode-generator
@@ -28,58 +34,24 @@ npm install qrcode-generator
 import qrcode from "qrcode-generator";
 
 const qr = qrcode(0, "M");
-qr.addData(payload);
+qr.addData(qrUrl);
 qr.make();
 const svg = qr.createSvgTag();
 ```
 
-Add a render-to-decode check in your invoice tests. `jsqr` reads a raster of the same module
-matrix that `createSvgTag()` uses. This test adds four white modules around it so the decoder can
-find the code:
+Level `"M"` is the error correction level AEAT requires. In your tests, decode the image you
+produce and check that it gives back exactly the same address.
 
-```sh
-npm install --save-dev jsqr
-```
+## Place it on the invoice
 
-```ts
-import jsQR from "jsqr";
+AEAT's [QR code specification](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf)
+sets out how it must look. In short:
 
-const modules = qr.getModuleCount();
-const scale = 8;
-const quiet = 4;
-const width = (modules + quiet * 2) * scale;
-const pixels = new Uint8ClampedArray(width * width * 4);
-for (let y = 0; y < width; y++) {
-  for (let x = 0; x < width; x++) {
-    const mx = Math.floor(x / scale) - quiet;
-    const my = Math.floor(y / scale) - quiet;
-    const dark = mx >= 0 && my >= 0 && mx < modules && my < modules && qr.isDark(my, mx);
-    const at = (y * width + x) * 4;
-    pixels[at] = pixels[at + 1] = pixels[at + 2] = dark ? 0 : 255;
-    pixels[at + 3] = 255;
-  }
-}
-if (jsQR(pixels, width, width)?.data !== payload) throw new Error("QR changed the payload");
-```
+- Between 30 × 30 mm and 40 × 40 mm, with at least 2 mm of blank space around it. AEAT recommends
+  6 mm.
+- "QR tributario:" above it, and "VERI\*FACTU" or "Factura verificable en la sede electrónica de la
+  AEAT" below it, in text at least as large as the rest of the invoice.
+- Once, on the first page, near the top.
 
-The [site's published snippet check](https://github.com/waitron-io/verifactu/blob/main/website/scripts/verify-docs.mjs)
-executes this round trip. The decoded value must match **exactly**, including punctuation and
-percent escapes. Level `M` is the error correction setting in this recipe. The four white modules
-in the test help the decoder; they do not establish the printed margin in millimetres.
-
-When you place the QR on an invoice, use an ISO/IEC 18004:2015 QR with level `M` error correction
-and size it between 30 × 30 and 40 × 40 mm. Leave at least 2 mm of blank space on every side;
-AEAT recommends 6 mm. Keep strong contrast, put it prominently before the invoice content, and
-show it only once on the first page. On a portrait invoice, keep it near the top, preferably
-centered or at the upper left. On a landscape invoice, keep it on the left, preferably near the
-upper left or centered vertically.
-
-An invoice does not have to be issued on paper. For a structured electronic invoice, AEAT allows
-the QR contents or lookup URL to be carried in the format instead of embedding a graphical code.
-If you also render a human-readable PDF or image, apply the visual placement rules above to that
-rendering. Your invoice format and renderer own this choice; `buildQrPayload` returns the same URL.
-
-Print `QR tributario:` above the code and either `Factura verificable en la sede electrónica de
-la AEAT` or `VERI*FACTU` below it. Use a legible font size that is equal to or larger than the
-rest of the invoice data. Your invoice renderer, not this URL helper, must satisfy these
-[AEAT presentation rules](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/DetalleEspecificacTecnCodigoQRfactura.pdf).
+An electronic invoice in a structured format can carry the address itself instead of a picture of
+the code. If you also produce a PDF or image of it, the rules above apply to that.

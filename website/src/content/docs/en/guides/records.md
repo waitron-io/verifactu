@@ -10,7 +10,7 @@ each field means and which values apply to your invoices, see
 
 ## Two ways to build a record
 
-`buildAlta` takes the previous record, or `null` for the first one. `Getting started` uses it.
+`buildAlta` takes the previous record, or `null` for the first one. [Getting started](/verifactu/en/getting-started/) uses it.
 
 `buildAltaRecord` takes the link to the previous record in AEAT's own shape, `Encadenamiento`. Use
 it when you want to build that link yourself:
@@ -34,7 +34,7 @@ console.log(first.IDFactura.FechaExpedicionFactura); // 20-07-2026
 console.log(first.ImporteTotal); // 12.10
 ```
 
-In these examples, `sale` holds the invoice fields from `Getting started`, dated 20 July 2026.
+In these examples, `sale` holds the invoice fields from [Getting started](/verifactu/en/getting-started/), dated 20 July 2026.
 
 Both builders format dates as `DD-MM-YYYY` and amounts with two decimal places, and calculate the
 record's fingerprint (`Huella`). Pass amounts as strings, such as `"12.10"`, so nothing is lost to

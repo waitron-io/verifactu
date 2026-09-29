@@ -31,14 +31,14 @@ for (const line of reply.RespuestaLinea) {
 }
 ```
 
-| Result                 | What it means                                               | What to do                                                                                                                         |
-| ---------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `accepted`             | AEAT stored the record.                                     | Nothing.                                                                                                                           |
-| `accepted_with_errors` | AEAT stored the record but found a problem.                 | Check the error code. You may need to [send a fix](/verifactu/en/simple/guides/records/#fixing-a-record-aeat-rejected-or-flagged). |
-| `rejected`             | AEAT did not store the record.                              | Fix the problem and send a new record.                                                                                             |
-| `duplicate_annulled`   | AEAT already has this invoice, and it is cancelled.         | Find out why before sending anything else for this invoice.                                                                        |
-| `duplicate_unknown`    | AEAT already has this invoice but didn't say in what state. | [Look it up](/verifactu/en/simple/guides/lookup/) and compare fingerprints.                                                        |
-| `status_unknown`       | AEAT sent a status the library doesn't recognise.           | Don't treat it as rejected. Look the record up.                                                                                    |
+| Result                 | What it means                                               | What to do                                                                                                                  |
+| ---------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `accepted`             | AEAT stored the record.                                     | Nothing.                                                                                                                    |
+| `accepted_with_errors` | AEAT stored the record but found a problem.                 | Check the error code. You may need to [send a fix](/verifactu/en/guides/records/#fixing-a-record-aeat-rejected-or-flagged). |
+| `rejected`             | AEAT did not store the record.                              | Fix the problem and send a new record.                                                                                      |
+| `duplicate_annulled`   | AEAT already has this invoice, and it is cancelled.         | Find out why before sending anything else for this invoice.                                                                 |
+| `duplicate_unknown`    | AEAT already has this invoice but didn't say in what state. | [Look it up](/verifactu/en/guides/lookup/) and compare fingerprints.                                                        |
+| `status_unknown`       | AEAT sent a status the library doesn't recognise.           | Don't treat it as rejected. Look the record up.                                                                             |
 
 AEAT publishes [the meaning of every error code](https://prewww2.aeat.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1.0/cont/ws/errores.properties).
 Some codes in the 2000s, such as 2004 for a record created slightly in the future, need no fix.
@@ -103,11 +103,11 @@ AEAT's rule is simple: if a send gets no reply,
    change them or build new ones.
 2. Send the same records again later, waiting any time AEAT has given you. Keep trying until a reply
    arrives. If AEAT's service or your connection is down for a while, see
-   [Working offline](/verifactu/en/simple/guides/sif/#one-sif-or-several).
+   [Working offline](/verifactu/en/guides/sif/#one-sif-or-several).
 3. When the reply comes, a record AEAT already had shows up as a duplicate, and
    `resolveEstadoEfectivo` tells you what state it's in.
 
-While you wait, you can [look the records up](/verifactu/en/simple/guides/lookup/). A match with
+While you wait, you can [look the records up](/verifactu/en/guides/lookup/). A match with
 your fingerprint means AEAT stored it, though you won't get a receipt (`CSV`) for that send.
 Finding nothing doesn't prove AEAT never got it.
 
@@ -128,7 +128,7 @@ The library never retries by itself. Never give a record a new invoice number or
 get it through. If AEAT already has it, a resend comes back as a duplicate, and
 `resolveEstadoEfectivo` tells you whether the stored record is fine.
 
-[Reliable delivery](/verifactu/en/simple/guides/delivery/) shows how to keep each record and its
+[Reliable delivery](/verifactu/en/guides/delivery/) shows how to keep each record and its
 place in the sending queue together, so a crash or a lost reply never loses a record or creates a
 second one.
 

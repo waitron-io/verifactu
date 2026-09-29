@@ -33,7 +33,7 @@ declare const certificateFetch: typeof fetch;
 
 You fill this in once. It names your invoicing software and the company that makes it, and
 identifies your _SIF_, AEAT's term for the system that issues your invoices. See
-[Your invoicing system (SIF)](/verifactu/en/simple/guides/sif/) for when you need more than one.
+[Your invoicing system (SIF)](/verifactu/en/guides/sif/) for when you need more than one.
 
 ```ts
 import type { SistemaInformatico } from "@waitron/verifactu";
@@ -169,7 +169,7 @@ for (const line of reply.RespuestaLinea) {
 console.log(reply.TiempoEsperaEnvio); // 60 (seconds to wait before the next send)
 ```
 
-[AEAT's reply](/verifactu/en/simple/guides/replies/) explains every result and what to do about it.
+[AEAT's reply](/verifactu/en/guides/replies/) explains every result and what to do about it.
 
 ## Try it without a certificate
 
@@ -182,4 +182,4 @@ import { createFakeAeat } from "@waitron/verifactu/testing";
 const testClient = createFakeAeat({ serverNow: new Date() }).client();
 ```
 
-`testClient` works exactly like `client` above. See [Testing](/verifactu/en/simple/guides/testing/).
+`testClient` works exactly like `client` above. See [Testing](/verifactu/en/guides/testing/).

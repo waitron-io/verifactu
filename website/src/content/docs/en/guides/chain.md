@@ -45,7 +45,7 @@ The first record in a chain has nothing to point to, so it uses
 
 There is one chain for each seller on each invoicing system. AEAT calls an invoicing system a
 _SIF_: the hardware and software you use to issue invoices. Each installation of your software is a
-separate SIF; [Your invoicing system (SIF)](/verifactu/en/simple/guides/sif/) has the details.
+separate SIF; [Your invoicing system (SIF)](/verifactu/en/guides/sif/) has the details.
 
 - **Invoice series share the chain.** Your `T01` till receipts and `A01` full invoices go in the
   same chain, one after another in the order you create them.

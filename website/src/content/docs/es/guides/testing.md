@@ -1,134 +1,71 @@
 ---
-title: Probar sin conexión
-description: Prueba envíos, duplicados y consultas con el transporte falso de la AEAT.
+title: Pruebas
+description: Prueba todo tu flujo contra una copia de la AEAT que funciona sin conexión.
 ---
 
-El punto de entrada `./testing` permite probar todo el cliente sin certificado ni red:
+`@waitron/verifactu/testing` incluye una copia sin conexión del servicio de la AEAT. Lee el mismo XML
+que el servicio real y responde como lo hace la AEAT, así que tus pruebas usan el cliente real de la
+biblioteca sin certificado ni red.
+
+## Envía a la AEAT sin conexión
 
 ```ts
 import { createFakeAeat } from "@waitron/verifactu/testing";
 
 const aeat = createFakeAeat({ serverNow: new Date("2026-07-21T00:00:00Z") });
 const client = aeat.client();
-const response = await client.submit(cabecera, [{ RegistroAlta: record }]);
 
-console.log(response.EstadoEnvio); // Correcto
-console.log(response.CSV); // CSV-00000001
-console.log(aeat.stored()[0].huella === record.Huella); // true
+const reply = await client.submit(cabecera, [{ RegistroAlta: record }]);
+console.log(reply.CSV); // CSV-00000001
+console.log(aeat.stored().length); // 1
 ```
 
-El transporte falso acepta el XML que envía `createClient` y devuelve respuestas SOAP
-analizadas. También puede forzar un rechazo, omitir detalles de un duplicado y paginar las
-consultas. Úsalo en tus pruebas de aplicación; antes de producción, comprueba además la conexión
-real con tu certificado en la preproducción de la AEAT.
-Sus respuestas de envío usan los espacios de nombres del esquema fijado, repiten la cabecera
-enviada y respetan el orden obligatorio. Las pruebas sin conexión validan ejemplos aceptados,
-rechazados y duplicados contra `RespuestaSuministro.xsd`. Esto demuestra la forma XML probada del
-transporte falso, no el comportamiento de la AEAT.
+Su reloj está fijado en el 21 de julio de 2026 salvo que pases `serverNow`, así tus pruebas dan el
+mismo resultado de un día a otro. Como la AEAT, rechaza una factura con fecha posterior a su reloj.
+Mueve el reloj durante una prueba con `aeat.setServerNow(date)`.
 
-El transporte falso tiene un único almacén de registros y responde a las consultas
-independientemente de la URL del servicio. No separa el servicio de requerimientos de la AEAT del
-servicio ordinario. No lo uses como prueba del comportamiento del servicio de requerimientos,
-incluidos la separación de registros, la disponibilidad de consultas y la gravedad de las
-respuestas. Acepta una cabecera `RemisionRequerimiento` para que puedas probar el XML de la
-petición y la respuesta, pero sigue aplicando sus reglas de corrección y rechazo de la modalidad
-VERI*FACTU voluntaria. El servicio separado de requerimientos de la AEAT admite los errores de
-negocio de los registros conservados, salvo los errores de identificación por NIF o `IDOtro`.
-Comprueba ese comportamiento en preproducción si tu flujo depende de él.
+Si tu código crea su propio cliente, pásale `aeat.fetch` en lugar del fetch que usa tu certificado:
 
-Inspecciona cada línea de la respuesta además de `EstadoEnvio`. El transporte falso devuelve
-`Correcto` solo si todas las líneas son correctas, `ParcialmenteCorrecto` si alguna se acepta con
-errores o se mezclan líneas aceptadas y rechazadas, e `Incorrecto` si todas son rechazadas. Un
-lote rechazado por completo no tiene `CSV`.
-Un reenvío que solo contiene un duplicado también se rechaza, aunque el registro original se haya
-aceptado; usa `resolveEstadoEfectivo` con esa línea de respuesta para distinguirlo de un registro
-que nunca se inscribió.
-Si devuelve `duplicate_unknown`, consulta el registro almacenado; no des por aceptada la
-operación que acabas de intentar.
+```ts
+import { createClient } from "@waitron/verifactu";
 
-Para subsanar un alta, `Subsanacion: "S"` con `RechazoPrevio` omitido o `N` sustituye un
-registro existente en el transporte falso, incluso si estaba anulado. Sin ese registro previo,
-el transporte devuelve el error `3002`; usa `RechazoPrevio: "X"` para la operativa publicada sin
-registro previo.
+const yourClient = createClient({ endpoint: "https://aeat.test/", fetch: aeat.fetch });
+```
 
-Al reintentar un alta rechazada, comprueba la línea de respuesta y después consulta la factura.
-En la [prueba E32](https://github.com/waitron-io/verifactu/blob/main/COMPLIANCE-AUDIT.md#e32-state-transition-preproduction-probe),
-el reenvío de un alta idéntica devolvió `3000` con estado duplicado `Correcta`, y un alta con
-`RechazoPrevio: "S"` inválido devolvió `1161`. La subsanación quedó almacenada con el aviso
-`2007` porque también se declaró como un segundo `PrimerRegistro: "S"` para el mismo emisor y
-sistema informático. La [prueba E35](https://github.com/waitron-io/verifactu/blob/main/COMPLIANCE-AUDIT.md#e35-first-record-and-chained-correction-preproduction-plan)
-aisló ese aviso: la AEAT almacenó el segundo primer registro como `AceptadoConErrores`/`2007`,
-mientras que aceptó como `Correcto` un segundo alta bien encadenada. Un alta encadenada y
-deliberadamente rechazada no apareció en la consulta; su posterior subsanación con
-`Subsanacion: "S"` y `RechazoPrevio: "X"` quedó almacenada como `Correcto`, con ambos indicadores
-y la huella enviada. El transporte falso reproduce esas rutas para el mismo emisor e identidad
-del sistema informático. Su comparación de identidades es una regla de prueba: no establece la
-clave completa de identidad de la AEAT ni la duración de su historial de rechazos. El transporte
-falso no comprueba que `RegistroAnterior` apunte al registro anterior real.
-Su almacén de una fila por factura no permite establecer si una factura anulada sigue contando
-como primer registro anterior. Las pruebas en vivo tampoco aislaron una subsanación que repite
-`PrimerRegistro: "S"` para su propia factura ya almacenada.
+## Haz que la AEAT falle
 
-Una anulación ordinaria también requiere un registro existente. Si no lo hay,
-indica `SinRegistroPrevio: "S"`; sin este indicador, el transporte devuelve `3002`. Rechaza esa
-operativa especial si ya existe un registro. En ese caso devuelve `3000` sin detalles del
-duplicado, por lo que `resolveEstadoEfectivo` devuelve `duplicate_unknown`, no `accepted`.
-Un valor inválido de `SinRegistroPrevio` devuelve `1276`. Si envías una anulación antes de su
-alta en el mismo lote, el transporte rechaza primero la anulación; el orden importa.
+Úsalas para probar cómo trata tu código cada tipo de resultado. Cada una recibe la clave de la
+factura, que obtienes con `keyOf(record)`.
 
-Una anulación ordinaria puede sustituir una anulación almacenada. Cambia su huella o su
-referencia externa para probar esa operativa: el transporte guarda la nueva anulación, el
-identificador de petición, la referencia y los datos del sistema informático. El emisor y los
-destinatarios de la factura original siguen disponibles para la consulta, mientras que cada
-anulación aceptada muestra su propio sistema informático. Reenviar la misma huella con la misma
-referencia, u omitir la referencia, sigue siendo un duplicado en el transporte falso; si la
-omites, se conserva la referencia almacenada. Esta regla de prueba no demuestra cómo trata la
-AEAT un reenvío exacto ni los cambios en otros campos no incluidos en la huella.
+| Llamada                                 | Qué pasa                                                           |
+| --------------------------------------- | ------------------------------------------------------------------ |
+| `aeat.reject(key, code, message)`       | Cada envío de esa factura se rechaza con tu código de error.       |
+| `aeat.dropRegistroDuplicadoDetail(key)` | Un reenvío se da como duplicado, sin detalles.                     |
+| `aeat.annul(key)`                       | La factura guardada se marca como anulada.                         |
+| `aeat.forget(key)`                      | La AEAT pierde la factura, así que una consulta no encuentra nada. |
 
-El transporte usa los significados publicados de los códigos de error, pero el anexo no asigna
-códigos numéricos a estos casos de la tabla de anulaciones. No des por hecho que la AEAT devuelve
-el mismo código en cada caso. Con `RechazoPrevio: "S"`, el transporte exige una operación anterior
-del mismo tipo e identidad que haya sido rechazada. El reintento de un alta sigue necesitando un
-registro existente. Una anulación necesita un registro, salvo que también indiques
-`SinRegistroPrevio: "S"`; ese reintento especial exige que no exista ninguno. Cualquier operación
-aceptada del mismo tipo consume la marca de rechazo del transporte, y `forget()` elimina esa marca
-junto con el rastro almacenado de la factura. Para un reintento bien formado sin historial
-coincidente, el transporte usa el código genérico publicado `1275` de valor incorrecto; un alta con
-`RechazoPrevio: "S"` pero sin `Subsanacion: "S"` devuelve el `1161`. Así se cubren las transiciones del
-[anexo §6 de la AEAT](https://www.agenciatributaria.es/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU/Validaciones_Errores_Veri-Factu.pdf),
-pero no el periodo durante el que la AEAT conserva el historial ni el código exacto de las demás
-celdas.
+```ts
+import { keyOf } from "@waitron/verifactu/testing";
+import { buildAltaRecord, resolveEstadoEfectivo } from "@waitron/verifactu";
 
-El transporte devuelve el código de rechazo `1112` si la fecha de expedición es futura. Reserva
-el código admisible `2004` para una `FechaHoraHusoGenRegistro` futura, como indica la lista
-publicada. El transporte compara contra su reloj local sin margen; la tolerancia real de la AEAT no
-está publicada, así que compruébala en preproducción si tu flujo depende de ese límite.
+const next = buildAltaRecord({
+  ...sale,
+  NumSerieFactura: "T01/000124",
+  Encadenamiento: { RegistroAnterior: { ...record.IDFactura, Huella: record.Huella } },
+});
+aeat.reject(keyOf(next), 1100, "Test rejection");
 
-Si consultas un registro cuya fecha se guardó con dígitos ASCII usando dígitos arábigos-indios (٠–٩)
-en `Ejercicio` y `FechaExpedicionFactura`, el transporte falso encuentra el mismo registro y
-devuelve la fecha ASCII almacenada. Por ejemplo, un registro fechado el `20-07-2026` coincide con
-`Ejercicio: "٢٠٢٦"` y `FechaExpedicionFactura: "٢٠-٠٧-٢٠٢٦"`. El transporte también convierte esos
-dígitos en los límites de rango y las claves de paginación al compararlos con los registros
-almacenados, sin reescribir la identidad de la factura. Una
-[consulta de preproducción de solo lectura](https://github.com/waitron-io/verifactu/actions/runs/36338604405)
-devolvió el mismo registro aceptado con el año y la fecha exacta en ambos sistemas de dígitos.
-Esa prueba no verificó en la AEAT otros sistemas de dígitos, rangos ni claves de paginación. Usa
-fechas ASCII por defecto hasta disponer de pruebas en vivo para esos otros casos.
-La conversión solo se aplica a los filtros de consulta de registros fechados con dígitos ASCII. Si
-envías un registro cuya fecha usa dígitos arábigos-indios, el transporte falso conserva esa
-forma y su filtro de periodo devuelve `SinDatos`, incluso si consultas con los mismos dígitos.
-Otros dígitos decimales Unicode, como los persas, superan la validación de la petición, pero el
-transporte falso no los convierte; una consulta exacta no encuentra un registro con fecha ASCII.
-Ninguno de estos dos casos se ha comprobado en la AEAT.
+const rejected = await client.submit(cabecera, [{ RegistroAlta: next }]);
+console.log(resolveEstadoEfectivo(rejected.RespuestaLinea[0])); // rejected
+```
 
-El transporte falso elimina los caracteres hasta U+0020 de los extremos de `RefExterna` al
-almacenarla, devolverla y aplicar un filtro de consulta. Conserva U+00A0 en los extremos. Una
-prueba en preproducción confirmó los valores de la línea de respuesta y la consulta para el
-espacio ASCII, la tabulación, el salto de línea y U+00A0; consulta la
-[auditoría de cumplimiento](https://github.com/waitron-io/verifactu/blob/main/COMPLIANCE-AUDIT.md#xml-text-and-escaping--service-description-67-69).
-`parseEnvio` sigue entregándote el texto enviado sin cambios. Si tu prueba necesita el valor
-almacenado exacto de otro campo de texto o carácter de espacio, compruébalo en la preproducción de
-la AEAT.
-En el transporte falso, un reintento de anulación cuya referencia solo cambia en los caracteres
-de los extremos es un duplicado. Una referencia presente compuesta únicamente por esos caracteres
-se convierte en una cadena vacía. Estos dos casos aún no se han probado en la AEAT.
+## Lo que no demuestra
+
+La AEAT sin conexión sigue las reglas que publica la AEAT y lo que hemos visto hacer al servicio
+real. Aun así, es una copia. Antes de empezar a funcionar en real, prueba con tu certificado real
+contra el entorno de pruebas de la AEAT (preproducción).
+
+Además, no:
+
+- comprueba que cada registro enlaza con el registro anterior real
+- separa de los normales los registros enviados porque la AEAT los pidió (un requerimiento)

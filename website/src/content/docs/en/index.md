@@ -1,37 +1,72 @@
 ---
-title: Add Veri*Factu to your TypeScript invoicing system
-description: Build and send AEAT invoice records while keeping your own workflow and storage.
-template: splash
-hero:
-  tagline: Turn an issued invoice into a checked, chained record for Spain's tax agency.
-  actions:
-    - text: Build your first record
-      link: /verifactu/en/start/getting-started/
-      icon: right-arrow
-    - text: See the full filing path
-      link: /verifactu/en/guides/submit/
-      variant: minimal
+title: "@waitron/verifactu"
+description: Build, check and send Veri*Factu invoice records from your TypeScript invoicing system.
 ---
 
-Your invoicing system knows when a sale becomes an invoice. Spain's Veri*Factu rules also call for
-an invoice record with a **huella** (hash), a link to the preceding record, and a QR lookup URL.
-You need to send the record to the AEAT, Spain's tax agency, and handle its response.
+`@waitron/verifactu` is a TypeScript library for Spain's Veri\*Factu rules. For every invoice you
+issue, it builds the record that the Spanish tax agency (AEAT) needs, checks it, sends it, and reads
+AEAT's reply.
 
-`@waitron/verifactu` gives your TypeScript code the protocol pieces: record construction,
-hash chaining, validation, XML, QR payloads, and AEAT response parsing. Its API keeps no invoice
-or chain state. You choose the database, numbering and invoice workflow, certificate-bearing HTTP
-transport, and QR renderer.
+:::caution[Not legal or tax advice]
+These docs explain how to use the library. They summarise some of AEAT's rules, but they are not
+legal or tax advice. Read [AEAT's Veri\*Factu documentation](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu.html) for the rules themselves, and
+check your own situation with a tax adviser.
+:::
 
-Choose it when you already have an invoicing application and want to keep those choices. If you
-need built-in series storage, record signing or QR images, [compare other starting points](/verifactu/en/start/introduction/)
-before adopting this smaller protocol core.
+## What's different
+
+It does the Veri\*Factu work and leaves every other decision to you. You choose your database, how
+you load your certificate, how you draw the QR code, and how you present and deliver your invoices.
+It keeps nothing between calls, so you decide how records are stored and in what order they are
+sent.
+
+It has one dependency, `fast-xml-parser`, and no native code.
+
+## What it does
+
+- Builds invoice records and cancellations, including corrections and invoices that replace
+  simplified invoices.
+- Accepts every tax and special-scheme code in AEAT's record format, not just standard VAT: the Canary Islands'
+  IGIC, Ceuta and Melilla's IPSI, and schemes such as second-hand goods, travel agencies, cash
+  accounting, the equivalence surcharge and farming, along with exempt sales, reverse charge and
+  customers from abroad, and checks them against the rules AEAT publishes. See
+  [Taxes and special schemes](/verifactu/en/guides/tax/).
+- Calculates the fingerprint (hash) that links each record to the one before it, and checks a single
+  record or a chain of records you supply.
+- Checks each record before you send it, and reports every problem as an error or a warning, with a
+  code and the field it applies to.
+- Turns records into the XML that AEAT expects, and reads that XML back, for both requests and
+  replies.
+- Sends records to AEAT, and looks up records you have already sent.
+- Works out each invoice's real result from AEAT's reply, including resends that AEAT reports as
+  duplicates, and gives you the time AEAT asks you to wait before sending again.
+- Builds the web address that goes in the invoice's QR code.
+- Includes an offline copy of the AEAT service for your tests.
+
+## What your application does
+
+- Stores the records and AEAT's replies.
+- Numbers the invoices, and links each new record to the previous one inside a single database
+  transaction.
+- Loads your certificate and makes the HTTPS call, by passing in a `fetch` function.
+- Draws the QR code and lays out the invoice.
+- Retries after a failure, and checks with AEAT when a result is unclear.
+- Decides which records belong in each chain, and hands them to the chain check in order.
+
+[What your application does](/verifactu/en/guides/your-application/) goes into more detail.
+
+## What it doesn't do
+
+It doesn't support the offline mode, which AEAT calls _NO VERI\*FACTU_. In that mode your system
+keeps the records itself, signs each one electronically, keeps a log of events, and sends records
+to AEAT only when AEAT asks for them. The library supports only _VERI\*FACTU_ mode, where every
+record goes to AEAT as soon as you issue the invoice.
+
+## Install
 
 ```sh
 npm install @waitron/verifactu
 ```
 
-[Build a first record and send it to the local fake AEAT](/verifactu/en/start/getting-started/).
-Then [connect your own storage and transport](/verifactu/en/guides/submit/).
-
-This package helps you build a **SIF**, a deployed invoicing system. It is not a complete SIF by
-itself. [Check what your system still has to do](/verifactu/en/start/not-a-sif/).
+Then follow [Getting started](/verifactu/en/getting-started/) to build and send your first
+record.

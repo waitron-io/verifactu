@@ -91,7 +91,7 @@ Around that:
   wait the time AEAT gives you (`TiempoEsperaEnvio`) between sends.
 - **While a job is `unknown`, hold the later ones for that seller** until you know what happened
   to it.
-- **Resolve an `unknown` job** as [AEAT's reply](/verifactu/en/simple/guides/replies/#after-a-failure)
+- **Resolve an `unknown` job** as [AEAT's reply](/verifactu/en/guides/replies/#after-a-failure)
   describes: send the same saved record again until you get a reply.
 
 ## Test a lost reply
@@ -121,6 +121,6 @@ const found = await client.consultar(cabecera, {
 console.log(found.registros[0]?.DatosRegistroFacturacion.Huella === lostJob.record.Huella); // true
 ```
 
-Here `aeat` is the offline AEAT from [Testing](/verifactu/en/simple/guides/testing/), and `client`
+Here `aeat` is the offline AEAT from [Testing](/verifactu/en/guides/testing/), and `client`
 is `aeat.client()`. Test the opposite case too: a `fetch` that throws before calling `aeat.fetch`,
 so AEAT never receives the record and the lookup finds nothing.
