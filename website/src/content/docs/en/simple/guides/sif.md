@@ -3,6 +3,12 @@ title: Your invoicing system (SIF)
 description: What AEAT means by an invoicing system, and when you need more than one.
 ---
 
+:::caution[Not legal or tax advice]
+This page summarises AEAT's rules to help you use the library. Read
+[AEAT's Veri\*Factu documentation](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu.html) for the rules themselves, and check your case with a tax
+adviser.
+:::
+
 ## What a SIF is
 
 AEAT's rules are written around the _SIF_ (_sistema informático de facturación_): the hardware

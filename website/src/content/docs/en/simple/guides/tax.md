@@ -3,10 +3,15 @@ title: Taxes and special schemes
 description: Tax lines for every tax, special scheme, exemption, and reverse charge.
 ---
 
+:::caution[Not legal or tax advice]
+This page summarises AEAT's rules to help you use the library. Read
+[AEAT's Veri\*Factu documentation](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu.html) for the rules themselves, and check your case with a tax
+adviser.
+:::
+
 Each record breaks its tax down into one or more lines in `Desglose`. The library supports every
 tax and special scheme in AEAT's rules, not only standard VAT, and checks the rules AEAT publishes
-for each one. Which scheme applies to a sale is a tax question; see
-[AEAT's documentation](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu.html).
+for each one.
 
 ## Which tax
 

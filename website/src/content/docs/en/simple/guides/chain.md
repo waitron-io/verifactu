@@ -44,8 +44,8 @@ The first record in a chain has nothing to point to, so it uses
 ## What counts as one chain
 
 There is one chain for each seller on each invoicing system. AEAT calls an invoicing system a
-_SIF_, and each installation of your software is a separate one; see
-[Your invoicing system (SIF)](/verifactu/en/simple/guides/sif/).
+_SIF_: the hardware and software you use to issue invoices. Each installation of your software is a
+separate SIF; [Your invoicing system (SIF)](/verifactu/en/simple/guides/sif/) has the details.
 
 - **Invoice series share the chain.** Your `T01` till receipts and `A01` full invoices go in the
   same chain, one after another in the order you create them.
@@ -76,6 +76,8 @@ articles 6 and 7) says numbers within a series run consecutively, and requires s
 - corrections of full invoices
 - invoices issued for you by the customer or by a third party, with a series for each
 - simplified and full invoices, when you issue both in the same calendar year
+
+This is a summary, not legal advice; check the regulation or a tax adviser for your case.
 
 Nothing in AEAT's rules ties a series to one SIF, so you don't have to start a new series when you
 change system. What you must not do is issue the same invoice number twice: AEAT identifies an
