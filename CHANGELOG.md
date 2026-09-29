@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Export `checkChain` to check caller-supplied alta/cancellation records in order.
+  It reports own-hash, predecessor identity/hash and generation-time issues with
+  a zero-based record position (`-1` for an explicit predecessor boundary).
+  `scope` distinguishes an empty input, a chain supplied from its first record,
+  and a partial segment. A missing external predecessor is an issue; even a
+  supplied boundary does not verify its earlier ancestry. Equal generation
+  instants are allowed. The checker uses the existing hash and timestamp rules,
+  compares pointer literals exactly, and does not sort, repair, persist or
+  mutate records. It checks neither unhashed content nor AEAT acceptance and
+  does not decide whether issuance continues. Schema/business validation and
+  taxpayer/software chain selection remain your responsibility.
+
 - `createClient` and the `submitRecords` facade now throw the exported
   `VerifactuTransportError` for network, HTTP and SOAP failures. Its `kind`
   distinguishes those stages; `status`, `faultCode`, `faultReason` and a

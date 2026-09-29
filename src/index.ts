@@ -8,6 +8,8 @@ export {
   huellaAnteriorOf,
   verifyHuella,
 } from "./huella.js";
+export { checkChain } from "./chain.js";
+export type { ChainIssueCode, ChainIssue, ChainCheckOptions, ChainCheckResult } from "./chain.js";
 export { buildAltaRecord, buildAnulacionRecord } from "./records.js";
 export { assertValid, validate, VerifactuValidationError } from "./validate.js";
 export { buildQrPayload } from "./qr.js";

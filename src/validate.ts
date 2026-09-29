@@ -410,7 +410,8 @@ function parseFechaHoraParts(value: string): FechaHoraParts | undefined {
   return { year, month, day, hour, minute, second, offsetMinutes };
 }
 
-function parseFechaHoraHusoGenRegistro(value: string): ParsedFechaHora | undefined {
+/** @internal Shared with the pure chain checker; not a package-root API. */
+export function parseFechaHoraHusoGenRegistro(value: string): ParsedFechaHora | undefined {
   const parts = parseFechaHoraParts(value);
   if (!parts) return undefined;
   const { year, month, day, hour, minute, second, offsetMinutes } = parts;
