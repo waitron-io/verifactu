@@ -102,16 +102,19 @@ what you log rather than logging the whole error.
    the lookup fails too, try again later; the outcome stays unknown until a lookup succeeds.
 3. If AEAT has a record with your fingerprint, it was stored. You won't get a receipt (`CSV`) for
    that send.
-4. If AEAT has no record, keep the outcome uncertain. Your reviewed delivery procedure decides
-   whether and when to retry; any retry uses the same saved records and respects AEAT's wait.
+4. If AEAT has no record after a send that received no response, keep the outcome uncertain.
+   [AEAT instructs you to resend the same records until you obtain a
+   response](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes/sistemas-verifactu.html).
+   Use your saved records and respect any known AEAT wait; your delivery procedure sets the timing.
 
 Some failures point to a problem to investigate before sending anything again. Read a SOAP
 `faultCode` and `faultReason` or an HTTP status without treating them as proof that no record was
 stored. An HTTP 4xx code may point to setup, such as the certificate or address.
 
 Records you sent because AEAT asked for them (a _requerimiento_) cannot be looked up. Keep the
-uncertain outcome for your separate reconciliation procedure; if that procedure calls for a retry,
-send the same records and inspect every response line, including duplicate detail.
+uncertain outcome for your separate reconciliation procedure. After a send without a response,
+resend the same saved records under that procedure and inspect every response line, including
+duplicate detail.
 
 Other errors come from elsewhere. Before sending, the client throws a plain `Error` if the batch
 breaks a rule it checks, such as the header's tax ID not matching a record; nothing was sent. After

@@ -81,12 +81,14 @@ causes can contain sensitive data.
 For voluntary submissions, query the saved invoice identity with `consultar` and compare AEAT's
 stored huella with your unchanged record. The example uses the invoice issue month for the query
 because it has no `FechaOperacion`; use the operation month when your record has one. A matching
-result confirms presence. An empty query does
-not prove the send failed, so keep the outcome unknown until your own reviewed retry or incident
-procedure resolves it. If you retry, use the same stored record and interpret duplicate detail
-with `resolveEstadoEfectivo`. The service for formal AEAT requirements has no consulta endpoint;
-it needs a separate reconciliation procedure. The library does not schedule retries or choose
-their timing for you.
+result confirms presence. An empty query does not prove the send failed. When a technical failure
+leaves a submission without a response, [AEAT instructs you to resend the same records until you
+obtain one](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes/sistemas-verifactu.html).
+Keep the outcome unknown while arranging that resend; use the saved record unchanged and interpret
+duplicate detail with `resolveEstadoEfectivo`. The service for formal AEAT requirements has no
+consulta endpoint, so its uncertain sends need a separate reconciliation procedure that can
+resend the saved records. Investigate a reported SOAP or HTTP fault before resending. The library
+does not schedule retries or choose their timing for you; honor any known AEAT wait.
 
 The example uses a fake AEAT that first stores a record and then loses the response. Consulta
 finds the same huella. It also tests a request lost before delivery: consulta finds nothing and the

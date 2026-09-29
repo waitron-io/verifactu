@@ -86,12 +86,15 @@ por tu aplicación pueden contener datos sensibles.
 Para envíos voluntarios, consulta la identidad de la factura guardada con `consultar` y compara
 la huella que conserva la AEAT con la de tu registro sin modificar. El ejemplo consulta el mes de
 expedición porque no tiene `FechaOperacion`; si tu registro sí la tiene, usa el mes de la operación.
-Una coincidencia confirma su
-presencia. Una consulta vacía no demuestra que el envío haya fallado: mantén el resultado
-incierto hasta que tu propio procedimiento de reintento revisado o de incidencias lo resuelva.
-Si reintentas, usa exactamente el registro guardado e interpreta los datos del duplicado con
-`resolveEstadoEfectivo`. El servicio para requerimientos formales no tiene consulta; necesita
-otro procedimiento de conciliación. La biblioteca no programa reintentos ni decide sus plazos.
+Una coincidencia confirma su presencia. Una consulta vacía no demuestra que el envío haya
+fallado. Si un fallo técnico deja un envío sin respuesta, [la AEAT indica que debes volver a
+remitir los mismos registros hasta obtenerla](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes/sistemas-verifactu.html).
+Mantén el resultado incierto mientras preparas el reenvío; utiliza el registro guardado sin
+modificar e interpreta los datos del duplicado con `resolveEstadoEfectivo`. El servicio para
+requerimientos formales no tiene consulta: sus envíos inciertos necesitan otro procedimiento de
+conciliación que pueda reenviar los registros guardados. Investiga los errores SOAP o HTTP
+notificados antes de reenviar. La biblioteca no programa reintentos ni decide sus plazos; respeta
+cualquier espera conocida de la AEAT.
 
 El ejemplo usa una AEAT falsa que primero guarda un registro y después pierde la respuesta. La
 consulta encuentra la misma huella. También prueba una solicitud perdida antes de la entrega:
