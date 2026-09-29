@@ -80,25 +80,47 @@ try {
 }
 ```
 
-| `kind`      | What happened                                                     | What to do                                                                                                                                       |
-| ----------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `"network"` | No reply arrived, or it broke off while being read.               | Send the same records again later.                                                                                                               |
-| `"http"`    | AEAT's server answered with an HTTP error. `status` has the code. | For a 5xx code, send the same records again later. Other codes usually point to your setup, such as the certificate or address.                  |
-| `"soap"`    | AEAT answered with a SOAP fault, its error message format.        | `faultCode` ends in `Server`: send again later. It ends in `Client`: AEAT couldn't accept the message, and `faultReason` says why. Fix it first. |
+`kind` says where the failure happened:
+
+- `"network"`: no reply arrived, or it broke off while being read.
+- `"http"`: AEAT's server answered with an HTTP error. `status` has the code.
+- `"soap"`: AEAT answered with a SOAP fault, its error message format. `faultCode` and
+  `faultReason` say what it reported.
+
+None of these tells you whether AEAT stored the records. A connection can drop after AEAT has
+already processed the batch, so treat the outcome as unknown until you have checked.
 
 The error also keeps what it could: `status`, `faultCode`, `faultReason`, the start of AEAT's reply in
 `bodyExcerpt`, and the original error in `cause`. These can contain sensitive details, so choose
 what you log rather than logging the whole error.
 
-Other errors come from elsewhere. Before sending, the client throws a plain `Error` if the batch
-breaks a rule it checks, such as the header's tax ID not matching a record. After sending, it throws
-one if AEAT's reply isn't in the expected shape. In that case AEAT may have received the records, so
-send the same records again: if AEAT already has them, the reply says so.
+### After a failure
 
-A failure doesn't tell you whether AEAT received the records, and the library never retries by
-itself. Never give a record a new invoice number or fingerprint just to get a retry through. If AEAT
-already received it, the retry comes back as a duplicate, and `resolveEstadoEfectivo` tells you
-whether the stored record is fine.
+1. Keep the records exactly as they are, and mark them as sent with an unknown outcome. Don't change
+   them or build replacements.
+2. [Look them up](/verifactu/en/simple/guides/lookup/) and compare AEAT's fingerprint with yours. If
+   the lookup fails too, try again later; the outcome stays unknown until a lookup succeeds.
+3. If AEAT has a record with your fingerprint, it was stored. You won't get a receipt (`CSV`) for
+   that send.
+4. If AEAT has no record, send the same records again, after the wait from your last successful
+   send.
+
+Some failures also point to a problem to fix before you send anything again. A SOAP fault whose
+`faultCode` ends in `Client` means AEAT couldn't accept the message, and `faultReason` says why. An
+HTTP 4xx code usually means a setup problem, such as the certificate or the address.
+
+Records you sent because AEAT asked for them (a _requerimiento_) can't be looked up. For those, send
+the same records again and read each line's result: AEAT reports a record it already has as a
+duplicate.
+
+Other errors come from elsewhere. Before sending, the client throws a plain `Error` if the batch
+breaks a rule it checks, such as the header's tax ID not matching a record; nothing was sent. After
+sending, it throws one if AEAT's reply isn't in the expected shape. AEAT may have stored the
+records, so follow the same steps.
+
+The library never retries by itself. Never give a record a new invoice number or fingerprint just to
+get it through. If AEAT already has it, a resend comes back as a duplicate, and
+`resolveEstadoEfectivo` tells you whether the stored record is fine.
 
 ## Keeping AEAT's raw XML
 

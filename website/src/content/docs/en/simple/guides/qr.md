@@ -3,8 +3,9 @@ title: QR codes
 description: Build the QR code's web address, draw it, and place it on the invoice.
 ---
 
-Every invoice carries a QR code. Scanning it opens AEAT's website, which confirms that AEAT received
-the invoice's record.
+Every invoice carries a QR code. Scanning it sends the invoice's details to AEAT, which compares
+them with the records the seller sent and answers either "found" (_Factura encontrada_) or "not
+found" (_Factura no encontrada_).
 
 ## Build the address
 

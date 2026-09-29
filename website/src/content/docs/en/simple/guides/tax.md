@@ -9,9 +9,10 @@ This page summarises AEAT's rules to help you use the library. Read
 adviser.
 :::
 
-Each record breaks its tax down into one or more lines in `Desglose`. The library supports every
-tax and special scheme in AEAT's rules, not only standard VAT, and checks the rules AEAT publishes
-for each one.
+Each record breaks its tax down into one or more lines in `Desglose`. The library accepts
+every tax and special-scheme code in AEAT's record format, not only standard VAT, and checks each
+line against the rules AEAT publishes for it. Passing those checks doesn't guarantee that AEAT
+accepts the record.
 
 ## Which tax
 

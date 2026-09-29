@@ -96,24 +96,29 @@ If two invoices are built at the same time without that lock, both link to the s
 record and the chain breaks. The library doesn't keep the chain in memory because a crash or
 restart would lose it.
 
-## Check a stored chain
+## How the links fit together
 
 `verifyHuella` recalculates one record's fingerprint and compares it with the stored one. The
-library doesn't check links across your stored records, but that takes only a few lines:
+library doesn't check the links across your stored records. This sketch shows how the fingerprints
+line up; it is **not** an integrity check:
 
 ```ts
 import { verifyHuella, type RegistroAnulacion } from "@waitron/verifactu";
 
-function checkChain(records: Array<RegistroAlta | RegistroAnulacion>): boolean {
-  return records.every((current, i) => {
-    if (!verifyHuella(current)) return false;
-    if (i === 0) return current.Encadenamiento.PrimerRegistro === "S";
-    return current.Encadenamiento.RegistroAnterior?.Huella === records[i - 1].Huella;
-  });
+function fingerprintsLineUp(records: Array<RegistroAlta | RegistroAnulacion>): boolean {
+  return (
+    records.length > 0 &&
+    records.every((current, i) => {
+      if (!verifyHuella(current)) return false;
+      if (i === 0) return current.Encadenamiento.PrimerRegistro === "S";
+      return current.Encadenamiento.RegistroAnterior?.Huella === records[i - 1].Huella;
+    })
+  );
 }
 
-console.log(checkChain([record, next])); // true
+console.log(fingerprintsLineUp([record, next])); // true
 ```
 
-This checks the fingerprints only. A full check would also compare the other three fields of each
-link.
+A real check of your stored chain also needs to compare the other three fields of each link (the
+seller's tax ID, invoice number and issue date, which cancellations store under different names),
+and confirm that the records are complete and in the order you created them.

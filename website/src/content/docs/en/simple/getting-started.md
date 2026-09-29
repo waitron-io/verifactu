@@ -56,17 +56,39 @@ const software: SistemaInformatico = {
 Each record links to the one before it, so load the previous record first. For the very first
 record, `loadPreviousRecord` returns `null`.
 
+The record's dates are written in local time, so the builder needs your time zone's offset from
+UTC at the moment of issue, in minutes. Spain's offset changes in summer, so work it out for each
+invoice. This uses the time zone rules built into JavaScript:
+
+```ts
+function utcOffsetMinutes(date: Date, timeZone = "Europe/Madrid"): number {
+  const name = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "longOffset" })
+    .formatToParts(date)
+    .find((part) => part.type === "timeZoneName")?.value;
+  const match = /([+-])(\d{2}):(\d{2})/.exec(name ?? "");
+  if (!match) return 0; // "GMT" on its own means no offset
+  const minutes = Number(match[2]) * 60 + Number(match[3]);
+  return match[1] === "-" ? -minutes : minutes;
+}
+
+console.log(utcOffsetMinutes(new Date("2026-01-15T12:00:00Z"))); // 60
+console.log(utcOffsetMinutes(new Date("2026-07-15T12:00:00Z"))); // 120
+```
+
+Use `"Atlantic/Canary"` for the Canary Islands.
+
 ```ts
 import { buildAlta } from "@waitron/verifactu/facade";
 
 const seller = { NombreRazon: "Example SL", NIF: "89890001K" };
 const previous = await loadPreviousRecord(); // you write this
+const issuedAt = new Date();
 
 const record = buildAlta({
   IDEmisorFactura: seller.NIF,
   NombreRazonEmisor: seller.NombreRazon,
   NumSerieFactura: "T01/000123",
-  FechaExpedicionFactura: new Date(),
+  FechaExpedicionFactura: issuedAt,
   TipoFactura: "F2",
   DescripcionOperacion: "Coffee and lunch",
   Desglose: [
@@ -81,8 +103,8 @@ const record = buildAlta({
   CuotaTotal: "2.10",
   ImporteTotal: "12.10",
   SistemaInformatico: software,
-  generadoEn: new Date(),
-  offsetMinutes: 120, // minutes ahead of UTC: 120 in Madrid in summer
+  generadoEn: issuedAt,
+  offsetMinutes: utcOffsetMinutes(issuedAt),
   previous,
 });
 ```

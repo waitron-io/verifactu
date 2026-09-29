@@ -66,7 +66,7 @@ function run(command, args) {
 // what the line prints (text after " (" is explanation), and names the page does not define
 // (or only `declare`s, for functions the reader writes) come from the fixtures below.
 const SIMPLE_PAGES = [
-  "getting-started.mdx",
+  "getting-started.md",
   "guides/chain.md",
   "guides/checking.md",
   "guides/lookup.md",
@@ -80,7 +80,7 @@ const SIMPLE_PAGES = [
 ];
 
 const SIMPLE_EXTRAS = {
-  "getting-started.mdx": {
+  "getting-started.md": {
     after: `__assert.equal(__savedRecords[0], record);
 __assert.equal(__savedReplies[0], reply);
 __assert.equal(new URL(qrUrl).searchParams.get("importe"), "12.10");

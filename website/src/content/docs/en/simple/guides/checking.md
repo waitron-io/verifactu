@@ -3,7 +3,7 @@ title: Checking records
 description: Find problems before AEAT does, and tell errors from warnings.
 ---
 
-The library checks a record against AEAT's published rules before you send it. It covers field
+The library checks a record against many of AEAT's published rules before you send it. It covers field
 formats, tax IDs, amounts and totals, dates, invoice types, and the combinations of fields AEAT
 allows.
 
@@ -11,8 +11,10 @@ allows.
 
 Every problem has a severity:
 
-- An **error** means AEAT would reject the record. Fix it before you send.
-- A **warning** means AEAT would probably accept the record but flag it. Review it.
+- An **error** means the record breaks AEAT's XML format, or a rule AEAT lists as a reason to
+  reject a record. Fix it before you send.
+- A **warning** means it breaks a rule AEAT lists as an error it still accepts: AEAT stores the
+  record but flags it. Review it.
 
 `assertValid` throws a `VerifactuValidationError` if there are any errors, and ignores warnings.
 `validate` returns every problem, which suits a form or a log:

@@ -26,10 +26,11 @@ It has one dependency, `fast-xml-parser`, and no native code.
 
 - Builds invoice records and cancellations, including corrections and invoices that replace
   simplified invoices.
-- Covers every tax and special scheme in AEAT's rules, not just standard VAT: the Canary Islands'
+- Accepts every tax and special-scheme code in AEAT's record format, not just standard VAT: the Canary Islands'
   IGIC, Ceuta and Melilla's IPSI, and schemes such as second-hand goods, travel agencies, cash
   accounting, the equivalence surcharge and farming, along with exempt sales, reverse charge and
-  customers from abroad. See [Taxes and special schemes](/verifactu/en/simple/guides/tax/).
+  customers from abroad, and checks them against the rules AEAT publishes. See
+  [Taxes and special schemes](/verifactu/en/simple/guides/tax/).
 - Calculates the fingerprint (hash) that links each record to the one before it, and checks a single
   record's fingerprint.
 - Checks each record before you send it, and reports every problem as an error or a warning, with a
