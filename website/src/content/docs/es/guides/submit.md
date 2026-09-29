@@ -256,17 +256,21 @@ expedición futura es distinta: el código `1112` rechaza el registro.
 ## Gestiona fallos y resultados inciertos
 
 Si `client.submit` lanza un error, no tienes un resultado por registro ni un CSV analizado que
-guardar. Conserva los registros originales y examina el error. Si recibes un fallo SOAP `Server`,
-la transmisión no progresa o la respuesta no es el XML esperado, vuelve a enviar el mismo mensaje.
-Si recibes un fallo SOAP `Client`, el mensaje está mal formado o contiene datos incorrectos:
-consulta su `faultstring` y corrige el problema antes de reenviarlo. El cliente informa de los
-fallos, pero no reintenta automáticamente.
+guardar. Conserva los registros originales y examina el error. `VerifactuTransportError`
+distingue los fallos `network`, `http` y `soap` mediante `kind`. También conserva el `status`
+HTTP, el `faultCode` y `faultReason` SOAP, y el `cause` original cuando están disponibles. Un
+fallo SOAP mal formado puede carecer de código analizado; examina su `bodyExcerpt` limitado sin
+registrar secretos. Un fallo al analizar la respuesta es distinto de uno de transporte. Ninguno
+demuestra si la AEAT guardó el registro, y el cliente no reintenta automáticamente.
 
 Tras un resultado incierto, un registro repetido puede devolver el error 3000 porque la AEAT ya
 lo guardó. No le asignes otro número de factura ni otra huella solo para que pase el reintento.
 Interpreta el detalle del duplicado y, si no aclara el resultado, usa la consulta voluntaria para
 comparar la huella guardada por la AEAT con la tuya. El servicio bajo requerimiento no permite
 consultas.
+
+La [guía de envío duradero](/verifactu/es/guides/durable-delivery/) muestra cómo guardar juntos
+el registro y el trabajo de envío, respetar la espera y aclarar una respuesta incierta.
 
 ## Consulta cuando el resultado es incierto
 

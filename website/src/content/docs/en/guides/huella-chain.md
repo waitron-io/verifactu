@@ -48,6 +48,13 @@ record that the predecessor was itself linked correctly to the record before it,
 stored predecessor's generation time with the new append. Those history checks belong beside your
 durable chain transaction.
 
+`checkChain(records)` checks a caller-supplied snapshot in generation order. It reports an
+incorrect own hash, a wrong predecessor identity or hash, and generation times that move
+backwards. For a segment that begins part-way through a chain, pass its immediate stored
+predecessor as `{ predecessor }`. The result's `scope` says whether the supplied segment starts
+at `PrimerRegistro` or is partial; read `issues` separately. A partial check does not verify the
+boundary's earlier ancestry, and no check proves that your store has no missing tail.
+
 AEAT developer FAQ 15 describes additional automatic checks and event logging for NO Veri*Factu
 SIFs. This package builds Veri*Factu records and does not implement NO Veri*Factu signatures,
 event records, anomaly reports, or clock control.

@@ -85,6 +85,10 @@ export default defineConfig({
               slug: "guides/submit",
             },
             {
+              ...t("Durable delivery", "Envío duradero"),
+              slug: "guides/durable-delivery",
+            },
+            {
               ...t("Submission modes and authority", "Modalidades y representación"),
               slug: "guides/submission-modes",
             },

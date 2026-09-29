@@ -7,9 +7,9 @@
     "dev": "astro dev",
     "start": "astro dev",
     "build": "astro build",
-    "verify:examples": "node scripts/verify-examples.mjs",
+    "verify:examples": "node scripts/verify-examples.mjs && node scripts/verify-delivery-example.mjs",
     "verify:docs": "node scripts/verify-docs.mjs",
-    "verify:types": "node ../node_modules/typescript-7/bin/tsc --ignoreConfig --noEmit --strict --skipLibCheck --target es2022 --module esnext --moduleResolution bundler --types node scripts/verify-types.ts",
+    "verify:types": "node ../node_modules/typescript-7/bin/tsc --ignoreConfig --noEmit --strict --skipLibCheck --target es2022 --module esnext --moduleResolution bundler --types node scripts/verify-types.ts && node ../node_modules/typescript-7/bin/tsc --ignoreConfig --allowJs --checkJs --noEmit --strict --skipLibCheck --target es2022 --module nodenext --moduleResolution nodenext --types node scripts/verify-delivery-example.mjs",
     "verify:links": "node scripts/verify-links.mjs",
     "preview": "astro preview",
     "astro": "astro"

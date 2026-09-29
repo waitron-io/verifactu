@@ -258,6 +258,7 @@ assert.doesNotThrow(() => assertValid(rectificativa));
     assert.deepEqual(snippetPages(locale), [
       "guides/alta-record.md",
       "guides/consulta.md",
+      "guides/durable-delivery.md",
       "guides/facade.md",
       "guides/huella-chain.md",
       "guides/qr.md",

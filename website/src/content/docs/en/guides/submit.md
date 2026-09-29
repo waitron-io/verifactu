@@ -254,15 +254,20 @@ record.
 ## Handle faults and uncertain results
 
 If `client.submit` throws, you have no parsed per-record result or CSV to store. Keep the original
-records and inspect the error. A SOAP `Server` fault, a stalled transmission, or a response that
-is not the expected XML calls for resending the same message. A SOAP `Client` fault means the
-message is malformed or contains incorrect information: use its `faultstring` to fix the problem
-before you resend it. The client reports faults but does not retry automatically.
+records and inspect the error. `VerifactuTransportError` distinguishes `network`, `http` and `soap`
+failures through its `kind`. It also preserves an HTTP `status`, SOAP `faultCode` and `faultReason`,
+and the original `cause` where available. A malformed SOAP fault may not have a parsed code;
+inspect its bounded `bodyExcerpt` without logging secrets. A response parser error is separate
+from a transport error. None of these proves whether AEAT stored the record, and the client does
+not retry automatically.
 
 After an uncertain result, a repeated record may receive error 3000 because AEAT already stored
 it. Do not assign it a new invoice number or hash just to make the retry pass. Interpret the
 duplicate detail and, when it does not settle the outcome, use voluntary consulta to compare
 AEAT's stored hash with yours. The under-requirement service has no consulta.
+
+For an example that saves the record and delivery job together, respects AEAT's wait and
+reconciles an uncertain response, see [durable delivery](/verifactu/en/guides/durable-delivery/).
 
 ## Query a record after an uncertain result
 

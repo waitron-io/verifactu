@@ -102,16 +102,16 @@ what you log rather than logging the whole error.
    the lookup fails too, try again later; the outcome stays unknown until a lookup succeeds.
 3. If AEAT has a record with your fingerprint, it was stored. You won't get a receipt (`CSV`) for
    that send.
-4. If AEAT has no record, send the same records again, after the wait from your last successful
-   send.
+4. If AEAT has no record, keep the outcome uncertain. Your reviewed delivery procedure decides
+   whether and when to retry; any retry uses the same saved records and respects AEAT's wait.
 
-Some failures also point to a problem to fix before you send anything again. A SOAP fault whose
-`faultCode` ends in `Client` means AEAT couldn't accept the message, and `faultReason` says why. An
-HTTP 4xx code usually means a setup problem, such as the certificate or the address.
+Some failures point to a problem to investigate before sending anything again. Read a SOAP
+`faultCode` and `faultReason` or an HTTP status without treating them as proof that no record was
+stored. An HTTP 4xx code may point to setup, such as the certificate or address.
 
-Records you sent because AEAT asked for them (a _requerimiento_) can't be looked up. For those, send
-the same records again and read each line's result: AEAT reports a record it already has as a
-duplicate.
+Records you sent because AEAT asked for them (a _requerimiento_) cannot be looked up. Keep the
+uncertain outcome for your separate reconciliation procedure; if that procedure calls for a retry,
+send the same records and inspect every response line, including duplicate detail.
 
 Other errors come from elsewhere. Before sending, the client throws a plain `Error` if the batch
 breaks a rule it checks, such as the header's tax ID not matching a record; nothing was sent. After
@@ -121,6 +121,9 @@ records, so follow the same steps.
 The library never retries by itself. Never give a record a new invoice number or fingerprint just to
 get it through. If AEAT already has it, a resend comes back as a duplicate, and
 `resolveEstadoEfectivo` tells you whether the stored record is fine.
+
+The [durable delivery example](/verifactu/en/guides/durable-delivery/) keeps the saved record and
+outbox job together, respects the wait, and tests both kinds of uncertain network failure offline.
 
 ## Keeping AEAT's raw XML
 

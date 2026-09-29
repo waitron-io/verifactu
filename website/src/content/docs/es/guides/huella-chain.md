@@ -45,6 +45,14 @@ al anterior; con un solo registro no puede demostrar que el anterior estuviera b
 que lo precedía ni comparar la hora de generación de ese antecesor guardado con la nueva
 incorporación. Realiza esas comprobaciones históricas junto a la transacción duradera de la cadena.
 
+`checkChain(records)` comprueba los registros que le proporcionas en orden de generación.
+Señala una huella propia incorrecta, un enlace erróneo a la identidad o huella anterior y horas
+de generación que retroceden. Si el tramo empieza a mitad de una cadena, pasa su predecesor
+inmediato guardado como `{ predecessor }`. El campo `scope` indica si el tramo empieza con
+`PrimerRegistro` o es parcial; lee `issues` por separado. La comprobación parcial no verifica
+los antecesores del límite y ninguna comprobación demuestra que no falten registros al final de
+tu almacenamiento.
+
 La FAQ 15 para desarrolladores de la AEAT describe comprobaciones automáticas y registros de
 eventos adicionales para los SIF NO Veri*Factu. Este paquete crea registros Veri*Factu y no
 implementa firmas NO Veri*Factu, registros de eventos, informes de anomalías ni control del reloj.
