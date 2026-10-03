@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.1 — 2026-10-03
+
 - Accept a zero `CuotaRepercutida` on an `S1` line when its base times its rate rounds to 0.00,
   such as a €0.02 base at 21%. A zero on a base whose tax rounds to 0.01 or more in either
   direction is still refused.
