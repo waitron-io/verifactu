@@ -464,6 +464,17 @@ function amountInCents(value: string): number {
   return negative ? -cents : cents;
 }
 
+/**
+ * Whether a validated two-decimal amount times a validated two-decimal rate, divided by 100 and
+ * rounded half away from zero to cents, is 0.00. The product of the amount in cents and the rate
+ * in hundredths of a percent is the tax in millionths of a euro, an exact integer, so ±5000 is the
+ * half cent.
+ */
+function taxRoundsToZero(amount: string, rate: string): boolean {
+  const product = BigInt(amount.replace(".", "")) * BigInt(rate.replace(".", ""));
+  return product > -5000n && product < 5000n;
+}
+
 export function validate(
   record: RegistroAlta | RegistroAnulacion,
   options: ValidationOptions = {},
@@ -1515,13 +1526,14 @@ export function validate(
         const cuota = Number(detalle.CuotaRepercutida);
         const rate = Number(detalle.TipoImpositivo);
         const zeroContradictsFormula =
-          (cuota === 0 && base !== 0 && rate !== 0) || (base === 0 && cuota !== 0);
+          (cuota === 0 && !taxRoundsToZero(formulaBase!, detalle.TipoImpositivo!)) ||
+          (base === 0 && cuota !== 0);
         const oppositeSigns = base !== 0 && cuota !== 0 && base < 0 !== cuota < 0;
         if (zeroContradictsFormula || oppositeSigns) {
           add(
             "S1_CUOTA_REPERCUTIDA_SIGN",
             `${field}.CuotaRepercutida`,
-            "CuotaRepercutida and its applicable base must have the same sign",
+            "CuotaRepercutida must have the same sign as its applicable base, and may be 0.00 only when that base times TipoImpositivo rounds to 0.00",
           );
         }
         if (Math.abs(cuota - (base * rate) / 100) > CUOTA_REPERCUTIDA_TOLERANCE) {

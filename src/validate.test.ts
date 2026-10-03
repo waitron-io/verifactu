@@ -3661,20 +3661,88 @@ describe("validate — AEAT §3.1.3.14–15.8", () => {
     expect(result).not.toContain("S1_CUOTA_REPERCUTIDA_FORMULA");
   });
 
-  it.each(["40.00", "-30.00"])(
-    "§3.1.3.15.7 rejects zero charged tax on nonzero base %s at a nonzero rate",
-    (BaseImponibleOimporteNoSujeto) => {
+  it.each([
+    ["0.02", "21.00"],
+    ["-0.02", "21.00"],
+    ["0.04", "12.49"],
+  ])(
+    "§3.1.3.15.7 accepts zero charged tax when base %s at rate %s rounds to 0.00",
+    (BaseImponibleOimporteNoSujeto, TipoImpositivo) => {
       const result = codes(
-        withDetail({
-          TipoImpositivo: "21.00",
-          BaseImponibleOimporteNoSujeto,
-          CuotaRepercutida: "0.00",
-        }),
+        withDetail({ TipoImpositivo, BaseImponibleOimporteNoSujeto, CuotaRepercutida: "0.00" }),
+      );
+      expect(result).not.toContain("S1_CUOTA_REPERCUTIDA_SIGN");
+      expect(result).not.toContain("S1_CUOTA_REPERCUTIDA_FORMULA");
+    },
+  );
+
+  it.each([
+    ["0.05", "10.00"],
+    ["-0.05", "10.00"],
+    ["0.03", "21.00"],
+    ["40.00", "21.00"],
+    ["-30.00", "21.00"],
+  ])(
+    "§3.1.3.15.7 rejects zero charged tax when base %s at rate %s rounds away from 0.00",
+    (BaseImponibleOimporteNoSujeto, TipoImpositivo) => {
+      const result = codes(
+        withDetail({ TipoImpositivo, BaseImponibleOimporteNoSujeto, CuotaRepercutida: "0.00" }),
       );
       expect(result).toContain("S1_CUOTA_REPERCUTIDA_SIGN");
       expect(result).not.toContain("S1_CUOTA_REPERCUTIDA_FORMULA");
     },
   );
+
+  it.each(["0.01", "-0.01"])(
+    "§3.1.3.15.7 accepts zero charged tax when base %s at an IGIC rate of 49.99 is just under half a cent",
+    (BaseImponibleOimporteNoSujeto) => {
+      const result = codes(
+        withDetail({
+          Impuesto: "03",
+          TipoImpositivo: "49.99",
+          BaseImponibleOimporteNoSujeto,
+          CuotaRepercutida: "0.00",
+        }),
+      );
+      expect(result).not.toContain("S1_CUOTA_REPERCUTIDA_SIGN");
+      expect(result).not.toContain("S1_CUOTA_REPERCUTIDA_FORMULA");
+    },
+  );
+
+  it("§3.1.3.15.7 rounds BaseImponibleACoste, not the standard base, when deciding a zero tax", () => {
+    const tinyCost = codes(
+      withDetail({
+        ClaveRegimen: "06",
+        TipoImpositivo: "21.00",
+        BaseImponibleOimporteNoSujeto: "100.00",
+        BaseImponibleACoste: "0.02",
+        CuotaRepercutida: "0.00",
+      }),
+    );
+    expect(tinyCost).not.toContain("S1_CUOTA_REPERCUTIDA_SIGN");
+    const tinyStandard = codes(
+      withDetail({
+        ClaveRegimen: "06",
+        TipoImpositivo: "21.00",
+        BaseImponibleOimporteNoSujeto: "0.02",
+        BaseImponibleACoste: "100.00",
+        CuotaRepercutida: "0.00",
+      }),
+    );
+    expect(tinyStandard).toContain("S1_CUOTA_REPERCUTIDA_SIGN");
+  });
+
+  it("§3.1.3.15.7 still rejects an opposite sign on a base whose tax rounds to 0.00", () => {
+    expect(
+      codes(
+        withDetail({
+          TipoImpositivo: "21.00",
+          BaseImponibleOimporteNoSujeto: "0.02",
+          CuotaRepercutida: "-0.01",
+        }),
+      ),
+    ).toContain("S1_CUOTA_REPERCUTIDA_SIGN");
+  });
 
   it("§3.1.3.15.7 rejects nonzero charged tax on a zero base", () => {
     const result = codes(
@@ -5576,7 +5644,8 @@ describe("validate — pins the exact field, message and severity for every Vali
       description: "S1_CUOTA_REPERCUTIDA_SIGN",
       code: "S1_CUOTA_REPERCUTIDA_SIGN",
       field: "Desglose[0].CuotaRepercutida",
-      message: "CuotaRepercutida and its applicable base must have the same sign",
+      message:
+        "CuotaRepercutida must have the same sign as its applicable base, and may be 0.00 only when that base times TipoImpositivo rounds to 0.00",
       mutate: (r) => {
         r.Desglose[0]!.TipoImpositivo = "21.00";
         r.Desglose[0]!.BaseImponibleOimporteNoSujeto = "10.00";
