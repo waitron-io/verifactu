@@ -170,7 +170,8 @@ current instant in the numeric offset carried by `FechaHoraHusoGenRegistro`. A m
 already produces `FECHA_HORA_FORMAT`, so the IPSI issue stays a warning rather than adding a second
 date-derived error. Every `S1` line must include `TipoImpositivo` and `CuotaRepercutida`; validation
 checks the applicable base, sign, and AEAT's ±€10 formula tolerance, except for the published
-correction cases. A zero charged tax is valid only when its base or rate is zero. A nonzero
+correction cases. Outside those correction cases, a zero charged tax is valid only when its applicable base times its rate, divided by
+100, rounds to 0.00, which is always the case when the base or rate is zero. A nonzero
 `CuotaRepercutida` is otherwise rejected outside `S1`. For an `F2`, the sum of every line's base
 and charged tax may reach €3,010 including AEAT's +€10 margin. The cap does not apply when you set
 `NumRegistroAcuerdoFacturacion` or `FacturaSinIdentifDestinatarioArt61d: "S"`.
