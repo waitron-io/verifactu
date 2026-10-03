@@ -1,6 +1,6 @@
 {
   "name": "@waitron/verifactu",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "AEAT Veri*Factu / SIF protocol library: huella chaining, QR payload, invoice records, XML serialise/parse, and the AEAT SOAP submission client.",
   "type": "module",
   "license": "Apache-2.0",
