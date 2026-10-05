@@ -431,6 +431,46 @@ export function buildRejectedPredecessorProbeRecords(options, count = 3) {
   return { rejected: chain("R"), control: chain("C") };
 }
 
+async function submitPredecessorStage(client, cabecera, records, stage) {
+  let response;
+  try {
+    response = await withLiveStage(stage, () =>
+      client.submit(
+        cabecera,
+        records.map((record) => ({ RegistroAlta: record })),
+      ),
+    );
+  } catch (error) {
+    return {
+      transportError: (error.cause instanceof Error ? error.cause.message : String(error)).replace(
+        /\b[A-Z0-9]{9}\b/g,
+        "[NIF]",
+      ),
+    };
+  }
+  const lines = records.map((record) => {
+    const serial = record.IDFactura.NumSerieFactura;
+    const matches =
+      response.RespuestaLinea?.filter((entry) => entry.IDFactura?.NumSerieFactura === serial) ?? [];
+    const line = matches.length === 1 ? matches[0] : undefined;
+    return {
+      NumSerieFactura: serial,
+      HuellaEnviada: record.Huella,
+      RegistroAnterior: record.Encadenamiento.RegistroAnterior,
+      EstadoRegistro: line?.EstadoRegistro,
+      CodigoErrorRegistro: line?.CodigoErrorRegistro,
+      DescripcionErrorRegistro: line?.DescripcionErrorRegistro,
+      Respuestas: matches.length,
+    };
+  });
+  return {
+    EstadoEnvio: response.EstadoEnvio,
+    TiempoEsperaEnvio: response.TiempoEsperaEnvio,
+    CSV: response.CSV,
+    lines,
+  };
+}
+
 export async function submitRejectedPredecessorProbe(
   client,
   cabecera,
@@ -442,54 +482,54 @@ export async function submitRejectedPredecessorProbe(
   let previous;
   for (const kind of ["control", "rejected"]) {
     if (previous) await waitForSubmission(previous.TiempoEsperaEnvio);
-    const records = batches[kind];
-    let response;
-    try {
-      response = await withLiveStage(`${kind} predecessor batch`, () =>
-        client.submit(
-          cabecera,
-          records.map((record) => ({ RegistroAlta: record })),
-        ),
-      );
-    } catch (error) {
-      evidence[kind] = {
-        transportError: (error.cause instanceof Error
-          ? error.cause.message
-          : String(error)
-        ).replace(/\b[A-Z0-9]{9}\b/g, "[NIF]"),
-      };
+    evidence[kind] = await submitPredecessorStage(
+      client,
+      cabecera,
+      batches[kind],
+      `${kind} predecessor batch`,
+    );
+    report(kind, evidence[kind]);
+    if (evidence[kind].transportError) {
       evidence.incomplete = true;
-      report(kind, evidence[kind]);
       return evidence;
     }
-    previous = response;
-    const lines = records.map((record) => {
-      const serial = record.IDFactura.NumSerieFactura;
-      const matches =
-        response.RespuestaLinea?.filter((entry) => entry.IDFactura?.NumSerieFactura === serial) ??
-        [];
-      const line = matches.length === 1 ? matches[0] : undefined;
-      return {
-        NumSerieFactura: serial,
-        HuellaEnviada: record.Huella,
-        RegistroAnterior: record.Encadenamiento.RegistroAnterior,
-        EstadoRegistro: line?.EstadoRegistro,
-        CodigoErrorRegistro: line?.CodigoErrorRegistro,
-        DescripcionErrorRegistro: line?.DescripcionErrorRegistro,
-        Respuestas: matches.length,
-      };
-    });
-    evidence[kind] = {
-      EstadoEnvio: response.EstadoEnvio,
-      TiempoEsperaEnvio: response.TiempoEsperaEnvio,
-      CSV: response.CSV,
-      lines,
-    };
-    report(kind, evidence[kind]);
+    previous = evidence[kind];
   }
   evidence.incomplete = Object.values(evidence).some((batch) =>
     batch.lines.some((line) => line.Respuestas !== 1 || !line.EstadoRegistro),
   );
+  return evidence;
+}
+
+export async function submitRejectedPredecessorLaterBatchProbe(
+  client,
+  cabecera,
+  batches,
+  report = () => {},
+  waitForSubmission = waitForNextSubmission,
+) {
+  const evidence = {};
+  let previous;
+  for (const kind of ["control", "rejected"]) {
+    for (const [suffix, records] of [
+      ["First", batches[kind].slice(0, 1)],
+      ["Successors", batches[kind].slice(1)],
+    ]) {
+      if (previous) await waitForSubmission(previous.TiempoEsperaEnvio);
+      const stage = `${kind}${suffix}`;
+      evidence[stage] = await submitPredecessorStage(client, cabecera, records, stage);
+      report(stage, evidence[stage]);
+      if (
+        evidence[stage].transportError ||
+        evidence[stage].lines.some((line) => line.Respuestas !== 1 || !line.EstadoRegistro)
+      ) {
+        evidence.incomplete = true;
+        return evidence;
+      }
+      previous = evidence[stage];
+    }
+  }
+  evidence.incomplete = false;
   return evidence;
 }
 
@@ -1218,6 +1258,7 @@ async function main() {
       "first-record",
       "rejected-predecessor",
       "rejected-predecessor-large",
+      "rejected-predecessor-later",
     ].includes(mode)
   ) {
     throw new Error("Unknown AEAT preproduction mode");
@@ -1267,7 +1308,11 @@ async function main() {
   const cabecera = submissionHeader(obligadoEmision);
   const runId = process.env.GITHUB_RUN_ID ?? String(now.getTime());
 
-  if (mode === "rejected-predecessor" || mode === "rejected-predecessor-large") {
+  if (
+    mode === "rejected-predecessor" ||
+    mode === "rejected-predecessor-large" ||
+    mode === "rejected-predecessor-later"
+  ) {
     const count = mode === "rejected-predecessor-large" ? 1000 : 3;
     const batches = buildRejectedPredecessorProbeRecords(
       {
@@ -1291,12 +1336,12 @@ async function main() {
         firstSuccessorPreviousHash: batches.rejected[1].Encadenamiento.RegistroAnterior.Huella,
       })}\n`,
     );
-    const evidence = await submitRejectedPredecessorProbe(
-      client,
-      cabecera,
-      batches,
-      (stage, entry) =>
-        process.stdout.write(`AEAT rejected-predecessor ${stage}: ${JSON.stringify(entry)}\n`),
+    const submitProbe =
+      mode === "rejected-predecessor-later"
+        ? submitRejectedPredecessorLaterBatchProbe
+        : submitRejectedPredecessorProbe;
+    const evidence = await submitProbe(client, cabecera, batches, (stage, entry) =>
+      process.stdout.write(`AEAT ${mode} ${stage}: ${JSON.stringify(entry)}\n`),
     );
     process.stdout.write(
       `AEAT rejected-predecessor complete: ${JSON.stringify({

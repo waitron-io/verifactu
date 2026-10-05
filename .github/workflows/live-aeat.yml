@@ -20,6 +20,7 @@ on:
           - first-record
           - rejected-predecessor
           - rejected-predecessor-large
+          - rejected-predecessor-later
         default: consult
         required: true
       excluded_regime:

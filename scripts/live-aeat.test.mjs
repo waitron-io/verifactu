@@ -37,6 +37,7 @@ import {
   submitStateTransitionProbe,
   submitFirstRecordProbe,
   submitRejectedPredecessorProbe,
+  submitRejectedPredecessorLaterBatchProbe,
   submissionHeader,
   waitForNextSubmission,
   withLiveStage,
@@ -175,6 +176,70 @@ test("rejected-predecessor builder reaches the schema's 1000-record batch limit"
     ),
   );
   assert.throws(() => buildRejectedPredecessorProbeRecords(decimalOptions, 1001), /1000/);
+});
+
+test("later-batch probe sends each first record before its own linked successors", async () => {
+  const batches = buildRejectedPredecessorProbeRecords(decimalOptions, 3);
+  const sent = [];
+  const evidence = await submitRejectedPredecessorLaterBatchProbe(
+    {
+      async submit(_header, entries) {
+        sent.push(entries.map(({ RegistroAlta }) => RegistroAlta));
+        return {
+          EstadoEnvio: "Correcto",
+          TiempoEsperaEnvio: 0,
+          RespuestaLinea: entries.map(({ RegistroAlta: item }) => ({
+            IDFactura: item.IDFactura,
+            EstadoRegistro: item === batches.rejected[0] ? "Incorrecto" : "Correcto",
+            ...(item === batches.rejected[0] ? { CodigoErrorRegistro: 1161 } : {}),
+          })),
+        };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    batches,
+    () => {},
+    async () => {},
+  );
+  assert.deepEqual(sent, [
+    [batches.control[0]],
+    batches.control.slice(1),
+    [batches.rejected[0]],
+    batches.rejected.slice(1),
+  ]);
+  assert.equal(evidence.rejectedFirst.lines[0].EstadoRegistro, "Incorrecto");
+  assert.equal(
+    evidence.rejectedSuccessors.lines[0].RegistroAnterior.Huella,
+    batches.rejected[0].Huella,
+  );
+  assert.equal(
+    evidence.controlSuccessors.lines[0].RegistroAnterior.Huella,
+    batches.control[0].Huella,
+  );
+  assert.equal(evidence.incomplete, false);
+});
+
+test("later-batch probe stops before successors when a first record has no individual result", async () => {
+  const batches = buildRejectedPredecessorProbeRecords(decimalOptions, 3);
+  const sent = [];
+  const evidence = await submitRejectedPredecessorLaterBatchProbe(
+    {
+      async submit(_header, entries) {
+        sent.push(entries);
+        return {
+          EstadoEnvio: "Incorrecto",
+          TiempoEsperaEnvio: 0,
+          RespuestaLinea: [],
+        };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    batches,
+  );
+  assert.equal(sent.length, 1);
+  assert.equal(evidence.controlFirst.lines[0].Respuestas, 0);
+  assert.equal(evidence.controlSuccessors, undefined);
+  assert.equal(evidence.incomplete, true);
 });
 
 test("first-record probe isolates three system chains and hashes each predecessor", () => {
