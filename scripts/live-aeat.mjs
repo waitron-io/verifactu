@@ -490,6 +490,7 @@ export function buildChangedDuplicateProbeRecords(options) {
   const original = named("TEST");
   const changedContent = {
     ...original,
+    Encadenamiento: { RegistroAnterior: { ...original.IDFactura, Huella: original.Huella } },
     DescripcionOperacion: "Prueba duplicada con contenido distinto en preproducción",
     Desglose: [
       { ...original.Desglose[0], BaseImponibleOimporteNoSujeto: "2.00", CuotaRepercutida: "0.42" },
@@ -643,7 +644,10 @@ export async function submitCancellationComparisonProbe(
       TiempoEsperaEnvio: response.TiempoEsperaEnvio,
       EstadoRegistro: line?.EstadoRegistro,
       CodigoErrorRegistro: line?.CodigoErrorRegistro,
-      DescripcionErrorRegistro: line?.DescripcionErrorRegistro,
+      DescripcionErrorRegistro: line?.DescripcionErrorRegistro?.replace(
+        /\b[A-Z0-9]{9}\b/g,
+        "[NIF]",
+      ),
       Respuestas: matches.length,
     };
     report(stage, evidence[stage]);
@@ -818,8 +822,7 @@ export async function submitRejectedInvoiceCreditProbe(
       line?.Respuestas !== 1 ||
       !line.EstadoRegistro ||
       (stage.startsWith("control") && line.EstadoRegistro !== "Correcto") ||
-      (stage === "rejectedOriginal" &&
-        (line.EstadoRegistro !== "Incorrecto" || line.CodigoErrorRegistro !== 1161))
+      (stage === "rejectedOriginal" && line.EstadoRegistro !== "Incorrecto")
     ) {
       evidence.incomplete = true;
       return evidence;
@@ -854,9 +857,12 @@ export async function submitRejectedPredecessorProbe(
     }
     previous = evidence[kind];
   }
-  evidence.incomplete = Object.values(evidence).some((batch) =>
-    batch.lines.some((line) => line.Respuestas !== 1 || !line.EstadoRegistro),
-  );
+  evidence.incomplete =
+    Object.values(evidence).some((batch) =>
+      batch.lines.some((line) => line.Respuestas !== 1 || !line.EstadoRegistro),
+    ) ||
+    evidence.control.lines.some((line) => line.EstadoRegistro !== "Correcto") ||
+    evidence.rejected.lines[0].EstadoRegistro !== "Incorrecto";
   return evidence;
 }
 
@@ -880,7 +886,12 @@ export async function submitRejectedPredecessorLaterBatchProbe(
       report(stage, evidence[stage]);
       if (
         evidence[stage].transportError ||
-        evidence[stage].lines.some((line) => line.Respuestas !== 1 || !line.EstadoRegistro)
+        evidence[stage].lines.some((line) => line.Respuestas !== 1 || !line.EstadoRegistro) ||
+        (kind === "control" &&
+          evidence[stage].lines.some((line) => line.EstadoRegistro !== "Correcto")) ||
+        (kind === "rejected" &&
+          suffix === "First" &&
+          evidence[stage].lines[0].EstadoRegistro !== "Incorrecto")
       ) {
         evidence.incomplete = true;
         return evidence;
