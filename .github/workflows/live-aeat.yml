@@ -24,6 +24,8 @@ on:
           - cancellation-comparison
           - changed-duplicate
           - fresh-installation
+          - registered-name-mismatch
+          - rejected-invoice-credit
         default: consult
         required: true
       excluded_regime:
