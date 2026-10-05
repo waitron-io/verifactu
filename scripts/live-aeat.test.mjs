@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { spawnSync } from "node:child_process";
 import {
   assertConsultation,
   assertExpandedStoredRecord,
@@ -18,6 +19,7 @@ import {
   buildStateTransitionProbeRecords,
   buildFirstRecordProbeRecords,
   buildRejectedPredecessorProbeRecords,
+  buildAbsentOriginalCancellationProbeRecords,
   certificateKind,
   consultStoredMixedRegimeProbe,
   consultUnicodeDateProbe,
@@ -38,6 +40,7 @@ import {
   submitFirstRecordProbe,
   submitRejectedPredecessorProbe,
   submitRejectedPredecessorLaterBatchProbe,
+  submitCancellationComparisonProbe,
   submissionHeader,
   waitForNextSubmission,
   withLiveStage,
@@ -87,6 +90,73 @@ test("rejected-predecessor batch links every successor to the rejected record be
     validate(rejected[0]).map(({ code }) => code),
     ["RECHAZO_PREVIO_REQUIRES_SUBSANACION"],
   );
+});
+
+test("absent-original cancellation compares distinct invoices with and without a stored alta", () => {
+  const records = buildAbsentOriginalCancellationProbeRecords(decimalOptions);
+  assert.notEqual(
+    records.ordinary.alta.IDFactura.NumSerieFactura,
+    records.absent.cancellation.IDFactura.NumSerieFacturaAnulada,
+  );
+  assert.equal(records.ordinary.cancellation.SinRegistroPrevio, undefined);
+  assert.equal(records.absent.cancellation.SinRegistroPrevio, "S");
+  assert.deepEqual(records.ordinary.cancellation.Encadenamiento.RegistroAnterior, {
+    ...records.ordinary.alta.IDFactura,
+    Huella: records.ordinary.alta.Huella,
+  });
+  assert.deepEqual(validate(records.ordinary.cancellation), []);
+  assert.deepEqual(validate(records.absent.cancellation), []);
+  assert.equal(records.absent.cancellation.Huella, computeHuella(records.absent.cancellation));
+});
+
+test("cancellation comparison files a stored control before the absent-original probe", async () => {
+  const records = buildAbsentOriginalCancellationProbeRecords(decimalOptions);
+  const sent = [];
+  const evidence = await submitCancellationComparisonProbe(
+    {
+      async submit(_header, entries) {
+        sent.push(entries);
+        const item = entries[0].RegistroAlta ?? entries[0].RegistroAnulacion;
+        return {
+          EstadoEnvio: "Correcto",
+          TiempoEsperaEnvio: 0,
+          RespuestaLinea: [
+            {
+              IDFactura: {
+                NumSerieFactura:
+                  item.IDFactura.NumSerieFactura ?? item.IDFactura.NumSerieFacturaAnulada,
+              },
+              EstadoRegistro: "Correcto",
+            },
+          ],
+        };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    records,
+    () => {},
+    async () => {},
+  );
+  assert.deepEqual(sent, [
+    [{ RegistroAlta: records.ordinary.alta }],
+    [{ RegistroAnulacion: records.ordinary.cancellation }],
+    [{ RegistroAnulacion: records.absent.cancellation }],
+  ]);
+  assert.equal(evidence.ordinaryAlta.EstadoRegistro, "Correcto");
+  assert.equal(evidence.ordinaryCancellation.HuellaEnviada, records.ordinary.cancellation.Huella);
+  assert.equal(evidence.absentCancellation.SinRegistroPrevio, "S");
+  assert.equal(evidence.incomplete, false);
+});
+
+test("cancellation comparison is a reachable live CLI mode", () => {
+  const run = spawnSync(process.execPath, ["scripts/live-aeat.mjs", "cancellation-comparison"], {
+    cwd: new URL("..", import.meta.url),
+    env: { ...process.env, AEAT_TEST_NIF: "" },
+    encoding: "utf8",
+  });
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /Set AEAT_TEST_NIF/);
+  assert.doesNotMatch(run.stderr, /Unknown AEAT preproduction mode/);
 });
 
 test("rejected-predecessor probe keeps every individual response beside its sent hash", async () => {

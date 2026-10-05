@@ -431,6 +431,106 @@ export function buildRejectedPredecessorProbeRecords(options, count = 3) {
   return { rejected: chain("R"), control: chain("C") };
 }
 
+export function buildAbsentOriginalCancellationProbeRecords(options) {
+  const base = buildTestRecord(options);
+  const ordinaryAlta = {
+    ...base,
+    IDFactura: {
+      ...base.IDFactura,
+      NumSerieFactura: base.IDFactura.NumSerieFactura.replace("CI/", "CI-CANCEL-ORDINARY/"),
+    },
+    RefExterna: `CI-CANCEL-ORDINARY-${options.runId}`,
+    SistemaInformatico: {
+      ...base.SistemaInformatico,
+      NumeroInstalacion: `CI-CANCEL-${options.runId}-O`,
+    },
+  };
+  const alta = { ...ordinaryAlta, Huella: computeHuella(ordinaryAlta) };
+  const ordinaryCancellation = buildTestCancellation({
+    record: alta,
+    issuedAt: options.now,
+    now: options.now,
+  });
+  const absent = buildAnulacionRecord({
+    IDEmisorFacturaAnulada: options.nif,
+    NumSerieFacturaAnulada: base.IDFactura.NumSerieFactura.replace("CI/", "CI-CANCEL-ABSENT/"),
+    FechaExpedicionFacturaAnulada: options.now,
+    SinRegistroPrevio: "S",
+    Encadenamiento: { PrimerRegistro: "S" },
+    SistemaInformatico: {
+      ...base.SistemaInformatico,
+      NumeroInstalacion: `CI-CANCEL-${options.runId}-A`,
+    },
+    generadoEn: options.now,
+    offsetMinutes: madridClock(options.now).offsetMinutes,
+  });
+  return {
+    ordinary: { alta, cancellation: ordinaryCancellation },
+    absent: { cancellation: absent },
+  };
+}
+
+export async function submitCancellationComparisonProbe(
+  client,
+  cabecera,
+  records,
+  report = () => {},
+  waitForSubmission = waitForNextSubmission,
+) {
+  const evidence = {};
+  let prior;
+  for (const [stage, record, operation] of [
+    ["ordinaryAlta", records.ordinary.alta, "RegistroAlta"],
+    ["ordinaryCancellation", records.ordinary.cancellation, "RegistroAnulacion"],
+    ["absentCancellation", records.absent.cancellation, "RegistroAnulacion"],
+  ]) {
+    if (prior) await waitForSubmission(prior.TiempoEsperaEnvio);
+    let response;
+    try {
+      response = await withLiveStage(stage, () =>
+        client.submit(cabecera, [{ [operation]: record }]),
+      );
+    } catch (error) {
+      evidence[stage] = {
+        transportError: (error.cause instanceof Error
+          ? error.cause.message
+          : String(error)
+        ).replace(/\b[A-Z0-9]{9}\b/g, "[NIF]"),
+      };
+      report(stage, evidence[stage]);
+      evidence.incomplete = true;
+      return evidence;
+    }
+    const serial = recordSerial(record);
+    const matches =
+      response.RespuestaLinea?.filter((entry) => entry.IDFactura?.NumSerieFactura === serial) ?? [];
+    const line = matches.length === 1 ? matches[0] : undefined;
+    evidence[stage] = {
+      NumSerieFactura: serial,
+      HuellaEnviada: record.Huella,
+      SinRegistroPrevio: record.SinRegistroPrevio,
+      EstadoEnvio: response.EstadoEnvio,
+      TiempoEsperaEnvio: response.TiempoEsperaEnvio,
+      EstadoRegistro: line?.EstadoRegistro,
+      CodigoErrorRegistro: line?.CodigoErrorRegistro,
+      DescripcionErrorRegistro: line?.DescripcionErrorRegistro,
+      Respuestas: matches.length,
+    };
+    report(stage, evidence[stage]);
+    if (
+      matches.length !== 1 ||
+      !line?.EstadoRegistro ||
+      (stage === "ordinaryAlta" && line.EstadoRegistro !== "Correcto")
+    ) {
+      evidence.incomplete = true;
+      return evidence;
+    }
+    prior = response;
+  }
+  evidence.incomplete = false;
+  return evidence;
+}
+
 async function submitPredecessorStage(client, cabecera, records, stage) {
   let response;
   try {
@@ -1259,6 +1359,7 @@ async function main() {
       "rejected-predecessor",
       "rejected-predecessor-large",
       "rejected-predecessor-later",
+      "cancellation-comparison",
     ].includes(mode)
   ) {
     throw new Error("Unknown AEAT preproduction mode");
@@ -1307,6 +1408,36 @@ async function main() {
   };
   const cabecera = submissionHeader(obligadoEmision);
   const runId = process.env.GITHUB_RUN_ID ?? String(now.getTime());
+
+  if (mode === "cancellation-comparison") {
+    const records = buildAbsentOriginalCancellationProbeRecords({
+      nif,
+      name,
+      systemNif: required("AEAT_TEST_SYSTEM_NIF"),
+      systemName: required("AEAT_TEST_SYSTEM_NAME"),
+      recipientNif: recipient.NIF,
+      recipientName: recipient.NombreRazon,
+      now,
+      runId,
+    });
+    process.stdout.write(
+      `AEAT cancellation comparison plan: ${JSON.stringify({
+        ordinary: records.ordinary.alta.IDFactura.NumSerieFactura,
+        absent: records.absent.cancellation.IDFactura.NumSerieFacturaAnulada,
+        absentSinRegistroPrevio: records.absent.cancellation.SinRegistroPrevio,
+      })}\n`,
+    );
+    const evidence = await submitCancellationComparisonProbe(
+      client,
+      cabecera,
+      records,
+      (stage, entry) =>
+        process.stdout.write(`AEAT cancellation comparison ${stage}: ${JSON.stringify(entry)}\n`),
+    );
+    process.stdout.write(`AEAT cancellation comparison complete: ${JSON.stringify(evidence)}\n`);
+    if (evidence.incomplete) process.exitCode = 1;
+    return;
+  }
 
   if (
     mode === "rejected-predecessor" ||

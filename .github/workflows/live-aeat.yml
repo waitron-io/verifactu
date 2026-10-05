@@ -21,6 +21,7 @@ on:
           - rejected-predecessor
           - rejected-predecessor-large
           - rejected-predecessor-later
+          - cancellation-comparison
         default: consult
         required: true
       excluded_regime:
