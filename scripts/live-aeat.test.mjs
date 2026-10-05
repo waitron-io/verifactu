@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { spawnSync } from "node:child_process";
 import {
   assertConsultation,
   assertExpandedStoredRecord,
@@ -17,6 +18,12 @@ import {
   buildTextTrimProbeRecords,
   buildStateTransitionProbeRecords,
   buildFirstRecordProbeRecords,
+  buildRejectedPredecessorProbeRecords,
+  buildAbsentOriginalCancellationProbeRecords,
+  buildChangedDuplicateProbeRecords,
+  buildFreshInstallationProbeRecords,
+  buildRegisteredNameMismatchProbeRecords,
+  buildRejectedInvoiceCreditProbeRecords,
   certificateKind,
   consultStoredMixedRegimeProbe,
   consultUnicodeDateProbe,
@@ -35,6 +42,13 @@ import {
   submitTextTrimProbe,
   submitStateTransitionProbe,
   submitFirstRecordProbe,
+  submitRejectedPredecessorProbe,
+  submitRejectedPredecessorLaterBatchProbe,
+  submitCancellationComparisonProbe,
+  submitChangedDuplicateProbe,
+  submitFreshInstallationProbe,
+  submitRegisteredNameMismatchProbe,
+  submitRejectedInvoiceCreditProbe,
   submissionHeader,
   waitForNextSubmission,
   withLiveStage,
@@ -57,6 +71,678 @@ const decimalOptions = {
   now: new Date("2026-09-27T12:00:00Z"),
   runId: "12345",
 };
+
+test("rejected-predecessor batch links every successor to the rejected record before it", () => {
+  const { rejected, control } = buildRejectedPredecessorProbeRecords(decimalOptions, 3);
+  assert.equal(rejected.length, 3);
+  assert.equal(control.length, 3);
+  assert.equal(
+    new Set([...rejected, ...control].map((item) => item.IDFactura.NumSerieFactura)).size,
+    6,
+  );
+  assert.deepEqual(rejected[0].Encadenamiento, { PrimerRegistro: "S" });
+  assert.deepEqual(control[0].Encadenamiento, { PrimerRegistro: "S" });
+  assert.notEqual(
+    rejected[0].SistemaInformatico.NumeroInstalacion,
+    control[0].SistemaInformatico.NumeroInstalacion,
+  );
+  assert.equal(rejected[0].RechazoPrevio, "S");
+  assert.equal(control[0].RechazoPrevio, undefined);
+  for (const sequence of [rejected, control]) {
+    for (let index = 1; index < sequence.length; index++) {
+      assert.deepEqual(sequence[index].Encadenamiento, {
+        RegistroAnterior: { ...sequence[index - 1].IDFactura, Huella: sequence[index - 1].Huella },
+      });
+      assert.equal(sequence[index].Huella, computeHuella(sequence[index]));
+    }
+  }
+  assert.deepEqual(validate(rejected[1]), []);
+  assert.deepEqual(validate(control[0]), []);
+  assert.deepEqual(
+    validate(rejected[0]).map(({ code }) => code),
+    ["RECHAZO_PREVIO_REQUIRES_SUBSANACION"],
+  );
+});
+
+test("absent-original cancellation compares distinct invoices with and without a stored alta", () => {
+  const records = buildAbsentOriginalCancellationProbeRecords(decimalOptions);
+  assert.notEqual(
+    records.ordinary.alta.IDFactura.NumSerieFactura,
+    records.absent.cancellation.IDFactura.NumSerieFacturaAnulada,
+  );
+  assert.equal(records.ordinary.cancellation.SinRegistroPrevio, undefined);
+  assert.equal(records.absent.cancellation.SinRegistroPrevio, "S");
+  assert.deepEqual(records.ordinary.cancellation.Encadenamiento.RegistroAnterior, {
+    ...records.ordinary.alta.IDFactura,
+    Huella: records.ordinary.alta.Huella,
+  });
+  assert.deepEqual(validate(records.ordinary.cancellation), []);
+  assert.deepEqual(validate(records.absent.cancellation), []);
+  assert.equal(records.absent.cancellation.Huella, computeHuella(records.absent.cancellation));
+});
+
+test("cancellation comparison files a stored control before the absent-original probe", async () => {
+  const records = buildAbsentOriginalCancellationProbeRecords(decimalOptions);
+  const sent = [];
+  const evidence = await submitCancellationComparisonProbe(
+    {
+      async submit(_header, entries) {
+        sent.push(entries);
+        const item = entries[0].RegistroAlta ?? entries[0].RegistroAnulacion;
+        return {
+          EstadoEnvio: "Correcto",
+          TiempoEsperaEnvio: 0,
+          RespuestaLinea: [
+            {
+              IDFactura: {
+                NumSerieFactura:
+                  item.IDFactura.NumSerieFactura ?? item.IDFactura.NumSerieFacturaAnulada,
+              },
+              EstadoRegistro: "Correcto",
+            },
+          ],
+        };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    records,
+    () => {},
+    async () => {},
+  );
+  assert.deepEqual(sent, [
+    [{ RegistroAlta: records.ordinary.alta }],
+    [{ RegistroAnulacion: records.ordinary.cancellation }],
+    [{ RegistroAnulacion: records.absent.cancellation }],
+  ]);
+  assert.equal(evidence.ordinaryAlta.EstadoRegistro, "Correcto");
+  assert.equal(evidence.ordinaryCancellation.HuellaEnviada, records.ordinary.cancellation.Huella);
+  assert.equal(evidence.absentCancellation.SinRegistroPrevio, "S");
+  assert.equal(evidence.incomplete, false);
+});
+
+test("cancellation comparison masks issuer identifiers in AEAT refusal evidence", async () => {
+  const records = buildAbsentOriginalCancellationProbeRecords(decimalOptions);
+  const evidence = await submitCancellationComparisonProbe(
+    {
+      async submit(_header, entries) {
+        const item = entries[0].RegistroAlta ?? entries[0].RegistroAnulacion;
+        return {
+          EstadoEnvio: "Correcto",
+          TiempoEsperaEnvio: 0,
+          RespuestaLinea: [
+            {
+              IDFactura: {
+                NumSerieFactura:
+                  item.IDFactura.NumSerieFactura ?? item.IDFactura.NumSerieFacturaAnulada,
+              },
+              EstadoRegistro: "Correcto",
+              DescripcionErrorRegistro: `NIF ${decimalOptions.nif} refused`,
+            },
+          ],
+        };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    records,
+    () => {},
+    async () => {},
+  );
+  assert.equal(evidence.absentCancellation.DescripcionErrorRegistro, "NIF [NIF] refused");
+});
+
+test("cancellation comparison is a reachable live CLI mode", () => {
+  const run = spawnSync(process.execPath, ["scripts/live-aeat.mjs", "cancellation-comparison"], {
+    cwd: new URL("..", import.meta.url),
+    env: { ...process.env, AEAT_TEST_NIF: "" },
+    encoding: "utf8",
+  });
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /Set AEAT_TEST_NIF/);
+  assert.doesNotMatch(run.stderr, /Unknown AEAT preproduction mode/);
+});
+
+test("changed-content duplicate keeps the invoice key and changes the sent hash", () => {
+  const records = buildChangedDuplicateProbeRecords(decimalOptions);
+  assert.equal(
+    records.original.IDFactura.NumSerieFactura,
+    records.changed.IDFactura.NumSerieFactura,
+  );
+  assert.notEqual(records.original.Huella, records.changed.Huella);
+  assert.notEqual(records.original.DescripcionOperacion, records.changed.DescripcionOperacion);
+  assert.notEqual(
+    records.control.IDFactura.NumSerieFactura,
+    records.original.IDFactura.NumSerieFactura,
+  );
+  assert.deepEqual(records.changed.Encadenamiento, {
+    RegistroAnterior: { ...records.original.IDFactura, Huella: records.original.Huella },
+  });
+  for (const record of Object.values(records)) {
+    assert.equal(record.Huella, computeHuella(record));
+    assert.deepEqual(validate(record), []);
+  }
+});
+
+test("changed-content duplicate files only after a successful original and retains both outcomes", async () => {
+  const records = buildChangedDuplicateProbeRecords(decimalOptions);
+  const sent = [];
+  const evidence = await submitChangedDuplicateProbe(
+    {
+      async submit(_header, entries) {
+        const record = entries[0].RegistroAlta;
+        sent.push(record);
+        return {
+          EstadoEnvio: "Correcto",
+          TiempoEsperaEnvio: 0,
+          RespuestaLinea: [
+            {
+              IDFactura: record.IDFactura,
+              EstadoRegistro: record === records.changed ? "Incorrecto" : "Correcto",
+              ...(record === records.changed ? { CodigoErrorRegistro: 2000 } : {}),
+            },
+          ],
+        };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    records,
+    () => {},
+    async () => {},
+  );
+  assert.deepEqual(sent, [records.control, records.original, records.changed]);
+  assert.equal(evidence.original.lines[0].EstadoRegistro, "Correcto");
+  assert.equal(evidence.changed.lines[0].EstadoRegistro, "Incorrecto");
+  assert.equal(evidence.changed.lines[0].CodigoErrorRegistro, 2000);
+  assert.equal(evidence.changed.lines[0].HuellaEnviada, records.changed.Huella);
+  assert.equal(evidence.incomplete, false);
+});
+
+test("changed-content duplicate is a reachable live CLI mode", () => {
+  const run = spawnSync(process.execPath, ["scripts/live-aeat.mjs", "changed-duplicate"], {
+    cwd: new URL("..", import.meta.url),
+    env: { ...process.env, AEAT_TEST_NIF: "" },
+    encoding: "utf8",
+  });
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /Set AEAT_TEST_NIF/);
+});
+
+test("fresh-installation probe changes installation but keeps the software ID", () => {
+  const records = buildFreshInstallationProbeRecords(decimalOptions);
+  assert.equal(records.existing.SistemaInformatico.IdSistemaInformatico, "WT");
+  assert.equal(records.fresh.SistemaInformatico.IdSistemaInformatico, "WT");
+  assert.notEqual(
+    records.existing.SistemaInformatico.NumeroInstalacion,
+    records.fresh.SistemaInformatico.NumeroInstalacion,
+  );
+  assert.notEqual(
+    records.existing.IDFactura.NumSerieFactura,
+    records.fresh.IDFactura.NumSerieFactura,
+  );
+  assert.deepEqual(records.existing.Encadenamiento, { PrimerRegistro: "S" });
+  assert.deepEqual(records.fresh.Encadenamiento, { PrimerRegistro: "S" });
+  assert.deepEqual(validate(records.existing), []);
+  assert.deepEqual(validate(records.fresh), []);
+});
+
+test("fresh-installation probe records both first-record responses", async () => {
+  const records = buildFreshInstallationProbeRecords(decimalOptions);
+  const sent = [];
+  const evidence = await submitFreshInstallationProbe(
+    {
+      async submit(_header, entries) {
+        const record = entries[0].RegistroAlta;
+        sent.push(record);
+        return {
+          EstadoEnvio: "Correcto",
+          TiempoEsperaEnvio: 0,
+          RespuestaLinea: [{ IDFactura: record.IDFactura, EstadoRegistro: "Correcto" }],
+        };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    records,
+    () => {},
+    async () => {},
+  );
+  assert.deepEqual(sent, [records.existing, records.fresh]);
+  assert.equal(evidence.existing.lines[0].HuellaEnviada, records.existing.Huella);
+  assert.equal(evidence.fresh.lines[0].HuellaEnviada, records.fresh.Huella);
+  assert.equal(evidence.incomplete, false);
+});
+
+test("fresh-installation is a reachable live CLI mode", () => {
+  const run = spawnSync(process.execPath, ["scripts/live-aeat.mjs", "fresh-installation"], {
+    cwd: new URL("..", import.meta.url),
+    env: { ...process.env, AEAT_TEST_NIF: "" },
+    encoding: "utf8",
+  });
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /Set AEAT_TEST_NIF/);
+});
+
+test("registered-name mismatch changes only the record issuer name beside a distinct control", () => {
+  const records = buildRegisteredNameMismatchProbeRecords(decimalOptions);
+  assert.equal(records.control.NombreRazonEmisor, decimalOptions.name);
+  assert.notEqual(records.mismatch.NombreRazonEmisor, decimalOptions.name);
+  assert.equal(
+    records.control.IDFactura.IDEmisorFactura,
+    records.mismatch.IDFactura.IDEmisorFactura,
+  );
+  assert.notEqual(
+    records.control.IDFactura.NumSerieFactura,
+    records.mismatch.IDFactura.NumSerieFactura,
+  );
+  assert.deepEqual(validate(records.control), []);
+  assert.deepEqual(validate(records.mismatch), []);
+});
+
+test("registered-name probe keeps the issuer names distinct for any configured name", () => {
+  const configured = "Nombre incorrecto para prueba";
+  const records = buildRegisteredNameMismatchProbeRecords({ ...decimalOptions, name: configured });
+  assert.notEqual(records.mismatch.NombreRazonEmisor, configured);
+});
+
+test("registered-name mismatch records the control and mismatched outcomes independently", async () => {
+  const records = buildRegisteredNameMismatchProbeRecords(decimalOptions);
+  const sent = [];
+  const evidence = await submitRegisteredNameMismatchProbe(
+    {
+      async submit(_header, entries) {
+        const record = entries[0].RegistroAlta;
+        sent.push(record);
+        return {
+          EstadoEnvio: "Correcto",
+          TiempoEsperaEnvio: 0,
+          RespuestaLinea: [
+            {
+              IDFactura: record.IDFactura,
+              EstadoRegistro: record === records.mismatch ? "Incorrecto" : "Correcto",
+              ...(record === records.mismatch ? { CodigoErrorRegistro: 1105 } : {}),
+            },
+          ],
+        };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    records,
+    () => {},
+    async () => {},
+  );
+  assert.deepEqual(sent, [records.control, records.mismatch]);
+  assert.equal(evidence.control.lines[0].EstadoRegistro, "Correcto");
+  assert.equal(evidence.mismatch.lines[0].CodigoErrorRegistro, 1105);
+  assert.equal(evidence.incomplete, false);
+});
+
+test("registered-name mismatch is a reachable live CLI mode", () => {
+  const run = spawnSync(process.execPath, ["scripts/live-aeat.mjs", "registered-name-mismatch"], {
+    cwd: new URL("..", import.meta.url),
+    env: { ...process.env, AEAT_TEST_NIF: "" },
+    encoding: "utf8",
+  });
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /Set AEAT_TEST_NIF/);
+});
+
+test("credit-note probe references the rejected invoice and chains to its hash", () => {
+  const records = buildRejectedInvoiceCreditProbeRecords(decimalOptions);
+  assert.notEqual(
+    records.control.original.IDFactura.NumSerieFactura,
+    records.rejected.original.IDFactura.NumSerieFactura,
+  );
+  assert.equal(records.rejected.original.RechazoPrevio, "S");
+  for (const scenario of [records.control, records.rejected]) {
+    assert.equal(scenario.credit.TipoFactura, "R1");
+    assert.equal(scenario.credit.TipoRectificativa, "I");
+    assert.deepEqual(scenario.credit.FacturasRectificadas.IDFacturaRectificada, [
+      scenario.original.IDFactura,
+    ]);
+    assert.deepEqual(scenario.credit.Encadenamiento.RegistroAnterior, {
+      ...scenario.original.IDFactura,
+      Huella: scenario.original.Huella,
+    });
+    assert.deepEqual(validate(scenario.credit), []);
+  }
+  assert.deepEqual(validate(records.control.original), []);
+  assert.deepEqual(
+    validate(records.rejected.original).map(({ code }) => code),
+    ["RECHAZO_PREVIO_REQUIRES_SUBSANACION"],
+  );
+});
+
+test("credit-note probe files the note only after the target invoice is rejected", async () => {
+  const records = buildRejectedInvoiceCreditProbeRecords(decimalOptions);
+  const sent = [];
+  const evidence = await submitRejectedInvoiceCreditProbe(
+    {
+      async submit(_header, entries) {
+        const record = entries[0].RegistroAlta;
+        sent.push(record);
+        const rejected = record === records.rejected.original;
+        return {
+          EstadoEnvio: rejected ? "Incorrecto" : "Correcto",
+          TiempoEsperaEnvio: 0,
+          RespuestaLinea: [
+            {
+              IDFactura: record.IDFactura,
+              EstadoRegistro: rejected ? "Incorrecto" : "Correcto",
+              ...(rejected ? { CodigoErrorRegistro: 1161 } : {}),
+            },
+          ],
+        };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    records,
+    () => {},
+    async () => {},
+  );
+  assert.deepEqual(sent, [
+    records.control.original,
+    records.control.credit,
+    records.rejected.original,
+    records.rejected.credit,
+  ]);
+  assert.equal(evidence.rejectedOriginal.lines[0].CodigoErrorRegistro, 1161);
+  assert.equal(
+    evidence.rejectedCredit.lines[0].RegistroAnterior.Huella,
+    records.rejected.original.Huella,
+  );
+  assert.equal(evidence.incomplete, false);
+});
+
+test("credit-note probe records an unexpected rejection code and still files the credit", async () => {
+  const records = buildRejectedInvoiceCreditProbeRecords(decimalOptions);
+  const sent = [];
+  const evidence = await submitRejectedInvoiceCreditProbe(
+    {
+      async submit(_header, entries) {
+        const record = entries[0].RegistroAlta;
+        sent.push(record);
+        const rejected = record === records.rejected.original;
+        return {
+          EstadoEnvio: rejected ? "Incorrecto" : "Correcto",
+          TiempoEsperaEnvio: 0,
+          RespuestaLinea: [
+            {
+              IDFactura: record.IDFactura,
+              EstadoRegistro: rejected ? "Incorrecto" : "Correcto",
+              ...(rejected ? { CodigoErrorRegistro: 9999 } : {}),
+            },
+          ],
+        };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    records,
+    () => {},
+    async () => {},
+  );
+  assert.deepEqual(sent, [
+    records.control.original,
+    records.control.credit,
+    records.rejected.original,
+    records.rejected.credit,
+  ]);
+  assert.equal(evidence.rejectedOriginal.lines[0].CodigoErrorRegistro, 9999);
+  assert.equal(evidence.incomplete, false);
+});
+
+test("rejected-invoice credit note is a reachable live CLI mode", () => {
+  const run = spawnSync(process.execPath, ["scripts/live-aeat.mjs", "rejected-invoice-credit"], {
+    cwd: new URL("..", import.meta.url),
+    env: { ...process.env, AEAT_TEST_NIF: "" },
+    encoding: "utf8",
+  });
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /Set AEAT_TEST_NIF/);
+});
+
+test("rejected-predecessor probe keeps every individual response beside its sent hash", async () => {
+  const batches = buildRejectedPredecessorProbeRecords(decimalOptions, 3);
+  const submitted = [];
+  const client = {
+    async submit(_header, entries) {
+      submitted.push(entries);
+      return {
+        EstadoEnvio: submitted.length === 1 ? "Correcto" : "ParcialmenteCorrecto",
+        TiempoEsperaEnvio: 0,
+        RespuestaLinea: entries.map(({ RegistroAlta: item }, index) => ({
+          IDFactura: item.IDFactura,
+          EstadoRegistro: submitted.length === 2 && index === 0 ? "Incorrecto" : "Correcto",
+          ...(submitted.length === 2 && index === 0 ? { CodigoErrorRegistro: 1161 } : {}),
+        })),
+      };
+    },
+  };
+  const evidence = await submitRejectedPredecessorProbe(
+    client,
+    submissionHeader({
+      NombreRazon: decimalOptions.name,
+      NIF: decimalOptions.nif,
+    }),
+    batches,
+  );
+  assert.deepEqual(
+    submitted.map((batch) => batch.length),
+    [3, 3],
+  );
+  assert.equal(evidence.control.EstadoEnvio, "Correcto");
+  assert.equal(evidence.rejected.EstadoEnvio, "ParcialmenteCorrecto");
+  assert.deepEqual(
+    evidence.rejected.lines.map(({ EstadoRegistro }) => EstadoRegistro),
+    ["Incorrecto", "Correcto", "Correcto"],
+  );
+  assert.equal(evidence.rejected.lines[0].CodigoErrorRegistro, 1161);
+  assert.equal(evidence.rejected.lines[1].RegistroAnterior.Huella, batches.rejected[0].Huella);
+  assert.equal(evidence.rejected.lines[2].HuellaEnviada, batches.rejected[2].Huella);
+  assert.equal(evidence.incomplete, false);
+});
+
+test("probe evidence omits issuer identifiers and masks them in AEAT refusal text", async () => {
+  const batches = buildRejectedPredecessorProbeRecords(decimalOptions, 2);
+  const evidence = await submitRejectedPredecessorProbe(
+    {
+      async submit(_header, entries) {
+        return {
+          EstadoEnvio: "ParcialmenteCorrecto",
+          TiempoEsperaEnvio: 0,
+          RespuestaLinea: entries.map(({ RegistroAlta: record }) => ({
+            IDFactura: record.IDFactura,
+            EstadoRegistro: "Incorrecto",
+            DescripcionErrorRegistro: `NIF ${decimalOptions.nif} refused`,
+          })),
+        };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    batches,
+    () => {},
+    async () => {},
+  );
+  assert.equal(evidence.rejected.lines[1].RegistroAnterior.IDEmisorFactura, undefined);
+  assert.equal(evidence.rejected.lines[1].DescripcionErrorRegistro, "NIF [NIF] refused");
+});
+
+test("rejected-predecessor probe records an envelope refusal without inventing line outcomes", async () => {
+  const batches = buildRejectedPredecessorProbeRecords(decimalOptions, 3);
+  const client = {
+    async submit(_header, entries) {
+      if (entries[0].RegistroAlta === batches.rejected[0]) {
+        throw new Error("HTTP 400");
+      }
+      return {
+        EstadoEnvio: "Correcto",
+        TiempoEsperaEnvio: 0,
+        RespuestaLinea: entries.map(({ RegistroAlta: item }) => ({
+          IDFactura: item.IDFactura,
+          EstadoRegistro: "Correcto",
+        })),
+      };
+    },
+  };
+  const evidence = await submitRejectedPredecessorProbe(
+    client,
+    submissionHeader({
+      NombreRazon: decimalOptions.name,
+      NIF: decimalOptions.nif,
+    }),
+    batches,
+  );
+  assert.equal(evidence.control.lines.length, 3);
+  assert.equal(evidence.rejected.transportError, "HTTP 400");
+  assert.equal(evidence.rejected.lines, undefined);
+  assert.equal(evidence.incomplete, true);
+});
+
+test("same-batch predecessor probe marks an accepted supposed rejection inconclusive", async () => {
+  const batches = buildRejectedPredecessorProbeRecords(decimalOptions, 3);
+  const evidence = await submitRejectedPredecessorProbe(
+    {
+      async submit(_header, entries) {
+        return {
+          EstadoEnvio: "Correcto",
+          TiempoEsperaEnvio: 0,
+          RespuestaLinea: entries.map(({ RegistroAlta: record }) => ({
+            IDFactura: record.IDFactura,
+            EstadoRegistro: "Correcto",
+          })),
+        };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    batches,
+    () => {},
+    async () => {},
+  );
+  assert.equal(evidence.rejected.lines[0].EstadoRegistro, "Correcto");
+  assert.equal(evidence.incomplete, true);
+});
+
+test("rejected-predecessor builder reaches the schema's 1000-record batch limit", () => {
+  const batches = buildRejectedPredecessorProbeRecords(decimalOptions, 1000);
+  assert.equal(batches.rejected.length, 1000);
+  assert.equal(new Set(batches.rejected.map((item) => item.IDFactura.NumSerieFactura)).size, 1000);
+  assert.equal(
+    batches.rejected[999].Encadenamiento.RegistroAnterior.Huella,
+    batches.rejected[998].Huella,
+  );
+  assert.doesNotThrow(() =>
+    serializeEnvio(
+      submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+      batches.rejected.map((item) => ({ RegistroAlta: item })),
+    ),
+  );
+  assert.throws(() => buildRejectedPredecessorProbeRecords(decimalOptions, 1001), /1000/);
+});
+
+test("later-batch probe sends each first record before its own linked successors", async () => {
+  const batches = buildRejectedPredecessorProbeRecords(decimalOptions, 3);
+  const sent = [];
+  const evidence = await submitRejectedPredecessorLaterBatchProbe(
+    {
+      async submit(_header, entries) {
+        sent.push(entries.map(({ RegistroAlta }) => RegistroAlta));
+        return {
+          EstadoEnvio: "Correcto",
+          TiempoEsperaEnvio: 0,
+          RespuestaLinea: entries.map(({ RegistroAlta: item }) => ({
+            IDFactura: item.IDFactura,
+            EstadoRegistro: item === batches.rejected[0] ? "Incorrecto" : "Correcto",
+            ...(item === batches.rejected[0] ? { CodigoErrorRegistro: 1161 } : {}),
+          })),
+        };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    batches,
+    () => {},
+    async () => {},
+  );
+  assert.deepEqual(sent, [
+    [batches.control[0]],
+    batches.control.slice(1),
+    [batches.rejected[0]],
+    batches.rejected.slice(1),
+  ]);
+  assert.equal(evidence.rejectedFirst.lines[0].EstadoRegistro, "Incorrecto");
+  assert.equal(
+    evidence.rejectedSuccessors.lines[0].RegistroAnterior.Huella,
+    batches.rejected[0].Huella,
+  );
+  assert.equal(
+    evidence.controlSuccessors.lines[0].RegistroAnterior.Huella,
+    batches.control[0].Huella,
+  );
+  assert.equal(evidence.incomplete, false);
+});
+
+test("later-batch probe stops before successors when a first record has no individual result", async () => {
+  const batches = buildRejectedPredecessorProbeRecords(decimalOptions, 3);
+  const sent = [];
+  const evidence = await submitRejectedPredecessorLaterBatchProbe(
+    {
+      async submit(_header, entries) {
+        sent.push(entries);
+        return {
+          EstadoEnvio: "Incorrecto",
+          TiempoEsperaEnvio: 0,
+          RespuestaLinea: [],
+        };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    batches,
+  );
+  assert.equal(sent.length, 1);
+  assert.equal(evidence.controlFirst.lines[0].Respuestas, 0);
+  assert.equal(evidence.controlSuccessors, undefined);
+  assert.equal(evidence.incomplete, true);
+});
+
+test("later-batch predecessor probe does not file successors after an accepted supposed rejection", async () => {
+  const batches = buildRejectedPredecessorProbeRecords(decimalOptions, 3);
+  const sent = [];
+  const evidence = await submitRejectedPredecessorLaterBatchProbe(
+    {
+      async submit(_header, entries) {
+        sent.push(entries);
+        return {
+          EstadoEnvio: "Correcto",
+          TiempoEsperaEnvio: 0,
+          RespuestaLinea: entries.map(({ RegistroAlta: record }) => ({
+            IDFactura: record.IDFactura,
+            EstadoRegistro: "Correcto",
+          })),
+        };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    batches,
+    () => {},
+    async () => {},
+  );
+  assert.equal(sent.length, 3);
+  assert.equal(evidence.rejectedFirst.lines[0].EstadoRegistro, "Correcto");
+  assert.equal(evidence.rejectedSuccessors, undefined);
+  assert.equal(evidence.incomplete, true);
+});
+
+test("all rejected-predecessor live modes are reachable from the CLI", () => {
+  for (const mode of [
+    "rejected-predecessor",
+    "rejected-predecessor-large",
+    "rejected-predecessor-later",
+  ]) {
+    const run = spawnSync(process.execPath, ["scripts/live-aeat.mjs", mode], {
+      cwd: new URL("..", import.meta.url),
+      env: { ...process.env, AEAT_TEST_NIF: "" },
+      encoding: "utf8",
+    });
+    assert.equal(run.status, 1, mode);
+    assert.match(run.stderr, /Set AEAT_TEST_NIF/, mode);
+  }
+});
 
 test("first-record probe isolates three system chains and hashes each predecessor", () => {
   const records = buildFirstRecordProbeRecords(decimalOptions);
