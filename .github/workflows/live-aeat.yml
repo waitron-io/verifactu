@@ -22,6 +22,8 @@ on:
           - rejected-predecessor-large
           - rejected-predecessor-later
           - cancellation-comparison
+          - changed-duplicate
+          - fresh-installation
         default: consult
         required: true
       excluded_regime:

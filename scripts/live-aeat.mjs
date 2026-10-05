@@ -470,6 +470,60 @@ export function buildAbsentOriginalCancellationProbeRecords(options) {
   };
 }
 
+export function buildChangedDuplicateProbeRecords(options) {
+  const base = buildTestRecord(options);
+  const named = (kind) => {
+    const record = {
+      ...base,
+      IDFactura: {
+        ...base.IDFactura,
+        NumSerieFactura: base.IDFactura.NumSerieFactura.replace("CI/", `CI-DUP-${kind}/`),
+      },
+      RefExterna: `CI-DUP-${kind}-${options.runId}`,
+      SistemaInformatico: {
+        ...base.SistemaInformatico,
+        NumeroInstalacion: `CI-DUP-${options.runId}-${kind}`,
+      },
+    };
+    return { ...record, Huella: computeHuella(record) };
+  };
+  const original = named("TEST");
+  const changedContent = {
+    ...original,
+    DescripcionOperacion: "Prueba duplicada con contenido distinto en preproducción",
+    Desglose: [
+      { ...original.Desglose[0], BaseImponibleOimporteNoSujeto: "2.00", CuotaRepercutida: "0.42" },
+    ],
+    CuotaTotal: "0.42",
+    ImporteTotal: "2.42",
+  };
+  return {
+    control: named("CONTROL"),
+    original,
+    changed: { ...changedContent, Huella: computeHuella(changedContent) },
+  };
+}
+
+export function buildFreshInstallationProbeRecords(options) {
+  const base = buildTestRecord(options);
+  const recordFor = (kind) => {
+    const record = {
+      ...base,
+      IDFactura: {
+        ...base.IDFactura,
+        NumSerieFactura: base.IDFactura.NumSerieFactura.replace("CI/", `CI-INSTALL-${kind}/`),
+      },
+      RefExterna: `CI-INSTALL-${kind}-${options.runId}`,
+      SistemaInformatico: {
+        ...base.SistemaInformatico,
+        NumeroInstalacion: `CI-INSTALL-${options.runId}-${kind}`,
+      },
+    };
+    return { ...record, Huella: computeHuella(record) };
+  };
+  return { existing: recordFor("EXISTING"), fresh: recordFor("FRESH") };
+}
+
 export async function submitCancellationComparisonProbe(
   client,
   cabecera,
@@ -569,6 +623,64 @@ async function submitPredecessorStage(client, cabecera, records, stage) {
     CSV: response.CSV,
     lines,
   };
+}
+
+export async function submitChangedDuplicateProbe(
+  client,
+  cabecera,
+  records,
+  report = () => {},
+  waitForSubmission = waitForNextSubmission,
+) {
+  const evidence = {};
+  let previous;
+  for (const stage of ["control", "original", "changed"]) {
+    if (previous) await waitForSubmission(previous.TiempoEsperaEnvio);
+    evidence[stage] = await submitPredecessorStage(client, cabecera, [records[stage]], stage);
+    report(stage, evidence[stage]);
+    const line = evidence[stage].lines?.[0];
+    if (
+      evidence[stage].transportError ||
+      line?.Respuestas !== 1 ||
+      !line.EstadoRegistro ||
+      (stage !== "changed" && line.EstadoRegistro !== "Correcto")
+    ) {
+      evidence.incomplete = true;
+      return evidence;
+    }
+    previous = evidence[stage];
+  }
+  evidence.incomplete = false;
+  return evidence;
+}
+
+export async function submitFreshInstallationProbe(
+  client,
+  cabecera,
+  records,
+  report = () => {},
+  waitForSubmission = waitForNextSubmission,
+) {
+  const evidence = {};
+  let previous;
+  for (const stage of ["existing", "fresh"]) {
+    if (previous) await waitForSubmission(previous.TiempoEsperaEnvio);
+    evidence[stage] = await submitPredecessorStage(client, cabecera, [records[stage]], stage);
+    report(stage, evidence[stage]);
+    const line = evidence[stage].lines?.[0];
+    if (
+      evidence[stage].transportError ||
+      line?.Respuestas !== 1 ||
+      !line.EstadoRegistro ||
+      (stage === "existing" && line.EstadoRegistro !== "Correcto")
+    ) {
+      evidence.incomplete = true;
+      return evidence;
+    }
+    previous = evidence[stage];
+  }
+  evidence.incomplete = false;
+  return evidence;
 }
 
 export async function submitRejectedPredecessorProbe(
@@ -1360,6 +1472,8 @@ async function main() {
       "rejected-predecessor-large",
       "rejected-predecessor-later",
       "cancellation-comparison",
+      "changed-duplicate",
+      "fresh-installation",
     ].includes(mode)
   ) {
     throw new Error("Unknown AEAT preproduction mode");
@@ -1408,6 +1522,63 @@ async function main() {
   };
   const cabecera = submissionHeader(obligadoEmision);
   const runId = process.env.GITHUB_RUN_ID ?? String(now.getTime());
+
+  if (mode === "fresh-installation") {
+    const records = buildFreshInstallationProbeRecords({
+      nif,
+      name,
+      systemNif: required("AEAT_TEST_SYSTEM_NIF"),
+      systemName: required("AEAT_TEST_SYSTEM_NAME"),
+      recipientNif: recipient.NIF,
+      recipientName: recipient.NombreRazon,
+      now,
+      runId,
+    });
+    process.stdout.write(
+      `AEAT fresh-installation plan: ${JSON.stringify({
+        existing: records.existing.IDFactura.NumSerieFactura,
+        fresh: records.fresh.IDFactura.NumSerieFactura,
+        softwareId: records.fresh.SistemaInformatico.IdSistemaInformatico,
+        existingInstallation: records.existing.SistemaInformatico.NumeroInstalacion,
+        freshInstallation: records.fresh.SistemaInformatico.NumeroInstalacion,
+      })}\n`,
+    );
+    const evidence = await submitFreshInstallationProbe(client, cabecera, records, (stage, entry) =>
+      process.stdout.write(`AEAT fresh-installation ${stage}: ${JSON.stringify(entry)}\n`),
+    );
+    process.stdout.write(`AEAT fresh-installation complete: ${JSON.stringify(evidence)}\n`);
+    if (evidence.incomplete) process.exitCode = 1;
+    return;
+  }
+
+  if (mode === "changed-duplicate") {
+    const records = buildChangedDuplicateProbeRecords({
+      nif,
+      name,
+      systemNif: required("AEAT_TEST_SYSTEM_NIF"),
+      systemName: required("AEAT_TEST_SYSTEM_NAME"),
+      recipientNif: recipient.NIF,
+      recipientName: recipient.NombreRazon,
+      now,
+      runId,
+    });
+    process.stdout.write(
+      `AEAT changed-duplicate plan: ${JSON.stringify({
+        control: records.control.IDFactura.NumSerieFactura,
+        original: records.original.IDFactura.NumSerieFactura,
+        originalHash: records.original.Huella,
+        changedHash: records.changed.Huella,
+        originalTotal: records.original.ImporteTotal,
+        changedTotal: records.changed.ImporteTotal,
+      })}\n`,
+    );
+    const evidence = await submitChangedDuplicateProbe(client, cabecera, records, (stage, entry) =>
+      process.stdout.write(`AEAT changed-duplicate ${stage}: ${JSON.stringify(entry)}\n`),
+    );
+    process.stdout.write(`AEAT changed-duplicate complete: ${JSON.stringify(evidence)}\n`);
+    if (evidence.incomplete) process.exitCode = 1;
+    return;
+  }
 
   if (mode === "cancellation-comparison") {
     const records = buildAbsentOriginalCancellationProbeRecords({

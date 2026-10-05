@@ -20,6 +20,8 @@ import {
   buildFirstRecordProbeRecords,
   buildRejectedPredecessorProbeRecords,
   buildAbsentOriginalCancellationProbeRecords,
+  buildChangedDuplicateProbeRecords,
+  buildFreshInstallationProbeRecords,
   certificateKind,
   consultStoredMixedRegimeProbe,
   consultUnicodeDateProbe,
@@ -41,6 +43,8 @@ import {
   submitRejectedPredecessorProbe,
   submitRejectedPredecessorLaterBatchProbe,
   submitCancellationComparisonProbe,
+  submitChangedDuplicateProbe,
+  submitFreshInstallationProbe,
   submissionHeader,
   waitForNextSubmission,
   withLiveStage,
@@ -157,6 +161,122 @@ test("cancellation comparison is a reachable live CLI mode", () => {
   assert.equal(run.status, 1);
   assert.match(run.stderr, /Set AEAT_TEST_NIF/);
   assert.doesNotMatch(run.stderr, /Unknown AEAT preproduction mode/);
+});
+
+test("changed-content duplicate keeps the invoice key and changes the sent hash", () => {
+  const records = buildChangedDuplicateProbeRecords(decimalOptions);
+  assert.equal(
+    records.original.IDFactura.NumSerieFactura,
+    records.changed.IDFactura.NumSerieFactura,
+  );
+  assert.notEqual(records.original.Huella, records.changed.Huella);
+  assert.notEqual(records.original.DescripcionOperacion, records.changed.DescripcionOperacion);
+  assert.notEqual(
+    records.control.IDFactura.NumSerieFactura,
+    records.original.IDFactura.NumSerieFactura,
+  );
+  for (const record of Object.values(records)) {
+    assert.equal(record.Huella, computeHuella(record));
+    assert.deepEqual(validate(record), []);
+  }
+});
+
+test("changed-content duplicate files only after a successful original and retains both outcomes", async () => {
+  const records = buildChangedDuplicateProbeRecords(decimalOptions);
+  const sent = [];
+  const evidence = await submitChangedDuplicateProbe(
+    {
+      async submit(_header, entries) {
+        const record = entries[0].RegistroAlta;
+        sent.push(record);
+        return {
+          EstadoEnvio: "Correcto",
+          TiempoEsperaEnvio: 0,
+          RespuestaLinea: [
+            {
+              IDFactura: record.IDFactura,
+              EstadoRegistro: record === records.changed ? "Incorrecto" : "Correcto",
+              ...(record === records.changed ? { CodigoErrorRegistro: 2000 } : {}),
+            },
+          ],
+        };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    records,
+    () => {},
+    async () => {},
+  );
+  assert.deepEqual(sent, [records.control, records.original, records.changed]);
+  assert.equal(evidence.original.lines[0].EstadoRegistro, "Correcto");
+  assert.equal(evidence.changed.lines[0].EstadoRegistro, "Incorrecto");
+  assert.equal(evidence.changed.lines[0].CodigoErrorRegistro, 2000);
+  assert.equal(evidence.changed.lines[0].HuellaEnviada, records.changed.Huella);
+  assert.equal(evidence.incomplete, false);
+});
+
+test("changed-content duplicate is a reachable live CLI mode", () => {
+  const run = spawnSync(process.execPath, ["scripts/live-aeat.mjs", "changed-duplicate"], {
+    cwd: new URL("..", import.meta.url),
+    env: { ...process.env, AEAT_TEST_NIF: "" },
+    encoding: "utf8",
+  });
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /Set AEAT_TEST_NIF/);
+});
+
+test("fresh-installation probe changes installation but keeps the software ID", () => {
+  const records = buildFreshInstallationProbeRecords(decimalOptions);
+  assert.equal(records.existing.SistemaInformatico.IdSistemaInformatico, "WT");
+  assert.equal(records.fresh.SistemaInformatico.IdSistemaInformatico, "WT");
+  assert.notEqual(
+    records.existing.SistemaInformatico.NumeroInstalacion,
+    records.fresh.SistemaInformatico.NumeroInstalacion,
+  );
+  assert.notEqual(
+    records.existing.IDFactura.NumSerieFactura,
+    records.fresh.IDFactura.NumSerieFactura,
+  );
+  assert.deepEqual(records.existing.Encadenamiento, { PrimerRegistro: "S" });
+  assert.deepEqual(records.fresh.Encadenamiento, { PrimerRegistro: "S" });
+  assert.deepEqual(validate(records.existing), []);
+  assert.deepEqual(validate(records.fresh), []);
+});
+
+test("fresh-installation probe records both first-record responses", async () => {
+  const records = buildFreshInstallationProbeRecords(decimalOptions);
+  const sent = [];
+  const evidence = await submitFreshInstallationProbe(
+    {
+      async submit(_header, entries) {
+        const record = entries[0].RegistroAlta;
+        sent.push(record);
+        return {
+          EstadoEnvio: "Correcto",
+          TiempoEsperaEnvio: 0,
+          RespuestaLinea: [{ IDFactura: record.IDFactura, EstadoRegistro: "Correcto" }],
+        };
+      },
+    },
+    submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+    records,
+    () => {},
+    async () => {},
+  );
+  assert.deepEqual(sent, [records.existing, records.fresh]);
+  assert.equal(evidence.existing.lines[0].HuellaEnviada, records.existing.Huella);
+  assert.equal(evidence.fresh.lines[0].HuellaEnviada, records.fresh.Huella);
+  assert.equal(evidence.incomplete, false);
+});
+
+test("fresh-installation is a reachable live CLI mode", () => {
+  const run = spawnSync(process.execPath, ["scripts/live-aeat.mjs", "fresh-installation"], {
+    cwd: new URL("..", import.meta.url),
+    env: { ...process.env, AEAT_TEST_NIF: "" },
+    encoding: "utf8",
+  });
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /Set AEAT_TEST_NIF/);
 });
 
 test("rejected-predecessor probe keeps every individual response beside its sent hash", async () => {
