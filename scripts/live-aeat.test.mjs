@@ -17,6 +17,7 @@ import {
   buildTextTrimProbeRecords,
   buildStateTransitionProbeRecords,
   buildFirstRecordProbeRecords,
+  buildRejectedPredecessorProbeRecords,
   certificateKind,
   consultStoredMixedRegimeProbe,
   consultUnicodeDateProbe,
@@ -35,6 +36,7 @@ import {
   submitTextTrimProbe,
   submitStateTransitionProbe,
   submitFirstRecordProbe,
+  submitRejectedPredecessorProbe,
   submissionHeader,
   waitForNextSubmission,
   withLiveStage,
@@ -57,6 +59,123 @@ const decimalOptions = {
   now: new Date("2026-09-27T12:00:00Z"),
   runId: "12345",
 };
+
+test("rejected-predecessor batch links every successor to the rejected record before it", () => {
+  const { rejected, control } = buildRejectedPredecessorProbeRecords(decimalOptions, 3);
+  assert.equal(rejected.length, 3);
+  assert.equal(control.length, 3);
+  assert.equal(
+    new Set([...rejected, ...control].map((item) => item.IDFactura.NumSerieFactura)).size,
+    6,
+  );
+  assert.deepEqual(rejected[0].Encadenamiento, { PrimerRegistro: "S" });
+  assert.deepEqual(control[0].Encadenamiento, { PrimerRegistro: "S" });
+  assert.equal(rejected[0].RechazoPrevio, "S");
+  assert.equal(control[0].RechazoPrevio, undefined);
+  for (const sequence of [rejected, control]) {
+    for (let index = 1; index < sequence.length; index++) {
+      assert.deepEqual(sequence[index].Encadenamiento, {
+        RegistroAnterior: { ...sequence[index - 1].IDFactura, Huella: sequence[index - 1].Huella },
+      });
+      assert.equal(sequence[index].Huella, computeHuella(sequence[index]));
+    }
+  }
+  assert.deepEqual(validate(rejected[1]), []);
+  assert.deepEqual(validate(control[0]), []);
+  assert.deepEqual(
+    validate(rejected[0]).map(({ code }) => code),
+    ["RECHAZO_PREVIO_REQUIRES_SUBSANACION"],
+  );
+});
+
+test("rejected-predecessor probe keeps every individual response beside its sent hash", async () => {
+  const batches = buildRejectedPredecessorProbeRecords(decimalOptions, 3);
+  const submitted = [];
+  const client = {
+    async submit(_header, entries) {
+      submitted.push(entries);
+      return {
+        EstadoEnvio: submitted.length === 1 ? "Correcto" : "ParcialmenteCorrecto",
+        TiempoEsperaEnvio: 0,
+        RespuestaLinea: entries.map(({ RegistroAlta: item }, index) => ({
+          IDFactura: item.IDFactura,
+          EstadoRegistro: submitted.length === 2 && index === 0 ? "Incorrecto" : "Correcto",
+          ...(submitted.length === 2 && index === 0 ? { CodigoErrorRegistro: 1161 } : {}),
+        })),
+      };
+    },
+  };
+  const evidence = await submitRejectedPredecessorProbe(
+    client,
+    submissionHeader({
+      NombreRazon: decimalOptions.name,
+      NIF: decimalOptions.nif,
+    }),
+    batches,
+  );
+  assert.deepEqual(
+    submitted.map((batch) => batch.length),
+    [3, 3],
+  );
+  assert.equal(evidence.control.EstadoEnvio, "Correcto");
+  assert.equal(evidence.rejected.EstadoEnvio, "ParcialmenteCorrecto");
+  assert.deepEqual(
+    evidence.rejected.lines.map(({ EstadoRegistro }) => EstadoRegistro),
+    ["Incorrecto", "Correcto", "Correcto"],
+  );
+  assert.equal(evidence.rejected.lines[0].CodigoErrorRegistro, 1161);
+  assert.equal(evidence.rejected.lines[1].RegistroAnterior.Huella, batches.rejected[0].Huella);
+  assert.equal(evidence.rejected.lines[2].HuellaEnviada, batches.rejected[2].Huella);
+  assert.equal(evidence.incomplete, false);
+});
+
+test("rejected-predecessor probe records an envelope refusal without inventing line outcomes", async () => {
+  const batches = buildRejectedPredecessorProbeRecords(decimalOptions, 3);
+  const client = {
+    async submit(_header, entries) {
+      if (entries[0].RegistroAlta === batches.rejected[0]) {
+        throw new Error("HTTP 400");
+      }
+      return {
+        EstadoEnvio: "Correcto",
+        TiempoEsperaEnvio: 0,
+        RespuestaLinea: entries.map(({ RegistroAlta: item }) => ({
+          IDFactura: item.IDFactura,
+          EstadoRegistro: "Correcto",
+        })),
+      };
+    },
+  };
+  const evidence = await submitRejectedPredecessorProbe(
+    client,
+    submissionHeader({
+      NombreRazon: decimalOptions.name,
+      NIF: decimalOptions.nif,
+    }),
+    batches,
+  );
+  assert.equal(evidence.control.lines.length, 3);
+  assert.equal(evidence.rejected.transportError, "HTTP 400");
+  assert.equal(evidence.rejected.lines, undefined);
+  assert.equal(evidence.incomplete, true);
+});
+
+test("rejected-predecessor builder reaches the schema's 1000-record batch limit", () => {
+  const batches = buildRejectedPredecessorProbeRecords(decimalOptions, 1000);
+  assert.equal(batches.rejected.length, 1000);
+  assert.equal(new Set(batches.rejected.map((item) => item.IDFactura.NumSerieFactura)).size, 1000);
+  assert.equal(
+    batches.rejected[999].Encadenamiento.RegistroAnterior.Huella,
+    batches.rejected[998].Huella,
+  );
+  assert.doesNotThrow(() =>
+    serializeEnvio(
+      submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+      batches.rejected.map((item) => ({ RegistroAlta: item })),
+    ),
+  );
+  assert.throws(() => buildRejectedPredecessorProbeRecords(decimalOptions, 1001), /1000/);
+});
 
 test("first-record probe isolates three system chains and hashes each predecessor", () => {
   const records = buildFirstRecordProbeRecords(decimalOptions);

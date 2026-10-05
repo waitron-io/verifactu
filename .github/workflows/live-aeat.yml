@@ -18,6 +18,8 @@ on:
           - text-trim
           - state-transitions
           - first-record
+          - rejected-predecessor
+          - rejected-predecessor-large
         default: consult
         required: true
       excluded_regime:

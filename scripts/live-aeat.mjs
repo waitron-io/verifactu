@@ -396,6 +396,103 @@ export function buildFirstRecordProbeRecords(options) {
   };
 }
 
+export function buildRejectedPredecessorProbeRecords(options, count = 3) {
+  if (!Number.isInteger(count) || count < 2 || count > 1000) {
+    throw new Error("Rejected-predecessor batch must contain 2 to 1000 records");
+  }
+  const base = buildTestRecord(options);
+  const chain = (kind) => {
+    const records = [];
+    for (let index = 0; index < count; index++) {
+      const previous = records.at(-1);
+      const record = {
+        ...base,
+        IDFactura: {
+          ...base.IDFactura,
+          NumSerieFactura: base.IDFactura.NumSerieFactura.replace(
+            "CI/",
+            `CI-RP-${kind}-${String(index + 1).padStart(4, "0")}/`,
+          ),
+        },
+        RefExterna: `CI-RP-${kind}-${index + 1}-${options.runId}`,
+        SistemaInformatico: {
+          ...base.SistemaInformatico,
+          NumeroInstalacion: `CI-RP-${options.runId}-${kind}`,
+        },
+        Encadenamiento: previous
+          ? { RegistroAnterior: { ...previous.IDFactura, Huella: previous.Huella } }
+          : { PrimerRegistro: "S" },
+        ...(kind === "R" && index === 0 ? { RechazoPrevio: "S" } : {}),
+      };
+      records.push({ ...record, Huella: computeHuella(record) });
+    }
+    return records;
+  };
+  return { rejected: chain("R"), control: chain("C") };
+}
+
+export async function submitRejectedPredecessorProbe(
+  client,
+  cabecera,
+  batches,
+  report = () => {},
+  waitForSubmission = waitForNextSubmission,
+) {
+  const evidence = {};
+  let previous;
+  for (const kind of ["control", "rejected"]) {
+    if (previous) await waitForSubmission(previous.TiempoEsperaEnvio);
+    const records = batches[kind];
+    let response;
+    try {
+      response = await withLiveStage(`${kind} predecessor batch`, () =>
+        client.submit(
+          cabecera,
+          records.map((record) => ({ RegistroAlta: record })),
+        ),
+      );
+    } catch (error) {
+      evidence[kind] = {
+        transportError: (error.cause instanceof Error
+          ? error.cause.message
+          : String(error)
+        ).replace(/\b[A-Z0-9]{9}\b/g, "[NIF]"),
+      };
+      evidence.incomplete = true;
+      report(kind, evidence[kind]);
+      return evidence;
+    }
+    previous = response;
+    const lines = records.map((record) => {
+      const serial = record.IDFactura.NumSerieFactura;
+      const matches =
+        response.RespuestaLinea?.filter((entry) => entry.IDFactura?.NumSerieFactura === serial) ??
+        [];
+      const line = matches.length === 1 ? matches[0] : undefined;
+      return {
+        NumSerieFactura: serial,
+        HuellaEnviada: record.Huella,
+        RegistroAnterior: record.Encadenamiento.RegistroAnterior,
+        EstadoRegistro: line?.EstadoRegistro,
+        CodigoErrorRegistro: line?.CodigoErrorRegistro,
+        DescripcionErrorRegistro: line?.DescripcionErrorRegistro,
+        Respuestas: matches.length,
+      };
+    });
+    evidence[kind] = {
+      EstadoEnvio: response.EstadoEnvio,
+      TiempoEsperaEnvio: response.TiempoEsperaEnvio,
+      CSV: response.CSV,
+      lines,
+    };
+    report(kind, evidence[kind]);
+  }
+  evidence.incomplete = Object.values(evidence).some((batch) =>
+    batch.lines.some((line) => line.Respuestas !== 1 || !line.EstadoRegistro),
+  );
+  return evidence;
+}
+
 export function refreshProbeRecordGeneration(record, now) {
   const refreshed = {
     ...record,
@@ -1119,11 +1216,11 @@ async function main() {
       "text-trim",
       "state-transitions",
       "first-record",
+      "rejected-predecessor",
+      "rejected-predecessor-large",
     ].includes(mode)
   ) {
-    throw new Error(
-      "Mode must be consult, submit, mixed-regime, mixed-regime-consult, decimal-variant, unicode-dates, text-trim, state-transitions, or first-record",
-    );
+    throw new Error("Unknown AEAT preproduction mode");
   }
   const nif = required("AEAT_TEST_NIF");
   const name = required("AEAT_TEST_NAME");
@@ -1169,6 +1266,47 @@ async function main() {
   };
   const cabecera = submissionHeader(obligadoEmision);
   const runId = process.env.GITHUB_RUN_ID ?? String(now.getTime());
+
+  if (mode === "rejected-predecessor" || mode === "rejected-predecessor-large") {
+    const count = mode === "rejected-predecessor-large" ? 1000 : 3;
+    const batches = buildRejectedPredecessorProbeRecords(
+      {
+        nif,
+        name,
+        systemNif: required("AEAT_TEST_SYSTEM_NIF"),
+        systemName: required("AEAT_TEST_SYSTEM_NAME"),
+        recipientNif: recipient.NIF,
+        recipientName: recipient.NombreRazon,
+        now,
+        runId,
+      },
+      count,
+    );
+    process.stdout.write(
+      `AEAT rejected-predecessor plan: ${JSON.stringify({
+        count,
+        controlFirst: batches.control[0].IDFactura.NumSerieFactura,
+        rejectedFirst: batches.rejected[0].IDFactura.NumSerieFactura,
+        rejectedFirstHash: batches.rejected[0].Huella,
+        firstSuccessorPreviousHash: batches.rejected[1].Encadenamiento.RegistroAnterior.Huella,
+      })}\n`,
+    );
+    const evidence = await submitRejectedPredecessorProbe(
+      client,
+      cabecera,
+      batches,
+      (stage, entry) =>
+        process.stdout.write(`AEAT rejected-predecessor ${stage}: ${JSON.stringify(entry)}\n`),
+    );
+    process.stdout.write(
+      `AEAT rejected-predecessor complete: ${JSON.stringify({
+        incomplete: evidence.incomplete,
+        count,
+      })}\n`,
+    );
+    if (evidence.incomplete) process.exitCode = 1;
+    return;
+  }
 
   if (mode === "first-record") {
     const probeOptions = {
