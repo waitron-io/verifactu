@@ -7,6 +7,7 @@ import { parse } from "parse5";
 
 const root = new URL("../", import.meta.url);
 const baselineUrl = new URL("sources/watch-baseline.json", root);
+const legacyCaFile = fileURLToPath(new URL("sources/fnmt-ac-componentes-informaticos.pem", root));
 const aeat = "https://sede.agenciatributaria.gob.es";
 const faq = `${aeat}/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes`;
 const docs = `${aeat}/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU`;
@@ -151,11 +152,17 @@ export function meaningfulHtml(html) {
   return `${text}\n${links.join("\n")}`;
 }
 
+// www.agenciatributaria.es chains through an FNMT intermediate signed with SHA-1, which
+// OpenSSL 3 and Node's fetch refused. Curl accepted the chain once that intermediate was
+// passed with --cacert; sources/README.md has what was measured.
+export function legacyCurlArgs(url) {
+  return ["-fsSL", "--retry", "2", "--cacert", legacyCaFile, url];
+}
+
 export async function fingerprintSource(source, fetcher = fetch) {
   let content;
   if (fetcher === fetch && source.url.startsWith(docsLegacy)) {
-    // This AEAT host's CA chain is rejected by Node 22; curl verifies it successfully.
-    const { stdout } = await execFileAsync("curl", ["-fsSL", "--retry", "2", source.url], {
+    const { stdout } = await execFileAsync("curl", legacyCurlArgs(source.url), {
       encoding: "buffer",
       maxBuffer: 8 * 1024 * 1024,
       timeout: 30_000,
