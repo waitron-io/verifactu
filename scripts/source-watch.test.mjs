@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { X509Certificate } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import {
   fingerprintSource,
   formatReport,
   inspectSources,
+  legacyCurlArgs,
   meaningfulHtml,
   sources,
 } from "./source-watch.mjs";
@@ -122,4 +124,17 @@ test("rejects an HTML error page served instead of a PDF or schema", async () =>
     ),
     /Expected schema content/,
   );
+});
+
+test("trusts the FNMT intermediate for the legacy AEAT documents host", async () => {
+  const url = sources.find(({ id }) => id === "aeat-hash-spec").url;
+  const args = legacyCurlArgs(url);
+  const caFile = args[args.indexOf("--cacert") + 1];
+
+  const certificate = new X509Certificate(await readFile(caFile));
+
+  assert.equal(args.at(-1), url);
+  assert.match(certificate.subject, /OU=AC Componentes Inform\u00e1ticos/);
+  assert.match(certificate.issuer, /OU=AC RAIZ FNMT-RCM/);
+  assert.equal(certificate.ca, true);
 });
