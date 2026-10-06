@@ -16,6 +16,7 @@ If the workflow raises an issue, open the linked source and inspect what changed
 code, tests and documentation if the change affects this library. Then run:
 
 ```sh
+npm ci
 node scripts/source-watch.mjs --refresh
 node scripts/source-watch.mjs
 ```
@@ -24,6 +25,34 @@ Commit the new baseline with the change it represents. HTML fingerprints include
 main text and links, so navigation or footer changes should not cause an alert. PDF and schema
 fingerprints cover the downloaded bytes. A new FAQ page changes the index fingerprint; add
 the new page to `scripts/source-watch.mjs` before refreshing the baseline.
+
+## The bundled FNMT certificate
+
+[`fnmt-ac-componentes-informaticos.pem`](fnmt-ac-componentes-informaticos.pem) is FNMT-RCM's
+"AC Componentes Informáticos" intermediate certificate. It is issued by "AC RAIZ FNMT-RCM",
+signed with SHA-1 (`sha1WithRSAEncryption`), and valid until 27 June 2028. Its SHA-256
+fingerprint is
+`DB:0D:A1:60:32:F1:64:3A:24:96:FD:E7:42:E2:BB:E8:1D:AC:A5:8C:D7:61:20:61:42:0E:15:4C:E1:BC:E2:BD`.
+
+The hash, QR and validation PDFs are on `www.agenciatributaria.es`, whose certificate chain
+runs through this intermediate. OpenSSL 3 refuses its SHA-1 signature, so curl on GitHub's
+Ubuntu runner failed with error 60, "CA signature digest algorithm too weak". The script passes
+this file to curl with `--cacert`, and curl then accepts a chain that ends at this intermediate.
+
+Measured on 2026-10-06 in an `ubuntu:24.04` container (curl 8.5.0, OpenSSL 3.0.13): with
+`--cacert`, curl downloaded all three PDFs, still refused a self-signed, a wrong-host and an
+expired certificate on other sites, and still verified an unrelated site through its system
+certificate folder. So on Ubuntu the file adds a trust anchor rather than replacing the system
+ones; a curl built without a system certificate folder would trust only this file.
+
+The test in `scripts/source-watch.test.mjs` pins the fingerprint. Renew the file when it nears
+expiry, or when the watch starts failing on those three PDFs with curl error 60:
+
+1. Run `openssl s_client -connect www.agenciatributaria.es:443 -showcerts` to see the chain,
+   and copy FNMT's current intermediate into the file.
+2. Check it with
+   `openssl x509 -in sources/fnmt-ac-componentes-informaticos.pem -noout -subject -issuer -dates -fingerprint -sha256`.
+3. Update the fingerprint in the test, and the fingerprint and expiry date in this section.
 
 ## Live AEAT checks
 

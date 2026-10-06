@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { X509Certificate } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { delimiter, join } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   fingerprintSource,
   formatReport,
   inspectSources,
-  legacyCurlArgs,
   meaningfulHtml,
   sources,
 } from "./source-watch.mjs";
@@ -126,15 +128,42 @@ test("rejects an HTML error page served instead of a PDF or schema", async () =>
   );
 });
 
-test("trusts the FNMT intermediate for the legacy AEAT documents host", async () => {
-  const url = sources.find(({ id }) => id === "aeat-hash-spec").url;
-  const args = legacyCurlArgs(url);
-  const caFile = args[args.indexOf("--cacert") + 1];
+test("passes curl the bundled FNMT intermediate and no insecure flag", async () => {
+  const source = sources.find(({ id }) => id === "aeat-hash-spec");
+  const stubDir = await mkdtemp(join(tmpdir(), "source-watch-curl-"));
+  const argsFile = join(stubDir, "args");
+  await writeFile(
+    join(stubDir, "curl"),
+    `#!/bin/sh\nprintf '%s\\n' "$@" > "$CURL_ARGS_FILE"\nprintf '%%PDF-stub'\n`,
+    { mode: 0o755 },
+  );
+  const path = process.env.PATH;
+  process.env.PATH = `${stubDir}${delimiter}${path}`;
+  process.env.CURL_ARGS_FILE = argsFile;
+  let args;
+  try {
+    await fingerprintSource(source);
+    args = (await readFile(argsFile, "utf8")).trimEnd().split("\n");
+  } finally {
+    process.env.PATH = path;
+    delete process.env.CURL_ARGS_FILE;
+    await rm(stubDir, { recursive: true, force: true });
+  }
 
-  const certificate = new X509Certificate(await readFile(caFile));
+  assert.equal(args.at(-1), source.url);
+  assert.equal(
+    args[args.indexOf("--cacert") + 1],
+    fileURLToPath(new URL("../sources/fnmt-ac-componentes-informaticos.pem", import.meta.url)),
+  );
+  for (const insecure of ["-k", "--insecure", "--proxy-insecure"]) {
+    assert.ok(!args.includes(insecure), `curl was given ${insecure}`);
+  }
 
-  assert.equal(args.at(-1), url);
+  const certificate = new X509Certificate(await readFile(args[args.indexOf("--cacert") + 1]));
+  assert.equal(
+    certificate.fingerprint256,
+    "DB:0D:A1:60:32:F1:64:3A:24:96:FD:E7:42:E2:BB:E8:1D:AC:A5:8C:D7:61:20:61:42:0E:15:4C:E1:BC:E2:BD",
+  );
   assert.match(certificate.subject, /OU=AC Componentes Inform\u00e1ticos/);
-  assert.match(certificate.issuer, /OU=AC RAIZ FNMT-RCM/);
   assert.equal(certificate.ca, true);
 });

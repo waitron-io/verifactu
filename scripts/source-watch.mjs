@@ -152,8 +152,9 @@ export function meaningfulHtml(html) {
   return `${text}\n${links.join("\n")}`;
 }
 
-// AEAT's legacy host chains through an FNMT intermediate that its root signed with SHA-1,
-// which OpenSSL 3 refuses. Trusting that intermediate directly lets curl stop before it.
+// www.agenciatributaria.es chains through an FNMT intermediate signed with SHA-1, which
+// OpenSSL 3 and Node's fetch refused. Curl accepted the chain once that intermediate was
+// passed with --cacert; sources/README.md has what was measured.
 export function legacyCurlArgs(url) {
   return ["-fsSL", "--retry", "2", "--cacert", legacyCaFile, url];
 }
