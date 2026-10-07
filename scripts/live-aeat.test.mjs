@@ -24,6 +24,11 @@ import {
   buildFreshInstallationProbeRecords,
   buildRegisteredNameMismatchProbeRecords,
   buildRejectedInvoiceCreditProbeRecords,
+  buildReplyOrderProbeRecords,
+  readReplyLineSerials,
+  replyOrderPermutation,
+  REPLY_ORDER_PLAN,
+  submitReplyOrderProbe,
   certificateKind,
   consultStoredMixedRegimeProbe,
   consultUnicodeDateProbe,
@@ -2992,4 +2997,376 @@ test("Unicode-date probe refuses to compare against a missing ASCII baseline", a
     consultUnicodeDateProbe(client, {}, { runId: "36337265120", issueDate: "27-09-2026" }),
     /did not return the known decimal-variant record/,
   );
+});
+
+const monotonic = (values) =>
+  values.every((value, index) => index === 0 || value >= values[index - 1]) ||
+  values.every((value, index) => index === 0 || value <= values[index - 1]);
+
+test("reply-order permutations are never sorted either way, and differ per key", () => {
+  assert.deepEqual(replyOrderPermutation(2, "number"), [2, 1]);
+  for (const size of [3, 5, 50, 1000]) {
+    const orders = ["number", "issue", "generated"].map((key) => replyOrderPermutation(size, key));
+    for (const order of orders) {
+      assert.deepEqual(
+        [...order].sort((a, b) => a - b),
+        Array.from({ length: size }, (_, index) => index + 1),
+      );
+      assert.equal(monotonic(order), false, `${size}`);
+    }
+    if (size === 3) continue;
+    assert.notDeepEqual(orders[0], orders[1]);
+    assert.notDeepEqual(orders[0], orders[2]);
+    assert.notDeepEqual(orders[1], orders[2]);
+  }
+});
+
+test("reply-order envío is one chain in sent order whose numbers, dates and times are shuffled", () => {
+  const records = buildReplyOrderProbeRecords(decimalOptions, 5, { refusedAt: 2 });
+  assert.equal(records.length, 5);
+  assert.deepEqual(records[0].Encadenamiento, { PrimerRegistro: "S" });
+  for (let index = 1; index < records.length; index++) {
+    assert.deepEqual(records[index].Encadenamiento, {
+      RegistroAnterior: { ...records[index - 1].IDFactura, Huella: records[index - 1].Huella },
+    });
+  }
+  for (const item of records) assert.equal(item.Huella, computeHuella(item));
+  assert.equal(new Set(records.map((item) => item.SistemaInformatico.NumeroInstalacion)).size, 1);
+  const numbers = records.map((item) =>
+    Number(/^CI-RO-5-(\d{4})\//.exec(item.IDFactura.NumSerieFactura)[1]),
+  );
+  assert.deepEqual(numbers, replyOrderPermutation(5, "number"));
+  assert.deepEqual(
+    records.map((item) => item.RefExterna),
+    numbers.map((number) => `CI-RO-5-${number}-${decimalOptions.runId}`),
+  );
+  assert.deepEqual(
+    records.map((item) => item.RechazoPrevio),
+    [undefined, undefined, "S", undefined, undefined],
+  );
+  assert.deepEqual(validate(records[1]), []);
+});
+
+const issueDays = (records) =>
+  records.map((item) => item.IDFactura.FechaExpedicionFactura.split("-").reverse().join(""));
+const generationTimes = (records) =>
+  records.map((item) => Date.parse(item.FechaHoraHusoGenRegistro));
+
+test("reply-order envíos the live mode sends above two records sort neither by issue date nor by generation time", () => {
+  assert.deepEqual(REPLY_ORDER_PLAN, [
+    [2, undefined],
+    [5, 2],
+    [50, 25],
+    [1000, 500],
+  ]);
+  for (const [size, refusedAt] of REPLY_ORDER_PLAN) {
+    const records = buildReplyOrderProbeRecords(decimalOptions, size, { refusedAt });
+    const issued = issueDays(records);
+    const generated = generationTimes(records);
+    if (size === 2) {
+      assert.ok(issued[0] < issued[1], `${issued}`);
+      assert.ok(generated[0] < generated[1], `${generated}`);
+    } else {
+      assert.equal(monotonic(issued), false, `${size}`);
+      assert.equal(monotonic(generated), false, `${size}`);
+    }
+    assert.ok(issued.every((date) => date < "20260927"));
+    assert.ok(generated.every((time) => time <= decimalOptions.now.getTime()));
+    assert.deepEqual(
+      records.flatMap((item, index) => (item.RechazoPrevio === "S" ? [index + 1] : [])),
+      refusedAt === undefined ? [] : [refusedAt + 1],
+    );
+  }
+});
+
+test("reply-order builder reaches the 1000-record batch limit with distinct records", () => {
+  const records = buildReplyOrderProbeRecords(decimalOptions, 1000, { refusedAt: 500 });
+  assert.equal(new Set(records.map((item) => item.IDFactura.NumSerieFactura)).size, 1000);
+  assert.equal(records[500].RechazoPrevio, "S");
+  assert.doesNotThrow(() =>
+    serializeEnvio(
+      submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif }),
+      records.map((item) => ({ RegistroAlta: item })),
+    ),
+  );
+  assert.throws(() => buildReplyOrderProbeRecords(decimalOptions, 1001), /1000/);
+  assert.throws(() => buildReplyOrderProbeRecords(decimalOptions, 1), /2 to 1000/);
+});
+
+test("raw reply serials are read in document order whatever the namespace prefix", () => {
+  const xml =
+    "<env:Envelope><env:Body><tikR:RespuestaRegFactuSistemaFacturacion>" +
+    "<tikR:RespuestaLinea><tikR:IDFactura><tik:IDEmisorFactura>X</tik:IDEmisorFactura>" +
+    "<tik:NumSerieFactura>B/2</tik:NumSerieFactura></tikR:IDFactura></tikR:RespuestaLinea>" +
+    "<RespuestaLinea><IDFactura><NumSerieFactura>A/1</NumSerieFactura></IDFactura></RespuestaLinea>" +
+    "</tikR:RespuestaRegFactuSistemaFacturacion></env:Body></env:Envelope>";
+  assert.deepEqual(readReplyLineSerials(xml), ["B/2", "A/1"]);
+  assert.deepEqual(readReplyLineSerials("<Envelope/>"), []);
+});
+
+const fakeReplyXml = (serials) =>
+  serials
+    .map(
+      (serial) =>
+        `<tikR:RespuestaLinea><tikR:IDFactura><tik:NumSerieFactura>${serial}</tik:NumSerieFactura></tikR:IDFactura></tikR:RespuestaLinea>`,
+    )
+    .join("");
+
+function replyOrderClient(reorder) {
+  let raw;
+  return {
+    rawReply: () => raw,
+    client: {
+      async submit(_header, entries) {
+        const lines = reorder(
+          entries.map(({ RegistroAlta: item }) => ({
+            IDFactura: item.IDFactura,
+            EstadoRegistro: item.RechazoPrevio === "S" ? "Incorrecto" : "Correcto",
+            ...(item.RechazoPrevio === "S" ? { CodigoErrorRegistro: 1161 } : {}),
+          })),
+        );
+        raw = fakeReplyXml(lines.map((line) => line.IDFactura.NumSerieFactura));
+        return { EstadoEnvio: "ParcialmenteCorrecto", TiempoEsperaEnvio: 0, RespuestaLinea: lines };
+      },
+    },
+  };
+}
+
+const replyOrderHeader = () =>
+  submissionHeader({ NombreRazon: decimalOptions.name, NIF: decimalOptions.nif });
+
+async function probeReplyOrder(reorder, envios, rawOverride) {
+  const { client, rawReply } = replyOrderClient(reorder);
+  const sent = [];
+  const submit = client.submit;
+  client.submit = async (header, entries) => {
+    sent.push(entries.length);
+    return submit(header, entries);
+  };
+  const evidence = await submitReplyOrderProbe(
+    client,
+    replyOrderHeader(),
+    envios,
+    rawOverride ?? rawReply,
+    () => {},
+    async () => {},
+  );
+  return { evidence, sent };
+}
+
+test("reply-order probe reports a reply kept in sent order, with the refused position", async () => {
+  const { evidence } = await probeReplyOrder(
+    (lines) => lines,
+    [buildReplyOrderProbeRecords(decimalOptions, 5, { refusedAt: 2 })],
+  );
+  const [result] = evidence.envios;
+  assert.deepEqual(result.sentNumbers, replyOrderPermutation(5, "number"));
+  assert.deepEqual(result.replyNumbers, result.sentNumbers);
+  assert.equal(result.lineCount, 5);
+  assert.equal(result.sameOrder, true);
+  assert.equal(result.rawMatchesParsed, true);
+  assert.equal(result.firstDifference, undefined);
+  assert.deepEqual(result.refused, [
+    { position: 3, number: result.sentNumbers[2], CodigoErrorRegistro: 1161 },
+  ]);
+  assert.equal(evidence.anyDifferent, false);
+  assert.equal(evidence.incomplete, false);
+});
+
+test("reply-order probe reports a reply AEAT sorted by invoice number as different", async () => {
+  const { evidence } = await probeReplyOrder(
+    (lines) =>
+      [...lines].sort((a, b) =>
+        a.IDFactura.NumSerieFactura.localeCompare(b.IDFactura.NumSerieFactura),
+      ),
+    [buildReplyOrderProbeRecords(decimalOptions, 5, { refusedAt: 2 })],
+  );
+  const [result] = evidence.envios;
+  assert.deepEqual(result.replyNumbers, [1, 2, 3, 4, 5]);
+  assert.equal(result.sameOrder, false);
+  assert.equal(result.rawMatchesParsed, true);
+  assert.deepEqual(result.sentNumbers, [5, 1, 3, 4, 2]);
+  assert.equal(result.firstDifference, 1);
+  assert.equal(evidence.anyDifferent, true);
+  assert.equal(evidence.incomplete, false);
+});
+
+test("reply-order probe flags a raw reply that disagrees with the parsed lines", async () => {
+  const { evidence } = await probeReplyOrder(
+    (lines) => lines,
+    [buildReplyOrderProbeRecords(decimalOptions, 2)],
+    () => fakeReplyXml(["other"]),
+  );
+  assert.equal(evidence.envios[0].rawMatchesParsed, false);
+  assert.equal(evidence.incomplete, true);
+});
+
+test("reply-order probe records a transport failure and stops", async () => {
+  const { evidence, sent } = await probeReplyOrder(() => {
+    throw new Error(`refused ${decimalOptions.nif}`);
+  }, [
+    buildReplyOrderProbeRecords(decimalOptions, 2),
+    buildReplyOrderProbeRecords(decimalOptions, 3),
+  ]);
+  assert.deepEqual(sent, [2]);
+  assert.equal(evidence.envios[0].transportError, "refused [NIF]");
+  assert.equal(evidence.incomplete, true);
+});
+
+test("reply-order probe calls an empty reply incomplete and still sends the next envío", async () => {
+  const { evidence, sent } = await probeReplyOrder(
+    () => [],
+    [
+      buildReplyOrderProbeRecords(decimalOptions, 2),
+      buildReplyOrderProbeRecords(decimalOptions, 5),
+    ],
+  );
+  assert.deepEqual(sent, [2, 5]);
+  assert.equal(evidence.envios[0].rawMatchesParsed, true);
+  assert.deepEqual(evidence.envios[0].missing, [2, 1]);
+  assert.deepEqual(evidence.envios[1].missing, [5, 1, 3, 4, 2]);
+  assert.deepEqual(
+    evidence.envios.map((entry) => entry.answeredEach),
+    [false, false],
+  );
+  assert.equal(evidence.anyDifferent, false);
+  assert.equal(evidence.incomplete, true);
+});
+
+test("reply-order probe calls a reply missing its last line incomplete", async () => {
+  const { evidence } = await probeReplyOrder(
+    (lines) => lines.slice(0, -1),
+    [buildReplyOrderProbeRecords(decimalOptions, 5, { refusedAt: 2 })],
+  );
+  assert.deepEqual(evidence.envios[0].missing, [2]);
+  assert.deepEqual(evidence.envios[0].unexpected, []);
+  assert.deepEqual(evidence.envios[0].duplicated, []);
+  assert.equal(evidence.anyDifferent, false);
+  assert.equal(evidence.incomplete, true);
+});
+
+test("reply-order probe calls a reply with a duplicated line incomplete", async () => {
+  const envio = buildReplyOrderProbeRecords(decimalOptions, 5, { refusedAt: 2 });
+  const foreign = {
+    IDFactura: { NumSerieFactura: "CI-RO-5-0001/other-run" },
+    EstadoRegistro: "Correcto",
+  };
+  const { evidence } = await probeReplyOrder(
+    (lines) => [...lines, lines[0], foreign, foreign],
+    [envio],
+  );
+  assert.deepEqual(evidence.envios[0].missing, []);
+  assert.deepEqual(evidence.envios[0].duplicated, [
+    envio[0].IDFactura.NumSerieFactura,
+    "CI-RO-5-0001/other-run",
+  ]);
+  assert.equal(evidence.incomplete, true);
+});
+
+test("reply-order probe calls a reply naming an invoice it was not sent incomplete", async () => {
+  const { evidence } = await probeReplyOrder(
+    (lines) => [
+      ...lines,
+      { IDFactura: { NumSerieFactura: "CI-RO-2-0001/other-run" }, EstadoRegistro: "Correcto" },
+    ],
+    [buildReplyOrderProbeRecords(decimalOptions, 2)],
+  );
+  assert.deepEqual(evidence.envios[0].unexpected, ["CI-RO-2-0001/other-run"]);
+  assert.equal(evidence.incomplete, true);
+});
+
+test("reply-order probe treats a complete reversed reply as a valid reordering", async () => {
+  const { evidence } = await probeReplyOrder(
+    (lines) => [...lines].reverse(),
+    [buildReplyOrderProbeRecords(decimalOptions, 5, { refusedAt: 2 })],
+  );
+  const [result] = evidence.envios;
+  assert.deepEqual(result.replyNumbers, [2, 4, 3, 1, 5]);
+  assert.equal(result.firstDifference, 1);
+  assert.deepEqual([result.missing, result.unexpected, result.duplicated], [[], [], []]);
+  assert.deepEqual(result.plannedRefusal, { number: 3, asPlanned: true });
+  assert.equal(result.answeredEach, true);
+  assert.equal(evidence.anyDifferent, true);
+  assert.equal(evidence.incomplete, false);
+});
+
+test("reply-order probe does not call a reorder seen only in the parsed reply a reordering", async () => {
+  const envio = buildReplyOrderProbeRecords(decimalOptions, 5, { refusedAt: 2 });
+  const { evidence } = await probeReplyOrder(
+    (lines) => [...lines].reverse(),
+    [envio],
+    () => fakeReplyXml(envio.map((item) => item.IDFactura.NumSerieFactura)),
+  );
+  assert.equal(evidence.envios[0].answeredEach, true);
+  assert.equal(evidence.envios[0].sameOrder, false);
+  assert.equal(evidence.envios[0].rawMatchesParsed, false);
+  assert.equal(evidence.anyDifferent, false);
+  assert.equal(evidence.incomplete, true);
+});
+
+test("reply-order probe calls a line without EstadoRegistro incomplete", async () => {
+  const { evidence } = await probeReplyOrder(
+    (lines) => lines.map((line, index) => (index === 0 ? { IDFactura: line.IDFactura } : line)),
+    [buildReplyOrderProbeRecords(decimalOptions, 2)],
+  );
+  assert.equal(evidence.envios[0].answeredEach, false);
+  assert.equal(evidence.incomplete, true);
+});
+
+test("reply-order probe calls a planned refusal AEAT accepted incomplete", async () => {
+  const { evidence } = await probeReplyOrder(
+    (lines) => lines.map((line) => ({ IDFactura: line.IDFactura, EstadoRegistro: "Correcto" })),
+    [buildReplyOrderProbeRecords(decimalOptions, 5, { refusedAt: 2 })],
+  );
+  assert.deepEqual(evidence.envios[0].plannedRefusal, { number: 3, asPlanned: false });
+  assert.equal(evidence.incomplete, true);
+});
+
+test("reply-order probe calls a planned refusal refused for another reason incomplete", async () => {
+  const { evidence } = await probeReplyOrder(
+    (lines) =>
+      lines.map((line) =>
+        line.EstadoRegistro === "Incorrecto" ? { ...line, CodigoErrorRegistro: 1100 } : line,
+      ),
+    [buildReplyOrderProbeRecords(decimalOptions, 5, { refusedAt: 2 })],
+  );
+  assert.deepEqual(evidence.envios[0].plannedRefusal, { number: 3, asPlanned: false });
+  assert.equal(evidence.incomplete, true);
+});
+
+test("reply-order probe waits between envíos for the previous reply's TiempoEsperaEnvio", async () => {
+  const { client, rawReply } = replyOrderClient((lines) => lines);
+  const submit = client.submit;
+  const tiempos = [60, 75, 90];
+  client.submit = async (header, entries) => ({
+    ...(await submit(header, entries)),
+    TiempoEsperaEnvio: tiempos.shift(),
+  });
+  const waits = [];
+  const evidence = await submitReplyOrderProbe(
+    client,
+    replyOrderHeader(),
+    [2, 3, 4].map((size) => buildReplyOrderProbeRecords(decimalOptions, size)),
+    rawReply,
+    () => {},
+    async (seconds) => {
+      waits.push(seconds);
+    },
+  );
+  assert.deepEqual(waits, [60, 75]);
+  assert.deepEqual(
+    evidence.envios.map((entry) => entry.plannedRefusal),
+    [undefined, undefined, undefined],
+  );
+  assert.equal(evidence.incomplete, false);
+});
+
+test("reply-order live mode is reachable from the CLI", () => {
+  const run = spawnSync(process.execPath, ["scripts/live-aeat.mjs", "reply-order"], {
+    cwd: new URL("..", import.meta.url),
+    env: { ...process.env, AEAT_TEST_NIF: "" },
+    encoding: "utf8",
+  });
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /Set AEAT_TEST_NIF/);
 });

@@ -431,6 +431,93 @@ export function buildRejectedPredecessorProbeRecords(options, count = 3) {
   return { rejected: chain("R"), control: chain("C") };
 }
 
+// Above two records the order is sorted neither way; two records allow only the reversed order.
+export function replyOrderPermutation(size, key) {
+  const values = Array.from({ length: size }, (_, index) => index + 1);
+  if (size === 2) return [2, 1];
+  let seed = [...`${key}:${size}`].reduce(
+    (hash, char) => Math.imul(hash ^ char.charCodeAt(0), 16777619),
+    2166136261,
+  );
+  const random = () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  for (let index = size - 1; index > 0; index--) {
+    const other = Math.floor(random() * (index + 1));
+    [values[index], values[other]] = [values[other], values[index]];
+  }
+  const sorted = (direction) =>
+    values.every((value, index) => index === 0 || (value - values[index - 1]) * direction > 0);
+  if (sorted(1) || sorted(-1)) [values[0], values[1]] = [values[1], values[0]];
+  return values;
+}
+
+export function buildReplyOrderProbeRecords(options, size, { refusedAt } = {}) {
+  if (!Number.isInteger(size) || size < 2 || size > 1000) {
+    throw new Error("Reply-order envío must contain 2 to 1000 records");
+  }
+  const base = buildTestRecord(options);
+  const numbers = replyOrderPermutation(size, "number");
+  const issueOrder = replyOrderPermutation(size, "issue");
+  const generatedOrder = replyOrderPermutation(size, "generated");
+  const day = 24 * 60 * 60 * 1000;
+  const records = [];
+  for (let index = 0; index < size; index++) {
+    const previous = records.at(-1);
+    const number = numbers[index];
+    const issuedAt = new Date(options.now.getTime() - (2 + ((issueOrder[index] - 1) % 5)) * day);
+    const generatedAt = new Date(options.now.getTime() - generatedOrder[index] * 3000);
+    const built = buildTestRecordWith(
+      { ...options, now: issuedAt, generatedAt },
+      {
+        serialPrefix: "CI",
+        referencePrefix: "CI",
+        description: base.DescripcionOperacion,
+        desglose: base.Desglose,
+        cuotaTotal: base.CuotaTotal,
+        importeTotal: base.ImporteTotal,
+      },
+    );
+    const record = {
+      ...built,
+      IDFactura: {
+        ...built.IDFactura,
+        NumSerieFactura: base.IDFactura.NumSerieFactura.replace(
+          "CI/",
+          `CI-RO-${size}-${String(number).padStart(4, "0")}/`,
+        ),
+      },
+      RefExterna: `CI-RO-${size}-${number}-${options.runId}`,
+      SistemaInformatico: {
+        ...base.SistemaInformatico,
+        NumeroInstalacion: `CI-RO-${options.runId}-${size}`,
+      },
+      Encadenamiento: previous
+        ? { RegistroAnterior: { ...previous.IDFactura, Huella: previous.Huella } }
+        : { PrimerRegistro: "S" },
+      ...(index === refusedAt ? { RechazoPrevio: "S" } : {}),
+    };
+    records.push({ ...record, Huella: computeHuella(record) });
+  }
+  return records;
+}
+
+// [records in the envío, index of the record sent for refusal]
+export const REPLY_ORDER_PLAN = [
+  [2, undefined],
+  [5, 2],
+  [50, 25],
+  [1000, 500],
+];
+
+export function readReplyLineSerials(xml) {
+  const lines = xml.match(/<(?:[\w-]+:)?RespuestaLinea>[\s\S]*?<\/(?:[\w-]+:)?RespuestaLinea>/g);
+  return (lines ?? []).map((line) => /<(?:[\w-]+:)?NumSerieFactura>([^<]*)</.exec(line)?.[1]);
+}
+
 export function buildAbsentOriginalCancellationProbeRecords(options) {
   const base = buildTestRecord(options);
   const ordinaryAlta = {
@@ -948,6 +1035,112 @@ async function stateConsultaEvidence(client, header, record, year, month, stage)
     SubsanacionConsultada: stored?.DatosRegistroFacturacion?.Subsanacion,
     RechazoPrevioConsultado: stored?.DatosRegistroFacturacion?.RechazoPrevio,
   };
+}
+
+export async function submitReplyOrderProbe(
+  client,
+  cabecera,
+  envios,
+  rawReply,
+  report = () => {},
+  waitForSubmission = waitForNextSubmission,
+) {
+  const evidence = { envios: [], anyDifferent: false, incomplete: false };
+  let prior;
+  for (const records of envios) {
+    const size = records.length;
+    const numberOf = (serial) =>
+      Number(new RegExp(`^CI-RO-${size}-(\\d{4})/`).exec(serial ?? "")?.[1]) || serial;
+    const sent = records.map((record) => record.IDFactura.NumSerieFactura);
+    const stage = `envío of ${size}`;
+    if (prior) await waitForSubmission(prior.TiempoEsperaEnvio);
+    let response;
+    try {
+      response = await withLiveStage(stage, () =>
+        client.submit(
+          cabecera,
+          records.map((record) => ({ RegistroAlta: record })),
+        ),
+      );
+    } catch (error) {
+      const entry = {
+        size,
+        transportError: (error.cause instanceof Error
+          ? error.cause.message
+          : String(error)
+        ).replace(/\b[A-Z0-9]{9}\b/g, "[NIF]"),
+      };
+      evidence.envios.push(entry);
+      report(stage, entry);
+      evidence.incomplete = true;
+      return evidence;
+    }
+    const lines = response.RespuestaLinea ?? [];
+    const replied = lines.map((line) => line.IDFactura?.NumSerieFactura);
+    const raw = readReplyLineSerials(rawReply() ?? "");
+    const difference = sent.findIndex((serial, index) => replied[index] !== serial);
+    const estados = {};
+    for (const line of lines)
+      estados[line.EstadoRegistro] = (estados[line.EstadoRegistro] ?? 0) + 1;
+    const sentSet = new Set(sent);
+    const replyCounts = new Map();
+    for (const serial of replied) replyCounts.set(serial, (replyCounts.get(serial) ?? 0) + 1);
+    const planned = records.find((record) => record.RechazoPrevio === "S");
+    const plannedLine =
+      planned &&
+      lines.find((line) => line.IDFactura?.NumSerieFactura === planned.IDFactura.NumSerieFactura);
+    const missing = sent.filter((serial) => !replyCounts.has(serial)).map(numberOf);
+    const unexpected = [...replyCounts.keys()].filter((serial) => !sentSet.has(serial));
+    const duplicated = [...replyCounts].filter(([, count]) => count > 1).map(([serial]) => serial);
+    const entry = {
+      size,
+      EstadoEnvio: response.EstadoEnvio,
+      TiempoEsperaEnvio: response.TiempoEsperaEnvio,
+      CSV: response.CSV,
+      lineCount: lines.length,
+      sameOrder: isDeepStrictEqual(replied, sent),
+      rawMatchesParsed: isDeepStrictEqual(raw, replied),
+      firstDifference:
+        difference === -1 && replied.length === sent.length
+          ? undefined
+          : difference + 1 || sent.length + 1,
+      estados,
+      refused: lines.flatMap((line, index) =>
+        line.EstadoRegistro === "Incorrecto"
+          ? [
+              {
+                position: index + 1,
+                number: numberOf(line.IDFactura?.NumSerieFactura),
+                CodigoErrorRegistro: line.CodigoErrorRegistro,
+              },
+            ]
+          : [],
+      ),
+      sentNumbers: sent.map(numberOf),
+      replyNumbers: replied.map(numberOf),
+      missing,
+      unexpected,
+      duplicated,
+      answeredEach:
+        !missing.length &&
+        !unexpected.length &&
+        !duplicated.length &&
+        lines.every((line) => line.EstadoRegistro),
+      plannedRefusal: planned && {
+        number: numberOf(planned.IDFactura.NumSerieFactura),
+        asPlanned:
+          plannedLine?.EstadoRegistro === "Incorrecto" && plannedLine.CodigoErrorRegistro === 1161,
+      },
+    };
+    evidence.envios.push(entry);
+    report(stage, entry);
+    if (!entry.answeredEach || !entry.rawMatchesParsed) evidence.incomplete = true;
+    else if (!entry.sameOrder) evidence.anyDifferent = true;
+    if (entry.plannedRefusal?.asPlanned === false) evidence.incomplete = true;
+    // Each envío is a chain of its own, so a later one still gives order evidence: carry on.
+    prior = response;
+  }
+  return evidence;
 }
 
 export async function submitFirstRecordProbe(
@@ -1634,6 +1827,7 @@ async function main() {
       "fresh-installation",
       "registered-name-mismatch",
       "rejected-invoice-credit",
+      "reply-order",
     ].includes(mode)
   ) {
     throw new Error("Unknown AEAT preproduction mode");
@@ -1643,9 +1837,16 @@ async function main() {
   const passphrase = required("AEAT_TEST_P12_PASSWORD");
   const kind = certificateKind();
   const endpoint = (kind === "sello" ? SOAP_ENDPOINTS_SELLO : SOAP_ENDPOINTS).preproduction;
+  const sendToAeat = certificateFetch(endpoint, await loadCertificate(), passphrase);
+  let lastRawReply;
   const client = createClient({
     endpoint,
-    fetch: certificateFetch(endpoint, await loadCertificate(), passphrase),
+    fetch: async (url, init) => {
+      lastRawReply = undefined;
+      const response = await sendToAeat(url, init);
+      lastRawReply = await response.clone().text();
+      return response;
+    },
   });
   const obligadoEmision = { NombreRazon: name, NIF: nif };
   const consultaCabecera = issuerConsultaHeader(obligadoEmision);
@@ -1829,6 +2030,62 @@ async function main() {
         process.stdout.write(`AEAT cancellation comparison ${stage}: ${JSON.stringify(entry)}\n`),
     );
     process.stdout.write(`AEAT cancellation comparison complete: ${JSON.stringify(evidence)}\n`);
+    if (evidence.incomplete) process.exitCode = 1;
+    return;
+  }
+
+  if (mode === "reply-order") {
+    const envios = REPLY_ORDER_PLAN.map(([size, refusedAt]) =>
+      buildReplyOrderProbeRecords(
+        {
+          nif,
+          name,
+          systemNif: required("AEAT_TEST_SYSTEM_NIF"),
+          systemName: required("AEAT_TEST_SYSTEM_NAME"),
+          recipientNif: recipient.NIF,
+          recipientName: recipient.NombreRazon,
+          now,
+          runId,
+        },
+        size,
+        { refusedAt },
+      ),
+    );
+    process.stdout.write(
+      `AEAT reply-order plan: ${JSON.stringify(
+        envios.map((records) => ({
+          size: records.length,
+          first: records[0].IDFactura.NumSerieFactura,
+          refusedAtPosition:
+            records.findIndex((record) => record.RechazoPrevio === "S") + 1 || null,
+          issueDates:
+            records.length <= 5
+              ? records.map((r) => r.IDFactura.FechaExpedicionFactura)
+              : undefined,
+          generated:
+            records.length <= 5 ? records.map((r) => r.FechaHoraHusoGenRegistro) : undefined,
+        })),
+      )}\n`,
+    );
+    const evidence = await submitReplyOrderProbe(
+      client,
+      cabecera,
+      envios,
+      () => lastRawReply,
+      (stage, entry) =>
+        process.stdout.write(`AEAT reply-order ${stage}: ${JSON.stringify(entry)}\n`),
+    );
+    process.stdout.write(
+      `AEAT reply-order complete: ${JSON.stringify({
+        incomplete: evidence.incomplete,
+        anyDifferent: evidence.anyDifferent,
+        sizes: evidence.envios.map(({ size, sameOrder, answeredEach }) => ({
+          size,
+          sameOrder,
+          answeredEach,
+        })),
+      })}\n`,
+    );
     if (evidence.incomplete) process.exitCode = 1;
     return;
   }

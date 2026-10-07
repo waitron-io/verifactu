@@ -26,6 +26,7 @@ on:
           - fresh-installation
           - registered-name-mismatch
           - rejected-invoice-credit
+          - reply-order
         default: consult
         required: true
       excluded_regime:
