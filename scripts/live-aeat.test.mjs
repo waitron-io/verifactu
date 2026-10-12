@@ -254,6 +254,107 @@ test("conflict probe retains later outcomes and replays the batch successor byte
   assert.equal(waits.length, sent.length - 1);
 });
 
+for (const mode of ["conflict", "held-cancellation"]) {
+  test(`${mode} probe generates each chain after its wait and preserves retry bytes`, async () => {
+    const build =
+      mode === "conflict"
+        ? live.buildConflictSuccessorProbeRecords
+        : live.buildHeldCancellationSuccessorProbeRecords;
+    const submit =
+      mode === "conflict"
+        ? live.submitConflictSuccessorProbe
+        : live.submitHeldCancellationSuccessorProbe;
+    let clock = decimalOptions.now.getTime() + 1_000;
+    const records = build(decimalOptions);
+    const { client, sent, wait } = successorProbeClient(records, (response, body) => {
+      for (const [index, item] of body.entries()) {
+        const record = item.RegistroAlta ?? item.RegistroAnulacion;
+        assert.equal(record.Huella, computeHuella(record));
+        const age = clock - Date.parse(record.FechaHoraHusoGenRegistro);
+        if (age > 240_000 && response.RespuestaLinea[index].EstadoRegistro === "Correcto") {
+          Object.assign(response.RespuestaLinea[index], {
+            EstadoRegistro: "AceptadoConErrores",
+            CodigoErrorRegistro: 2004,
+          });
+          response.EstadoEnvio = "ParcialmenteCorrecto";
+        }
+      }
+    });
+    const evidence = await submit(
+      client,
+      successorHeader,
+      records,
+      undefined,
+      async (seconds) => {
+        await wait(seconds);
+        clock += 90_000;
+      },
+      (kind, stage) => {
+        live.prepareSuccessorProbeChain(
+          records,
+          kind,
+          build,
+          decimalOptions,
+          new Date(clock),
+          stage,
+        );
+      },
+    );
+    assert.equal(evidence.incomplete, false);
+    assert.equal(evidence.stoppedAfter, undefined);
+    for (const entry of Object.values(evidence)) {
+      for (const line of entry?.lines ?? []) assert.notEqual(line.CodigoErrorRegistro, 2004);
+    }
+    const expected =
+      mode === "conflict"
+        ? [1_000, 1_000, 181_000, 181_000, 181_000, 451_000, 451_000, 451_000, 721_000]
+        : [1_000, 1_000, 1_000, 271_000, 271_000];
+    assert.deepEqual(
+      sent.map(
+        (body) =>
+          Date.parse((body[0].RegistroAlta ?? body[0].RegistroAnulacion).FechaHoraHusoGenRegistro) -
+          decimalOptions.now.getTime(),
+      ),
+      expected,
+    );
+    if (mode === "conflict") {
+      assert.deepEqual(sent[6][1], sent[7][0]);
+      assert.equal(
+        evidence.batchLater.lines[0].RegistroAnterior.Huella,
+        sent[7][0].RegistroAlta.Huella,
+      );
+    } else {
+      assert.equal(evidence.heldCancellation.notSubmitted, true);
+      assert.equal(
+        evidence.rejectedSuccessor.lines[0].RegistroAnterior.Huella,
+        evidence.heldCancellation.Huella,
+      );
+    }
+  });
+}
+
+test("successor probe retains earlier evidence if generating a later chain fails", async () => {
+  const records = live.buildConflictSuccessorProbeRecords(decimalOptions);
+  const { client, sent, wait } = successorProbeClient(records);
+  const evidence = await live.submitConflictSuccessorProbe(
+    client,
+    successorHeader,
+    records,
+    undefined,
+    wait,
+    (kind) => {
+      if (kind === "later") throw new Error("Waitron SL ES89890001K failed generation");
+    },
+  );
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedBefore, "laterOriginal");
+  assert.equal(evidence.controlOriginal.lines[0].EstadoRegistro, "Correcto");
+  assert.equal(evidence.controlSuccessor.lines[0].EstadoRegistro, "Correcto");
+  assert.equal(evidence.laterOriginal.generationError, "[name] [NIF] failed generation");
+  assert.equal(sent.length, 2);
+  assert.equal(evidence.laterSuccessor, undefined);
+});
+
 test("conflict probe retries an actually unanswered sibling without calling it accepted", async () => {
   assert.equal(typeof live.submitConflictSuccessorProbe, "function");
   const records = live.buildConflictSuccessorProbeRecords(decimalOptions);
