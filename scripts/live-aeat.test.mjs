@@ -278,6 +278,7 @@ for (const invalid of [
   "wrong-issuer",
   "transport",
   "wait",
+  "contradictory-envelope",
 ]) {
   test(`conflict probe stops before successors on ${invalid} prerequisite evidence`, async () => {
     assert.equal(typeof live.submitConflictSuccessorProbe, "function");
@@ -285,6 +286,7 @@ for (const invalid of [
     const { client, sent, wait } = successorProbeClient(records, (response, body, count) => {
       if (count !== 4) return;
       if (invalid === "wrong-code") response.RespuestaLinea[0].CodigoErrorRegistro = 1161;
+      if (invalid === "contradictory-envelope") response.EstadoEnvio = "Correcto";
       if (invalid === "missing") response.RespuestaLinea = [];
       if (invalid === "duplicate") response.RespuestaLinea.push(response.RespuestaLinea[0]);
       if (invalid === "wrong-date")
@@ -347,6 +349,26 @@ test("held cancellation probe measures both successors only after the intended p
     [{ RegistroAlta: records.rejected.successor }],
   ]);
   assert.equal(waits.length, 5);
+});
+
+test("a malformed batch envelope cannot authorise retry of its missing sibling", async () => {
+  const records = live.buildConflictSuccessorProbeRecords(decimalOptions);
+  const { client, sent, wait } = successorProbeClient(records, (response, body) => {
+    if (body.length === 2) {
+      response.RespuestaLinea.pop();
+      response.EstadoEnvio = "not-a-service-state";
+    }
+  });
+  const evidence = await live.submitConflictSuccessorProbe(
+    client,
+    successorHeader,
+    records,
+    undefined,
+    wait,
+  );
+  assert.equal(evidence.stoppedAfter, "batchConflict");
+  assert.equal(evidence.batchRetry, undefined);
+  assert.equal(sent.length, 7);
 });
 
 for (const invalid of ["accepted-original", "wrong-rejection", "accepted-cancellation"]) {

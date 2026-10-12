@@ -759,10 +759,17 @@ async function submitSuccessorStages(client, cabecera, stages, report, waitForSu
     const answered = (line) =>
       line.Respuestas === 1 &&
       ["Correcto", "AceptadoConErrores", "Incorrecto"].includes(line.EstadoRegistro);
-    const complete =
+    const envelopeValid =
       ["Correcto", "ParcialmenteCorrecto", "Incorrecto"].includes(response.EstadoEnvio) &&
-      entry.unexpected === 0 &&
-      lines.every(answered);
+      !(
+        response.EstadoEnvio === "Correcto" &&
+        lines.some((line) => line.EstadoRegistro !== "Correcto")
+      ) &&
+      !(
+        response.EstadoEnvio === "Incorrecto" &&
+        lines.some((line) => ["Correcto", "AceptadoConErrores"].includes(line.EstadoRegistro))
+      );
+    const complete = envelopeValid && entry.unexpected === 0 && lines.every(answered);
     if (!complete) evidence.incomplete = true;
     const first = lines[0];
     const expected =
@@ -773,6 +780,7 @@ async function submitSuccessorStages(client, cabecera, stages, report, waitForSu
           String(first.CodigoErrorRegistro) === String(prerequisite.code)) &&
         (prerequisite.state !== "Correcto" || response.EstadoEnvio === "Correcto"));
     if (
+      !envelopeValid ||
       !expected ||
       (!complete &&
         !(
