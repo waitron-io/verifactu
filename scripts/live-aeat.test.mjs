@@ -58,7 +58,13 @@ import {
   waitForNextSubmission,
   withLiveStage,
 } from "./live-aeat.mjs";
-import { buildCadena, computeHuella, serializeEnvio, validate } from "../dist/index.js";
+import {
+  buildCadena,
+  computeHuella,
+  createClient,
+  serializeEnvio,
+  validate,
+} from "../dist/index.js";
 import { createFakeAeat } from "../dist/testing/fake-aeat.js";
 import * as live from "./live-aeat.mjs";
 
@@ -170,7 +176,6 @@ function successorProbeClient(records, adjust = () => {}) {
         const record = item.RegistroAlta ?? item.RegistroAnulacion;
         const changed = Object.values(records).some((probe) => record === probe.changed);
         const rejected = record === records.rejected?.original;
-        const cancellation = record === records.rejected?.cancellation;
         return {
           IDFactura: item.RegistroAlta
             ? record.IDFactura
@@ -179,7 +184,7 @@ function successorProbeClient(records, adjust = () => {}) {
                 NumSerieFactura: record.IDFactura.NumSerieFacturaAnulada,
                 FechaExpedicionFactura: record.IDFactura.FechaExpedicionFacturaAnulada,
               },
-          EstadoRegistro: changed || rejected || cancellation ? "Incorrecto" : "Correcto",
+          EstadoRegistro: changed || rejected ? "Incorrecto" : "Correcto",
           ...(changed
             ? {
                 CodigoErrorRegistro: 3000,
@@ -190,7 +195,6 @@ function successorProbeClient(records, adjust = () => {}) {
               }
             : {}),
           ...(rejected ? { CodigoErrorRegistro: 1161 } : {}),
-          ...(cancellation ? { CodigoErrorRegistro: 3001 } : {}),
         };
       });
       const response = {
@@ -395,6 +399,36 @@ for (const invalid of ["accepted-original", "wrong-rejection"]) {
   });
 }
 
+test("successor probe redacts configured names and prefixed NIFs in reply and wait errors", async () => {
+  let evidenceStage = 0;
+  const records = live.buildConflictSuccessorProbeRecords(decimalOptions);
+  const { client, wait } = successorProbeClient(records, (response, body, count) => {
+    if (count === 4) {
+      response.RespuestaLinea[0].DescripcionErrorRegistro = "Waitron SL ES89890001K Cliente Uno";
+      response.RespuestaLinea[0].RegistroDuplicado.DescripcionErrorRegistro =
+        "Cliente Uno 11111111H";
+    }
+  });
+  const evidence = await live.submitConflictSuccessorProbe(
+    client,
+    successorHeader,
+    records,
+    undefined,
+    async (seconds) => {
+      if (evidenceStage++ === 3) throw new Error("Waitron SL ES89890001K Cliente Uno");
+      await wait(seconds);
+    },
+  );
+  assert.equal(evidence.stoppedAfter, "laterConflict");
+  assert.doesNotMatch(JSON.stringify(evidence), /Waitron SL|Cliente Uno|89890001K|11111111H/);
+  assert.match(evidence.laterConflict.lines[0].DescripcionErrorRegistro, /\[NIF\]/);
+  assert.match(
+    evidence.laterConflict.lines[0].RegistroDuplicado.DescripcionErrorRegistro,
+    /\[name\]/,
+  );
+  assert.match(evidence.waitError, /\[name\]/);
+});
+
 for (const mode of ["conflict-successors", "held-cancellation-successors"]) {
   test(`${mode} is a reachable live CLI mode`, () => {
     const run = spawnSync(process.execPath, ["scripts/live-aeat.mjs", mode], {
@@ -411,8 +445,16 @@ for (const mode of ["conflict-successors", "held-cancellation-successors"]) {
 test("conflict successors pass through the real SOAP client with original bytes on retry", async () => {
   const records = live.buildConflictSuccessorProbeRecords(decimalOptions);
   const fake = createFakeAeat({ serverNow: decimalOptions.now, tiempoEsperaInicial: 0 });
+  const requests = [];
+  const client = createClient({
+    endpoint: "https://fake.aeat.test/soap",
+    fetch: async (url, init) => {
+      requests.push(init.body);
+      return fake.fetch(url, init);
+    },
+  });
   const evidence = await live.submitConflictSuccessorProbe(
-    fake.client(),
+    client,
     successorHeader,
     records,
     undefined,
@@ -429,7 +471,49 @@ test("conflict successors pass through the real SOAP client with original bytes 
   );
   assert.equal(evidence.batchLater.lines[0].EstadoRegistro, "Correcto");
   assert.equal(fake.stored().length, 7);
+  const blocks = (xml) => xml.match(/<sfLR:RegistroFactura>[\s\S]*?<\/sfLR:RegistroFactura>/g);
+  assert.equal(blocks(requests[6]).length, 2);
+  assert.equal(blocks(requests[7]).length, 1);
+  assert.equal(blocks(requests[7])[0], blocks(requests[6])[1]);
 });
+
+for (const malformed of [
+  "extra-line",
+  "duplicate-sibling",
+  "unknown-sibling",
+  "accepted-control-envelope",
+]) {
+  test(`successor probe stops on ${malformed} instead of reporting a complete observation`, async () => {
+    const records = live.buildConflictSuccessorProbeRecords(decimalOptions);
+    const { client, sent, wait } = successorProbeClient(records, (response, body, count) => {
+      if (malformed === "accepted-control-envelope" && count === 1)
+        response.EstadoEnvio = "ParcialmenteCorrecto";
+      if (count !== 7) return;
+      if (malformed === "extra-line")
+        response.RespuestaLinea.push({
+          ...response.RespuestaLinea[1],
+          IDFactura: records.control.original.IDFactura,
+        });
+      if (malformed === "duplicate-sibling")
+        response.RespuestaLinea.push(response.RespuestaLinea[1]);
+      if (malformed === "unknown-sibling") response.RespuestaLinea[1].EstadoRegistro = "Pendiente";
+    });
+    const evidence = await live.submitConflictSuccessorProbe(
+      client,
+      successorHeader,
+      records,
+      undefined,
+      wait,
+    );
+    assert.equal(evidence.incomplete, true);
+    assert.equal(
+      evidence.stoppedAfter,
+      malformed === "accepted-control-envelope" ? "controlOriginal" : "batchConflict",
+    );
+    assert.equal(sent.length, malformed === "accepted-control-envelope" ? 1 : 7);
+    assert.equal(evidence.batchRetry, undefined);
+  });
+}
 
 test("rejected-predecessor batch links every successor to the rejected record before it", () => {
   const { rejected, control } = buildRejectedPredecessorProbeRecords(decimalOptions, 3);

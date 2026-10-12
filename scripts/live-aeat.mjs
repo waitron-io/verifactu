@@ -676,10 +676,25 @@ function successorRecordKey(record) {
 
 async function submitSuccessorStages(client, cabecera, stages, report, waitForSubmission) {
   const evidence = { incomplete: false };
+  const names = [
+    ...new Set([
+      cabecera.ObligadoEmision.NombreRazon,
+      ...stages.flatMap(([, records]) =>
+        records.flatMap((record) => [
+          record.NombreRazonEmisor,
+          record.SistemaInformatico.NombreRazon,
+          ...(record.Destinatarios?.IDDestinatario ?? []).map(({ NombreRazon }) => NombreRazon),
+        ]),
+      ),
+    ]),
+  ]
+    .filter((name) => typeof name === "string" && name.length > 0)
+    .sort((a, b) => b.length - a.length);
   const redact = (message) =>
-    String(message)
-      .replace(/\b[A-Z0-9]{9}\b/g, "[NIF]")
-      .replaceAll(cabecera.ObligadoEmision.NombreRazon, "[issuer]");
+    names.reduce(
+      (text, name) => text.replaceAll(name, "[name]"),
+      String(message).replace(/\b(?:ES)?[A-Z0-9]{9}\b/g, "[NIF]"),
+    );
   let previous;
   let previousStage;
   for (const [stage, records, prerequisite, allowMissingSibling] of stages) {
