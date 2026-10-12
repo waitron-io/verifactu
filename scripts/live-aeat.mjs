@@ -592,6 +592,291 @@ export function buildChangedDuplicateProbeRecords(options) {
   };
 }
 
+function successorProbeAlta(options, kind, position, previous) {
+  const base = buildTestRecord(options);
+  const record = {
+    ...base,
+    IDFactura: {
+      ...base.IDFactura,
+      NumSerieFactura: base.IDFactura.NumSerieFactura.replace("CI/", `CI-SU-${kind}-${position}/`),
+    },
+    RefExterna: `CI-SU-${kind}-${position}-${options.runId}`,
+    SistemaInformatico: {
+      ...base.SistemaInformatico,
+      NumeroInstalacion: `CI-SU-${kind}-${options.runId}`,
+    },
+    Encadenamiento: previous
+      ? { RegistroAnterior: { ...previous.IDFactura, Huella: previous.Huella } }
+      : { PrimerRegistro: "S" },
+  };
+  return { ...record, Huella: computeHuella(record) };
+}
+
+export function buildConflictSuccessorProbeRecords(options) {
+  const probes = {};
+  for (const kind of ["control", "later", "batch"]) {
+    const original = successorProbeAlta(options, kind, 1);
+    if (kind === "control") {
+      probes[kind] = { original, successor: successorProbeAlta(options, kind, 2, original) };
+      continue;
+    }
+    const changedContent = {
+      ...original,
+      Encadenamiento: { RegistroAnterior: { ...original.IDFactura, Huella: original.Huella } },
+      Desglose: [
+        {
+          ...original.Desglose[0],
+          BaseImponibleOimporteNoSujeto: "2.00",
+          CuotaRepercutida: "0.42",
+        },
+      ],
+      CuotaTotal: "0.42",
+      ImporteTotal: "2.42",
+    };
+    const changed = { ...changedContent, Huella: computeHuella(changedContent) };
+    const successor = successorProbeAlta(options, kind, 2, changed);
+    probes[kind] = {
+      original,
+      changed,
+      successor,
+      ...(kind === "batch" ? { later: successorProbeAlta(options, kind, 3, successor) } : {}),
+    };
+  }
+  return probes;
+}
+
+export function buildHeldCancellationSuccessorProbeRecords(options) {
+  const probes = {};
+  for (const kind of ["control", "rejected"]) {
+    const first = successorProbeAlta(options, `cancel-${kind}`, 1);
+    const original = kind === "rejected" ? { ...first, RechazoPrevio: "S" } : first;
+    const cancellation = buildTestCancellation({
+      record: original,
+      issuedAt: options.now,
+      now: options.now,
+    });
+    const successor = successorProbeAlta(options, `cancel-${kind}`, 2, {
+      IDFactura: original.IDFactura,
+      Huella: cancellation.Huella,
+    });
+    probes[kind] = { original, cancellation, successor };
+  }
+  return probes;
+}
+
+function successorRecordKey(record) {
+  return record.IDFactura.NumSerieFactura
+    ? record.IDFactura
+    : {
+        IDEmisorFactura: record.IDFactura.IDEmisorFacturaAnulada,
+        NumSerieFactura: record.IDFactura.NumSerieFacturaAnulada,
+        FechaExpedicionFactura: record.IDFactura.FechaExpedicionFacturaAnulada,
+      };
+}
+
+async function submitSuccessorStages(client, cabecera, stages, report, waitForSubmission) {
+  const evidence = { incomplete: false };
+  const names = [
+    ...new Set([
+      cabecera.ObligadoEmision.NombreRazon,
+      ...stages.flatMap(([, records]) =>
+        records.flatMap((record) => [
+          record.NombreRazonEmisor,
+          record.SistemaInformatico.NombreRazon,
+          ...(record.Destinatarios?.IDDestinatario ?? []).map(({ NombreRazon }) => NombreRazon),
+        ]),
+      ),
+    ]),
+  ]
+    .filter((name) => typeof name === "string" && name.length > 0)
+    .sort((a, b) => b.length - a.length);
+  const redact = (message) =>
+    names.reduce(
+      (text, name) => text.replaceAll(name, "[name]"),
+      String(message).replace(/\b(?:ES)?[A-Z0-9]{9}\b/g, "[NIF]"),
+    );
+  let previous;
+  let previousStage;
+  for (const [stage, records, prerequisite, allowMissingSibling] of stages) {
+    if (prerequisite?.held) {
+      evidence[stage] = {
+        notSubmitted: true,
+        reason: "held-after-original-rejection",
+        NumSerieFactura: recordSerial(records[0]),
+        Huella: records[0].Huella,
+      };
+      report(stage, evidence[stage]);
+      continue;
+    }
+    if (previous) {
+      try {
+        await waitForSubmission(previous.TiempoEsperaEnvio);
+      } catch (error) {
+        evidence.incomplete = true;
+        evidence.stoppedAfter = previousStage;
+        evidence.waitError = redact(error.message);
+        return evidence;
+      }
+    }
+    let response;
+    try {
+      response = await client.submit(
+        cabecera,
+        records.map((record) =>
+          record.IDFactura.NumSerieFactura
+            ? { RegistroAlta: record }
+            : { RegistroAnulacion: record },
+        ),
+      );
+    } catch (error) {
+      evidence[stage] = { transportError: redact(error.message) };
+      report(stage, evidence[stage]);
+      evidence.incomplete = true;
+      evidence.stoppedAfter = stage;
+      return evidence;
+    }
+    const replies = response.RespuestaLinea ?? [];
+    const lines = records.map((record) => {
+      const key = successorRecordKey(record);
+      const matches = replies.filter((line) => isDeepStrictEqual(line.IDFactura, key));
+      const line = matches.length === 1 ? matches[0] : undefined;
+      return {
+        NumSerieFactura: key.NumSerieFactura,
+        FechaExpedicionFactura: key.FechaExpedicionFactura,
+        HuellaEnviada: record.Huella,
+        RegistroAnterior: record.Encadenamiento.RegistroAnterior && {
+          NumSerieFactura: record.Encadenamiento.RegistroAnterior.NumSerieFactura,
+          Huella: record.Encadenamiento.RegistroAnterior.Huella,
+        },
+        EstadoRegistro: line?.EstadoRegistro,
+        CodigoErrorRegistro: line?.CodigoErrorRegistro,
+        DescripcionErrorRegistro:
+          line?.DescripcionErrorRegistro && redact(line.DescripcionErrorRegistro),
+        RegistroDuplicado: line?.RegistroDuplicado && {
+          ...line.RegistroDuplicado,
+          DescripcionErrorRegistro:
+            line.RegistroDuplicado.DescripcionErrorRegistro &&
+            redact(line.RegistroDuplicado.DescripcionErrorRegistro),
+        },
+        Respuestas: matches.length,
+      };
+    });
+    const entry = {
+      EstadoEnvio: response.EstadoEnvio,
+      TiempoEsperaEnvio: response.TiempoEsperaEnvio,
+      CSV: response.CSV,
+      lines,
+      unexpected: replies.filter(
+        (line) =>
+          !records.some((record) => isDeepStrictEqual(line.IDFactura, successorRecordKey(record))),
+      ).length,
+      ...(stage === "batchRetry"
+        ? {
+            replayReason:
+              evidence.batchConflict.lines[1].Respuestas === 0
+                ? "missing-service-reply"
+                : "simulated-client-lost-response",
+          }
+        : {}),
+    };
+    evidence[stage] = entry;
+    report(stage, entry);
+    const answered = (line) =>
+      line.Respuestas === 1 &&
+      ["Correcto", "AceptadoConErrores", "Incorrecto"].includes(line.EstadoRegistro);
+    const envelopeValid =
+      ["Correcto", "ParcialmenteCorrecto", "Incorrecto"].includes(response.EstadoEnvio) &&
+      !(
+        response.EstadoEnvio === "Correcto" &&
+        lines.some((line) => line.EstadoRegistro !== "Correcto")
+      ) &&
+      !(
+        response.EstadoEnvio === "Incorrecto" &&
+        lines.some((line) => ["Correcto", "AceptadoConErrores"].includes(line.EstadoRegistro))
+      );
+    const complete = envelopeValid && entry.unexpected === 0 && lines.every(answered);
+    if (!complete) evidence.incomplete = true;
+    const first = lines[0];
+    const expected =
+      prerequisite === undefined ||
+      (answered(first) &&
+        first.EstadoRegistro === prerequisite.state &&
+        (prerequisite.code === undefined ||
+          String(first.CodigoErrorRegistro) === String(prerequisite.code)) &&
+        (prerequisite.state !== "Correcto" || response.EstadoEnvio === "Correcto"));
+    if (
+      !envelopeValid ||
+      !expected ||
+      (!complete &&
+        !(
+          allowMissingSibling &&
+          answered(first) &&
+          lines[1].Respuestas === 0 &&
+          entry.unexpected === 0
+        ))
+    ) {
+      evidence.incomplete = true;
+      evidence.stoppedAfter = stage;
+      return evidence;
+    }
+    previous = response;
+    previousStage = stage;
+  }
+  return evidence;
+}
+
+export function submitConflictSuccessorProbe(
+  client,
+  cabecera,
+  records,
+  report = () => {},
+  waitForSubmission = waitForNextSubmission,
+) {
+  const accepted = { state: "Correcto" };
+  const conflict = { state: "Incorrecto", code: 3000 };
+  return submitSuccessorStages(
+    client,
+    cabecera,
+    [
+      ["controlOriginal", [records.control.original], accepted],
+      ["controlSuccessor", [records.control.successor], accepted],
+      ["laterOriginal", [records.later.original], accepted],
+      ["laterConflict", [records.later.changed], conflict],
+      ["laterSuccessor", [records.later.successor]],
+      ["batchOriginal", [records.batch.original], accepted],
+      ["batchConflict", [records.batch.changed, records.batch.successor], conflict, true],
+      ["batchRetry", [records.batch.successor]],
+      ["batchLater", [records.batch.later]],
+    ],
+    report,
+    waitForSubmission,
+  );
+}
+
+export function submitHeldCancellationSuccessorProbe(
+  client,
+  cabecera,
+  records,
+  report = () => {},
+  waitForSubmission = waitForNextSubmission,
+) {
+  const accepted = { state: "Correcto" };
+  return submitSuccessorStages(
+    client,
+    cabecera,
+    [
+      ["controlOriginal", [records.control.original], accepted],
+      ["controlCancellation", [records.control.cancellation], accepted],
+      ["controlSuccessor", [records.control.successor], accepted],
+      ["rejectedOriginal", [records.rejected.original], { state: "Incorrecto", code: 1161 }],
+      ["heldCancellation", [records.rejected.cancellation], { held: true }],
+      ["rejectedSuccessor", [records.rejected.successor]],
+    ],
+    report,
+    waitForSubmission,
+  );
+}
+
 export function buildFreshInstallationProbeRecords(options) {
   const base = buildTestRecord(options);
   const recordFor = (kind) => {
@@ -1828,6 +2113,8 @@ async function main() {
       "registered-name-mismatch",
       "rejected-invoice-credit",
       "reply-order",
+      "conflict-successors",
+      "held-cancellation-successors",
     ].includes(mode)
   ) {
     throw new Error("Unknown AEAT preproduction mode");
@@ -1883,6 +2170,57 @@ async function main() {
   };
   const cabecera = submissionHeader(obligadoEmision);
   const runId = process.env.GITHUB_RUN_ID ?? String(now.getTime());
+
+  if (mode === "conflict-successors" || mode === "held-cancellation-successors") {
+    const options = {
+      nif,
+      name,
+      systemNif: required("AEAT_TEST_SYSTEM_NIF"),
+      systemName: required("AEAT_TEST_SYSTEM_NAME"),
+      recipientNif: recipient.NIF,
+      recipientName: recipient.NombreRazon,
+      now,
+      runId,
+    };
+    const records =
+      mode === "conflict-successors"
+        ? buildConflictSuccessorProbeRecords(options)
+        : buildHeldCancellationSuccessorProbeRecords(options);
+    process.stdout.write(
+      `AEAT ${mode} plan: ${JSON.stringify(
+        Object.fromEntries(
+          Object.entries(records).map(([kind, entries]) => [
+            kind,
+            Object.fromEntries(
+              Object.entries(entries).map(([position, record]) => [
+                position,
+                {
+                  NumSerieFactura: recordSerial(record),
+                  Huella: record.Huella,
+                  FechaExpedicionFactura: successorRecordKey(record).FechaExpedicionFactura,
+                  NumeroInstalacion: record.SistemaInformatico.NumeroInstalacion,
+                  RegistroAnterior: record.Encadenamiento.RegistroAnterior && {
+                    NumSerieFactura: record.Encadenamiento.RegistroAnterior.NumSerieFactura,
+                    Huella: record.Encadenamiento.RegistroAnterior.Huella,
+                  },
+                },
+              ]),
+            ),
+          ]),
+        ),
+      )}\n`,
+    );
+    const submit =
+      mode === "conflict-successors"
+        ? submitConflictSuccessorProbe
+        : submitHeldCancellationSuccessorProbe;
+    const evidence = await submit(client, cabecera, records, (stage, entry) =>
+      process.stdout.write(`AEAT ${mode} ${stage}: ${JSON.stringify(entry)}\n`),
+    );
+    process.stdout.write(`AEAT ${mode} complete: ${JSON.stringify(evidence)}\n`);
+    if (evidence.incomplete) process.exitCode = 1;
+    return;
+  }
 
   if (mode === "rejected-invoice-credit") {
     const records = buildRejectedInvoiceCreditProbeRecords({

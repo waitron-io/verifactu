@@ -58,8 +58,15 @@ import {
   waitForNextSubmission,
   withLiveStage,
 } from "./live-aeat.mjs";
-import { buildCadena, computeHuella, serializeEnvio, validate } from "../dist/index.js";
+import {
+  buildCadena,
+  computeHuella,
+  createClient,
+  serializeEnvio,
+  validate,
+} from "../dist/index.js";
 import { createFakeAeat } from "../dist/testing/fake-aeat.js";
+import * as live from "./live-aeat.mjs";
 
 const record = {
   IDFactura: { NumSerieFactura: "CI/123" },
@@ -76,6 +83,437 @@ const decimalOptions = {
   now: new Date("2026-09-27T12:00:00Z"),
   runId: "12345",
 };
+
+test("conflict successor probes isolate controls and link to the actual conflicting hash", () => {
+  assert.equal(typeof live.buildConflictSuccessorProbeRecords, "function");
+  const probes = live.buildConflictSuccessorProbeRecords(decimalOptions);
+  for (const kind of ["control", "later", "batch"]) {
+    const records = probes[kind];
+    assert.equal(records.original.Encadenamiento.PrimerRegistro, "S");
+    const predecessor = kind === "control" ? records.original : records.changed;
+    if (kind !== "control") {
+      assert.deepEqual(records.changed.IDFactura, records.original.IDFactura);
+      assert.notEqual(records.changed.Huella, records.original.Huella);
+      assert.deepEqual(records.changed.Encadenamiento.RegistroAnterior, {
+        ...records.original.IDFactura,
+        Huella: records.original.Huella,
+      });
+    }
+    assert.deepEqual(records.successor.Encadenamiento.RegistroAnterior, {
+      ...predecessor.IDFactura,
+      Huella: predecessor.Huella,
+    });
+    if (kind === "batch") {
+      assert.deepEqual(records.later.Encadenamiento.RegistroAnterior, {
+        ...records.successor.IDFactura,
+        Huella: records.successor.Huella,
+      });
+    }
+    for (const record of Object.values(records)) {
+      assert.deepEqual(validate(record), []);
+      assert.equal(record.Huella, computeHuella(record));
+      assert.equal(
+        record.SistemaInformatico.NumeroInstalacion,
+        records.original.SistemaInformatico.NumeroInstalacion,
+      );
+    }
+  }
+  assert.equal(
+    new Set(Object.values(probes).map(({ original }) => original.IDFactura.NumSerieFactura)).size,
+    3,
+  );
+  assert.equal(
+    new Set(
+      Object.values(probes).map(({ original }) => original.SistemaInformatico.NumeroInstalacion),
+    ).size,
+    3,
+  );
+});
+
+test("held cancellation probe chains the successor to the cancellation, not the rejected alta", () => {
+  assert.equal(typeof live.buildHeldCancellationSuccessorProbeRecords, "function");
+  const probes = live.buildHeldCancellationSuccessorProbeRecords(decimalOptions);
+  for (const kind of ["control", "rejected"]) {
+    const { original, cancellation, successor } = probes[kind];
+    assert.equal(original.RechazoPrevio, kind === "rejected" ? "S" : undefined);
+    assert.equal(cancellation.SinRegistroPrevio, undefined);
+    assert.equal(cancellation.IDFactura.NumSerieFacturaAnulada, original.IDFactura.NumSerieFactura);
+    assert.deepEqual(successor.Encadenamiento.RegistroAnterior, {
+      ...original.IDFactura,
+      Huella: cancellation.Huella,
+    });
+    assert.notEqual(cancellation.Huella, original.Huella);
+    for (const record of [original, cancellation, successor]) {
+      assert.deepEqual(
+        validate(record).map(({ code, field }) => ({ code, field })),
+        kind === "rejected" && record === original
+          ? [{ code: "RECHAZO_PREVIO_REQUIRES_SUBSANACION", field: "RechazoPrevio" }]
+          : [],
+      );
+      assert.equal(record.Huella, computeHuella(record));
+    }
+  }
+  assert.notEqual(
+    probes.control.original.IDFactura.NumSerieFactura,
+    probes.rejected.original.IDFactura.NumSerieFactura,
+  );
+  assert.notEqual(
+    probes.control.original.SistemaInformatico.NumeroInstalacion,
+    probes.rejected.original.SistemaInformatico.NumeroInstalacion,
+  );
+});
+
+function successorProbeClient(records, adjust = () => {}) {
+  const sent = [];
+  const waits = [];
+  const client = {
+    async submit(header, body) {
+      assert.deepEqual(header, {
+        ObligadoEmision: { NIF: decimalOptions.nif, NombreRazon: decimalOptions.name },
+      });
+      sent.push(structuredClone(body));
+      const lines = body.map((item) => {
+        const record = item.RegistroAlta ?? item.RegistroAnulacion;
+        const changed = Object.values(records).some((probe) => record === probe.changed);
+        const rejected = record === records.rejected?.original;
+        return {
+          IDFactura: item.RegistroAlta
+            ? record.IDFactura
+            : {
+                IDEmisorFactura: record.IDFactura.IDEmisorFacturaAnulada,
+                NumSerieFactura: record.IDFactura.NumSerieFacturaAnulada,
+                FechaExpedicionFactura: record.IDFactura.FechaExpedicionFacturaAnulada,
+              },
+          EstadoRegistro: changed || rejected ? "Incorrecto" : "Correcto",
+          ...(changed
+            ? {
+                CodigoErrorRegistro: 3000,
+                RegistroDuplicado: {
+                  IdPeticionRegistroDuplicado: "test-original",
+                  EstadoRegistroDuplicado: "Correcta",
+                },
+              }
+            : {}),
+          ...(rejected ? { CodigoErrorRegistro: 1161 } : {}),
+        };
+      });
+      const response = {
+        EstadoEnvio: lines.every((line) => line.EstadoRegistro === "Correcto")
+          ? "Correcto"
+          : "ParcialmenteCorrecto",
+        TiempoEsperaEnvio: 2,
+        CSV: "test-receipt",
+        RespuestaLinea: lines,
+      };
+      adjust(response, body, sent.length);
+      return response;
+    },
+  };
+  return {
+    client,
+    sent,
+    waits,
+    wait: async (seconds) => {
+      assert.equal(seconds, 2);
+      waits.push(seconds);
+    },
+  };
+}
+
+const successorHeader = {
+  ObligadoEmision: { NIF: decimalOptions.nif, NombreRazon: decimalOptions.name },
+};
+
+test("conflict probe retains later outcomes and replays the batch successor byte for byte", async () => {
+  assert.equal(typeof live.submitConflictSuccessorProbe, "function");
+  const records = live.buildConflictSuccessorProbeRecords(decimalOptions);
+  const { client, sent, waits, wait } = successorProbeClient(records);
+  const evidence = await live.submitConflictSuccessorProbe(
+    client,
+    successorHeader,
+    records,
+    undefined,
+    wait,
+  );
+  assert.equal(evidence.incomplete, false);
+  assert.equal(evidence.laterConflict.lines[0].CodigoErrorRegistro, 3000);
+  assert.equal(evidence.laterSuccessor.lines[0].EstadoRegistro, "Correcto");
+  assert.equal(evidence.batchConflict.lines[1].EstadoRegistro, "Correcto");
+  assert.equal(evidence.batchRetry.replayReason, "simulated-client-lost-response");
+  assert.deepEqual(sent, [
+    [{ RegistroAlta: records.control.original }],
+    [{ RegistroAlta: records.control.successor }],
+    [{ RegistroAlta: records.later.original }],
+    [{ RegistroAlta: records.later.changed }],
+    [{ RegistroAlta: records.later.successor }],
+    [{ RegistroAlta: records.batch.original }],
+    [{ RegistroAlta: records.batch.changed }, { RegistroAlta: records.batch.successor }],
+    [{ RegistroAlta: records.batch.successor }],
+    [{ RegistroAlta: records.batch.later }],
+  ]);
+  assert.equal(waits.length, sent.length - 1);
+});
+
+test("conflict probe retries an actually unanswered sibling without calling it accepted", async () => {
+  assert.equal(typeof live.submitConflictSuccessorProbe, "function");
+  const records = live.buildConflictSuccessorProbeRecords(decimalOptions);
+  const { client, wait } = successorProbeClient(records, (response, body) => {
+    if (body.length === 2) response.RespuestaLinea.pop();
+  });
+  const evidence = await live.submitConflictSuccessorProbe(
+    client,
+    successorHeader,
+    records,
+    undefined,
+    wait,
+  );
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.batchConflict.lines[1].EstadoRegistro, undefined);
+  assert.equal(evidence.batchRetry.replayReason, "missing-service-reply");
+  assert.equal(evidence.batchRetry.lines[0].HuellaEnviada, records.batch.successor.Huella);
+  assert.equal(evidence.batchLater.lines[0].EstadoRegistro, "Correcto");
+});
+
+for (const invalid of [
+  "wrong-code",
+  "missing",
+  "duplicate",
+  "wrong-date",
+  "wrong-issuer",
+  "transport",
+  "wait",
+  "contradictory-envelope",
+]) {
+  test(`conflict probe stops before successors on ${invalid} prerequisite evidence`, async () => {
+    assert.equal(typeof live.submitConflictSuccessorProbe, "function");
+    const records = live.buildConflictSuccessorProbeRecords(decimalOptions);
+    const { client, sent, wait } = successorProbeClient(records, (response, body, count) => {
+      if (count !== 4) return;
+      if (invalid === "wrong-code") response.RespuestaLinea[0].CodigoErrorRegistro = 1161;
+      if (invalid === "contradictory-envelope") response.EstadoEnvio = "Correcto";
+      if (invalid === "missing") response.RespuestaLinea = [];
+      if (invalid === "duplicate") response.RespuestaLinea.push(response.RespuestaLinea[0]);
+      if (invalid === "wrong-date")
+        response.RespuestaLinea[0].IDFactura = {
+          ...response.RespuestaLinea[0].IDFactura,
+          FechaExpedicionFactura: "28-09-2026",
+        };
+      if (invalid === "wrong-issuer")
+        response.RespuestaLinea[0].IDFactura = {
+          ...response.RespuestaLinea[0].IDFactura,
+          IDEmisorFactura: "11111111H",
+        };
+      if (invalid === "transport") throw new Error("request refused for 89890001K");
+    });
+    const evidence = await live.submitConflictSuccessorProbe(
+      client,
+      successorHeader,
+      records,
+      undefined,
+      invalid === "wait"
+        ? async () => {
+            if (sent.length === 4) throw new Error("missing wait");
+            await wait(2);
+          }
+        : wait,
+    );
+    assert.equal(evidence.incomplete, true);
+    assert.equal(evidence.stoppedAfter, "laterConflict");
+    assert.equal(sent.length, 4);
+    assert.equal(evidence.laterSuccessor, undefined);
+    assert.doesNotMatch(JSON.stringify(evidence), /89890001K/);
+  });
+}
+
+test("held cancellation probe sends the successor while keeping the rejected original's cancellation unsent", async () => {
+  assert.equal(typeof live.submitHeldCancellationSuccessorProbe, "function");
+  const records = live.buildHeldCancellationSuccessorProbeRecords(decimalOptions);
+  const { client, sent, waits, wait } = successorProbeClient(records);
+  const evidence = await live.submitHeldCancellationSuccessorProbe(
+    client,
+    successorHeader,
+    records,
+    undefined,
+    wait,
+  );
+  assert.equal(evidence.incomplete, false);
+  assert.equal(evidence.rejectedOriginal.lines[0].CodigoErrorRegistro, 1161);
+  assert.equal(evidence.heldCancellation?.notSubmitted, true);
+  assert.equal(evidence.heldCancellation.reason, "held-after-original-rejection");
+  assert.equal(evidence.heldCancellation.Huella, records.rejected.cancellation.Huella);
+  assert.equal(evidence.rejectedSuccessor.lines[0].EstadoRegistro, "Correcto");
+  assert.equal(
+    evidence.rejectedSuccessor.lines[0].RegistroAnterior.Huella,
+    records.rejected.cancellation.Huella,
+  );
+  assert.deepEqual(sent, [
+    [{ RegistroAlta: records.control.original }],
+    [{ RegistroAnulacion: records.control.cancellation }],
+    [{ RegistroAlta: records.control.successor }],
+    [{ RegistroAlta: records.rejected.original }],
+    [{ RegistroAlta: records.rejected.successor }],
+  ]);
+  assert.equal(waits.length, 4);
+});
+
+test("a malformed batch envelope cannot authorise retry of its missing sibling", async () => {
+  const records = live.buildConflictSuccessorProbeRecords(decimalOptions);
+  const { client, sent, wait } = successorProbeClient(records, (response, body) => {
+    if (body.length === 2) {
+      response.RespuestaLinea.pop();
+      response.EstadoEnvio = "not-a-service-state";
+    }
+  });
+  const evidence = await live.submitConflictSuccessorProbe(
+    client,
+    successorHeader,
+    records,
+    undefined,
+    wait,
+  );
+  assert.equal(evidence.stoppedAfter, "batchConflict");
+  assert.equal(evidence.batchRetry, undefined);
+  assert.equal(sent.length, 7);
+});
+
+for (const invalid of ["accepted-original", "wrong-rejection"]) {
+  test(`held cancellation probe is inconclusive for ${invalid}`, async () => {
+    assert.equal(typeof live.submitHeldCancellationSuccessorProbe, "function");
+    const records = live.buildHeldCancellationSuccessorProbeRecords(decimalOptions);
+    const { client, sent, wait } = successorProbeClient(records, (response, body, count) => {
+      if (count === 4 && invalid === "accepted-original")
+        response.RespuestaLinea[0].EstadoRegistro = "Correcto";
+      if (count === 4 && invalid === "wrong-rejection")
+        response.RespuestaLinea[0].CodigoErrorRegistro = 3000;
+    });
+    const evidence = await live.submitHeldCancellationSuccessorProbe(
+      client,
+      successorHeader,
+      records,
+      undefined,
+      wait,
+    );
+    assert.equal(evidence.incomplete, true);
+    assert.equal(evidence.rejectedSuccessor, undefined);
+    assert.equal(sent.length, 4);
+  });
+}
+
+test("successor probe redacts configured names and prefixed NIFs in reply and wait errors", async () => {
+  let evidenceStage = 0;
+  const records = live.buildConflictSuccessorProbeRecords(decimalOptions);
+  const { client, wait } = successorProbeClient(records, (response, body, count) => {
+    if (count === 4) {
+      response.RespuestaLinea[0].DescripcionErrorRegistro = "Waitron SL ES89890001K Cliente Uno";
+      response.RespuestaLinea[0].RegistroDuplicado.DescripcionErrorRegistro =
+        "Cliente Uno 11111111H";
+    }
+  });
+  const evidence = await live.submitConflictSuccessorProbe(
+    client,
+    successorHeader,
+    records,
+    undefined,
+    async (seconds) => {
+      if (evidenceStage++ === 3) throw new Error("Waitron SL ES89890001K Cliente Uno");
+      await wait(seconds);
+    },
+  );
+  assert.equal(evidence.stoppedAfter, "laterConflict");
+  assert.doesNotMatch(JSON.stringify(evidence), /Waitron SL|Cliente Uno|89890001K|11111111H/);
+  assert.match(evidence.laterConflict.lines[0].DescripcionErrorRegistro, /\[NIF\]/);
+  assert.match(
+    evidence.laterConflict.lines[0].RegistroDuplicado.DescripcionErrorRegistro,
+    /\[name\]/,
+  );
+  assert.match(evidence.waitError, /\[name\]/);
+});
+
+for (const mode of ["conflict-successors", "held-cancellation-successors"]) {
+  test(`${mode} is a reachable live CLI mode`, () => {
+    const run = spawnSync(process.execPath, ["scripts/live-aeat.mjs", mode], {
+      encoding: "utf8",
+      timeout: 5000,
+      env: { PATH: process.env.PATH },
+    });
+    assert.equal(run.status, 1);
+    assert.match(run.stderr, /Set AEAT_TEST_NIF/);
+    assert.doesNotMatch(run.stderr, /Unknown AEAT preproduction mode/);
+  });
+}
+
+test("conflict successors pass through the real SOAP client with original bytes on retry", async () => {
+  const records = live.buildConflictSuccessorProbeRecords(decimalOptions);
+  const fake = createFakeAeat({ serverNow: decimalOptions.now, tiempoEsperaInicial: 0 });
+  const requests = [];
+  const client = createClient({
+    endpoint: "https://fake.aeat.test/soap",
+    fetch: async (url, init) => {
+      requests.push(init.body);
+      return fake.fetch(url, init);
+    },
+  });
+  const evidence = await live.submitConflictSuccessorProbe(
+    client,
+    successorHeader,
+    records,
+    undefined,
+    async () => {},
+  );
+  assert.equal(evidence.incomplete, false);
+  assert.equal(evidence.laterConflict.lines[0].CodigoErrorRegistro, 3000);
+  assert.equal(evidence.batchRetry.lines[0].CodigoErrorRegistro, 3000);
+  assert.equal(evidence.batchRetry.lines[0].RegistroDuplicado?.EstadoRegistroDuplicado, "Correcta");
+  assert.equal(
+    fake.stored().find(({ key }) => key.includes(records.batch.successor.IDFactura.NumSerieFactura))
+      .huella,
+    records.batch.successor.Huella,
+  );
+  assert.equal(evidence.batchLater.lines[0].EstadoRegistro, "Correcto");
+  assert.equal(fake.stored().length, 7);
+  const blocks = (xml) => xml.match(/<sfLR:RegistroFactura>[\s\S]*?<\/sfLR:RegistroFactura>/g);
+  assert.equal(blocks(requests[6]).length, 2);
+  assert.equal(blocks(requests[7]).length, 1);
+  assert.equal(blocks(requests[7])[0], blocks(requests[6])[1]);
+});
+
+for (const malformed of [
+  "extra-line",
+  "duplicate-sibling",
+  "unknown-sibling",
+  "accepted-control-envelope",
+]) {
+  test(`successor probe stops on ${malformed} instead of reporting a complete observation`, async () => {
+    const records = live.buildConflictSuccessorProbeRecords(decimalOptions);
+    const { client, sent, wait } = successorProbeClient(records, (response, body, count) => {
+      if (malformed === "accepted-control-envelope" && count === 1)
+        response.EstadoEnvio = "ParcialmenteCorrecto";
+      if (count !== 7) return;
+      if (malformed === "extra-line")
+        response.RespuestaLinea.push({
+          ...response.RespuestaLinea[1],
+          IDFactura: records.control.original.IDFactura,
+        });
+      if (malformed === "duplicate-sibling")
+        response.RespuestaLinea.push(response.RespuestaLinea[1]);
+      if (malformed === "unknown-sibling") response.RespuestaLinea[1].EstadoRegistro = "Pendiente";
+    });
+    const evidence = await live.submitConflictSuccessorProbe(
+      client,
+      successorHeader,
+      records,
+      undefined,
+      wait,
+    );
+    assert.equal(evidence.incomplete, true);
+    assert.equal(
+      evidence.stoppedAfter,
+      malformed === "accepted-control-envelope" ? "controlOriginal" : "batchConflict",
+    );
+    assert.equal(sent.length, malformed === "accepted-control-envelope" ? 1 : 7);
+    assert.equal(evidence.batchRetry, undefined);
+  });
+}
 
 test("rejected-predecessor batch links every successor to the rejected record before it", () => {
   const { rejected, control } = buildRejectedPredecessorProbeRecords(decimalOptions, 3);
