@@ -254,6 +254,75 @@ test("conflict probe retains later outcomes and replays the batch successor byte
   assert.equal(waits.length, sent.length - 1);
 });
 
+for (const mode of ["conflict", "held-cancellation"]) {
+  test(`${mode} probe generates each chain after its wait and preserves retry bytes`, async () => {
+    const build =
+      mode === "conflict"
+        ? live.buildConflictSuccessorProbeRecords
+        : live.buildHeldCancellationSuccessorProbeRecords;
+    const submit =
+      mode === "conflict"
+        ? live.submitConflictSuccessorProbe
+        : live.submitHeldCancellationSuccessorProbe;
+    let clock = decimalOptions.now.getTime();
+    const records = build(decimalOptions);
+    const { client, sent, wait } = successorProbeClient(records, (response, body) => {
+      for (const [index, item] of body.entries()) {
+        const record = item.RegistroAlta ?? item.RegistroAnulacion;
+        assert.equal(record.Huella, computeHuella(record));
+        const age = clock - Date.parse(record.FechaHoraHusoGenRegistro);
+        if (age > 240_000 && response.RespuestaLinea[index].EstadoRegistro === "Correcto") {
+          Object.assign(response.RespuestaLinea[index], {
+            EstadoRegistro: "AceptadoConErrores",
+            CodigoErrorRegistro: 2004,
+          });
+          response.EstadoEnvio = "ParcialmenteCorrecto";
+        }
+      }
+    });
+    const evidence = await submit(
+      client,
+      successorHeader,
+      records,
+      undefined,
+      async (seconds) => {
+        await wait(seconds);
+        clock += 90_000;
+      },
+      (kind) => {
+        records[kind] = build({ ...decimalOptions, generatedAt: new Date(clock) })[kind];
+      },
+    );
+    assert.equal(evidence.incomplete, false);
+    assert.equal(evidence.stoppedAfter, undefined);
+    const expected =
+      mode === "conflict"
+        ? [0, 0, 180_000, 180_000, 180_000, 450_000, 450_000, 450_000, 450_000]
+        : [0, 0, 0, 270_000, 270_000];
+    assert.deepEqual(
+      sent.map(
+        (body) =>
+          Date.parse((body[0].RegistroAlta ?? body[0].RegistroAnulacion).FechaHoraHusoGenRegistro) -
+          decimalOptions.now.getTime(),
+      ),
+      expected,
+    );
+    if (mode === "conflict") {
+      assert.deepEqual(sent[6][1], sent[7][0]);
+      assert.equal(
+        evidence.batchLater.lines[0].RegistroAnterior.Huella,
+        sent[7][0].RegistroAlta.Huella,
+      );
+    } else {
+      assert.equal(evidence.heldCancellation.notSubmitted, true);
+      assert.equal(
+        evidence.rejectedSuccessor.lines[0].RegistroAnterior.Huella,
+        evidence.heldCancellation.Huella,
+      );
+    }
+  });
+}
+
 test("conflict probe retries an actually unanswered sibling without calling it accepted", async () => {
   assert.equal(typeof live.submitConflictSuccessorProbe, "function");
   const records = live.buildConflictSuccessorProbeRecords(decimalOptions);

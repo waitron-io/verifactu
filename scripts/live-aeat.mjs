@@ -653,7 +653,7 @@ export function buildHeldCancellationSuccessorProbeRecords(options) {
     const cancellation = buildTestCancellation({
       record: original,
       issuedAt: options.now,
-      now: options.now,
+      now: options.generatedAt ?? options.now,
     });
     const successor = successorProbeAlta(options, `cancel-${kind}`, 2, {
       IDFactura: original.IDFactura,
@@ -674,13 +674,20 @@ function successorRecordKey(record) {
       };
 }
 
-async function submitSuccessorStages(client, cabecera, stages, report, waitForSubmission) {
+async function submitSuccessorStages(
+  client,
+  cabecera,
+  stages,
+  report,
+  waitForSubmission,
+  prepareChain,
+) {
   const evidence = { incomplete: false };
   const names = [
     ...new Set([
       cabecera.ObligadoEmision.NombreRazon,
-      ...stages.flatMap(([, records]) =>
-        records.flatMap((record) => [
+      ...stages.flatMap(([, recordsForStage]) =>
+        recordsForStage().flatMap((record) => [
           record.NombreRazonEmisor,
           record.SistemaInformatico.NombreRazon,
           ...(record.Destinatarios?.IDDestinatario ?? []).map(({ NombreRazon }) => NombreRazon),
@@ -697,8 +704,9 @@ async function submitSuccessorStages(client, cabecera, stages, report, waitForSu
     );
   let previous;
   let previousStage;
-  for (const [stage, records, prerequisite, allowMissingSibling] of stages) {
+  for (const [stage, recordsForStage, prerequisite, allowMissingSibling, chain] of stages) {
     if (prerequisite?.held) {
+      const records = recordsForStage();
       evidence[stage] = {
         notSubmitted: true,
         reason: "held-after-original-rejection",
@@ -718,6 +726,9 @@ async function submitSuccessorStages(client, cabecera, stages, report, waitForSu
         return evidence;
       }
     }
+    // Build a synthetic chain after its preceding wait; a replay keeps that chain unchanged.
+    if (chain) prepareChain(chain);
+    const records = recordsForStage();
     let response;
     try {
       response = await client.submit(
@@ -831,6 +842,7 @@ export function submitConflictSuccessorProbe(
   records,
   report = () => {},
   waitForSubmission = waitForNextSubmission,
+  prepareChain = () => {},
 ) {
   const accepted = { state: "Correcto" };
   const conflict = { state: "Incorrecto", code: 3000 };
@@ -838,18 +850,19 @@ export function submitConflictSuccessorProbe(
     client,
     cabecera,
     [
-      ["controlOriginal", [records.control.original], accepted],
-      ["controlSuccessor", [records.control.successor], accepted],
-      ["laterOriginal", [records.later.original], accepted],
-      ["laterConflict", [records.later.changed], conflict],
-      ["laterSuccessor", [records.later.successor]],
-      ["batchOriginal", [records.batch.original], accepted],
-      ["batchConflict", [records.batch.changed, records.batch.successor], conflict, true],
-      ["batchRetry", [records.batch.successor]],
-      ["batchLater", [records.batch.later]],
+      ["controlOriginal", () => [records.control.original], accepted, false, "control"],
+      ["controlSuccessor", () => [records.control.successor], accepted],
+      ["laterOriginal", () => [records.later.original], accepted, false, "later"],
+      ["laterConflict", () => [records.later.changed], conflict],
+      ["laterSuccessor", () => [records.later.successor]],
+      ["batchOriginal", () => [records.batch.original], accepted, false, "batch"],
+      ["batchConflict", () => [records.batch.changed, records.batch.successor], conflict, true],
+      ["batchRetry", () => [records.batch.successor]],
+      ["batchLater", () => [records.batch.later]],
     ],
     report,
     waitForSubmission,
+    prepareChain,
   );
 }
 
@@ -859,21 +872,29 @@ export function submitHeldCancellationSuccessorProbe(
   records,
   report = () => {},
   waitForSubmission = waitForNextSubmission,
+  prepareChain = () => {},
 ) {
   const accepted = { state: "Correcto" };
   return submitSuccessorStages(
     client,
     cabecera,
     [
-      ["controlOriginal", [records.control.original], accepted],
-      ["controlCancellation", [records.control.cancellation], accepted],
-      ["controlSuccessor", [records.control.successor], accepted],
-      ["rejectedOriginal", [records.rejected.original], { state: "Incorrecto", code: 1161 }],
-      ["heldCancellation", [records.rejected.cancellation], { held: true }],
-      ["rejectedSuccessor", [records.rejected.successor]],
+      ["controlOriginal", () => [records.control.original], accepted, false, "control"],
+      ["controlCancellation", () => [records.control.cancellation], accepted],
+      ["controlSuccessor", () => [records.control.successor], accepted],
+      [
+        "rejectedOriginal",
+        () => [records.rejected.original],
+        { state: "Incorrecto", code: 1161 },
+        false,
+        "rejected",
+      ],
+      ["heldCancellation", () => [records.rejected.cancellation], { held: true }],
+      ["rejectedSuccessor", () => [records.rejected.successor]],
     ],
     report,
     waitForSubmission,
+    prepareChain,
   );
 }
 
@@ -2182,40 +2203,49 @@ async function main() {
       now,
       runId,
     };
-    const records =
+    const buildRecords =
       mode === "conflict-successors"
-        ? buildConflictSuccessorProbeRecords(options)
-        : buildHeldCancellationSuccessorProbeRecords(options);
-    process.stdout.write(
-      `AEAT ${mode} plan: ${JSON.stringify(
-        Object.fromEntries(
-          Object.entries(records).map(([kind, entries]) => [
-            kind,
-            Object.fromEntries(
-              Object.entries(entries).map(([position, record]) => [
-                position,
-                {
-                  NumSerieFactura: recordSerial(record),
-                  Huella: record.Huella,
-                  FechaExpedicionFactura: successorRecordKey(record).FechaExpedicionFactura,
-                  NumeroInstalacion: record.SistemaInformatico.NumeroInstalacion,
-                  RegistroAnterior: record.Encadenamiento.RegistroAnterior && {
-                    NumSerieFactura: record.Encadenamiento.RegistroAnterior.NumSerieFactura,
-                    Huella: record.Encadenamiento.RegistroAnterior.Huella,
+        ? buildConflictSuccessorProbeRecords
+        : buildHeldCancellationSuccessorProbeRecords;
+    const records = buildRecords(options);
+    const prepareChain = (kind) => {
+      records[kind] = buildRecords({ ...options, generatedAt: new Date() })[kind];
+      process.stdout.write(
+        `AEAT ${mode} ${kind} plan: ${JSON.stringify(
+          Object.fromEntries(
+            [[kind, records[kind]]].map(([kind, entries]) => [
+              kind,
+              Object.fromEntries(
+                Object.entries(entries).map(([position, record]) => [
+                  position,
+                  {
+                    NumSerieFactura: recordSerial(record),
+                    Huella: record.Huella,
+                    FechaExpedicionFactura: successorRecordKey(record).FechaExpedicionFactura,
+                    NumeroInstalacion: record.SistemaInformatico.NumeroInstalacion,
+                    RegistroAnterior: record.Encadenamiento.RegistroAnterior && {
+                      NumSerieFactura: record.Encadenamiento.RegistroAnterior.NumSerieFactura,
+                      Huella: record.Encadenamiento.RegistroAnterior.Huella,
+                    },
                   },
-                },
-              ]),
-            ),
-          ]),
-        ),
-      )}\n`,
-    );
+                ]),
+              ),
+            ]),
+          ),
+        )}\n`,
+      );
+    };
     const submit =
       mode === "conflict-successors"
         ? submitConflictSuccessorProbe
         : submitHeldCancellationSuccessorProbe;
-    const evidence = await submit(client, cabecera, records, (stage, entry) =>
-      process.stdout.write(`AEAT ${mode} ${stage}: ${JSON.stringify(entry)}\n`),
+    const evidence = await submit(
+      client,
+      cabecera,
+      records,
+      (stage, entry) => process.stdout.write(`AEAT ${mode} ${stage}: ${JSON.stringify(entry)}\n`),
+      waitForNextSubmission,
+      prepareChain,
     );
     process.stdout.write(`AEAT ${mode} complete: ${JSON.stringify(evidence)}\n`);
     if (evidence.incomplete) process.exitCode = 1;
