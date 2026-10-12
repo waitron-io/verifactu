@@ -27,6 +27,8 @@ on:
           - registered-name-mismatch
           - rejected-invoice-credit
           - reply-order
+          - conflict-successors
+          - held-cancellation-successors
         default: consult
         required: true
       excluded_regime:
