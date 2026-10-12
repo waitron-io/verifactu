@@ -321,7 +321,7 @@ for (const invalid of [
   });
 }
 
-test("held cancellation probe measures both successors only after the intended predecessor states", async () => {
+test("held cancellation probe sends the successor while keeping the rejected original's cancellation unsent", async () => {
   assert.equal(typeof live.submitHeldCancellationSuccessorProbe, "function");
   const records = live.buildHeldCancellationSuccessorProbeRecords(decimalOptions);
   const { client, sent, waits, wait } = successorProbeClient(records);
@@ -334,7 +334,9 @@ test("held cancellation probe measures both successors only after the intended p
   );
   assert.equal(evidence.incomplete, false);
   assert.equal(evidence.rejectedOriginal.lines[0].CodigoErrorRegistro, 1161);
-  assert.equal(evidence.rejectedCancellation.lines[0].CodigoErrorRegistro, 3001);
+  assert.equal(evidence.heldCancellation?.notSubmitted, true);
+  assert.equal(evidence.heldCancellation.reason, "held-after-original-rejection");
+  assert.equal(evidence.heldCancellation.Huella, records.rejected.cancellation.Huella);
   assert.equal(evidence.rejectedSuccessor.lines[0].EstadoRegistro, "Correcto");
   assert.equal(
     evidence.rejectedSuccessor.lines[0].RegistroAnterior.Huella,
@@ -345,10 +347,9 @@ test("held cancellation probe measures both successors only after the intended p
     [{ RegistroAnulacion: records.control.cancellation }],
     [{ RegistroAlta: records.control.successor }],
     [{ RegistroAlta: records.rejected.original }],
-    [{ RegistroAnulacion: records.rejected.cancellation }],
     [{ RegistroAlta: records.rejected.successor }],
   ]);
-  assert.equal(waits.length, 5);
+  assert.equal(waits.length, 4);
 });
 
 test("a malformed batch envelope cannot authorise retry of its missing sibling", async () => {
@@ -371,7 +372,7 @@ test("a malformed batch envelope cannot authorise retry of its missing sibling",
   assert.equal(sent.length, 7);
 });
 
-for (const invalid of ["accepted-original", "wrong-rejection", "accepted-cancellation"]) {
+for (const invalid of ["accepted-original", "wrong-rejection"]) {
   test(`held cancellation probe is inconclusive for ${invalid}`, async () => {
     assert.equal(typeof live.submitHeldCancellationSuccessorProbe, "function");
     const records = live.buildHeldCancellationSuccessorProbeRecords(decimalOptions);
@@ -380,8 +381,6 @@ for (const invalid of ["accepted-original", "wrong-rejection", "accepted-cancell
         response.RespuestaLinea[0].EstadoRegistro = "Correcto";
       if (count === 4 && invalid === "wrong-rejection")
         response.RespuestaLinea[0].CodigoErrorRegistro = 3000;
-      if (count === 5 && invalid === "accepted-cancellation")
-        response.RespuestaLinea[0].EstadoRegistro = "Correcto";
     });
     const evidence = await live.submitHeldCancellationSuccessorProbe(
       client,
@@ -392,7 +391,7 @@ for (const invalid of ["accepted-original", "wrong-rejection", "accepted-cancell
     );
     assert.equal(evidence.incomplete, true);
     assert.equal(evidence.rejectedSuccessor, undefined);
-    assert.equal(sent.length, invalid === "accepted-cancellation" ? 5 : 4);
+    assert.equal(sent.length, 4);
   });
 }
 

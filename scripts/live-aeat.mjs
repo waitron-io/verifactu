@@ -683,6 +683,16 @@ async function submitSuccessorStages(client, cabecera, stages, report, waitForSu
   let previous;
   let previousStage;
   for (const [stage, records, prerequisite, allowMissingSibling] of stages) {
+    if (prerequisite?.held) {
+      evidence[stage] = {
+        notSubmitted: true,
+        reason: "held-after-original-rejection",
+        NumSerieFactura: recordSerial(records[0]),
+        Huella: records[0].Huella,
+      };
+      report(stage, evidence[stage]);
+      continue;
+    }
     if (previous) {
       try {
         await waitForSubmission(previous.TiempoEsperaEnvio);
@@ -844,7 +854,7 @@ export function submitHeldCancellationSuccessorProbe(
       ["controlCancellation", [records.control.cancellation], accepted],
       ["controlSuccessor", [records.control.successor], accepted],
       ["rejectedOriginal", [records.rejected.original], { state: "Incorrecto", code: 1161 }],
-      ["rejectedCancellation", [records.rejected.cancellation], { state: "Incorrecto" }],
+      ["heldCancellation", [records.rejected.cancellation], { held: true }],
       ["rejectedSuccessor", [records.rejected.successor]],
     ],
     report,
