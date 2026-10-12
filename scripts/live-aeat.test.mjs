@@ -264,7 +264,7 @@ for (const mode of ["conflict", "held-cancellation"]) {
       mode === "conflict"
         ? live.submitConflictSuccessorProbe
         : live.submitHeldCancellationSuccessorProbe;
-    let clock = decimalOptions.now.getTime();
+    let clock = decimalOptions.now.getTime() + 1_000;
     const records = build(decimalOptions);
     const { client, sent, wait } = successorProbeClient(records, (response, body) => {
       for (const [index, item] of body.entries()) {
@@ -289,16 +289,26 @@ for (const mode of ["conflict", "held-cancellation"]) {
         await wait(seconds);
         clock += 90_000;
       },
-      (kind) => {
-        records[kind] = build({ ...decimalOptions, generatedAt: new Date(clock) })[kind];
+      (kind, stage) => {
+        live.prepareSuccessorProbeChain(
+          records,
+          kind,
+          build,
+          decimalOptions,
+          new Date(clock),
+          stage,
+        );
       },
     );
     assert.equal(evidence.incomplete, false);
     assert.equal(evidence.stoppedAfter, undefined);
+    for (const entry of Object.values(evidence)) {
+      for (const line of entry?.lines ?? []) assert.notEqual(line.CodigoErrorRegistro, 2004);
+    }
     const expected =
       mode === "conflict"
-        ? [0, 0, 180_000, 180_000, 180_000, 450_000, 450_000, 450_000, 450_000]
-        : [0, 0, 0, 270_000, 270_000];
+        ? [1_000, 1_000, 181_000, 181_000, 181_000, 451_000, 451_000, 451_000, 721_000]
+        : [1_000, 1_000, 1_000, 271_000, 271_000];
     assert.deepEqual(
       sent.map(
         (body) =>
@@ -322,6 +332,28 @@ for (const mode of ["conflict", "held-cancellation"]) {
     }
   });
 }
+
+test("successor probe retains earlier evidence if generating a later chain fails", async () => {
+  const records = live.buildConflictSuccessorProbeRecords(decimalOptions);
+  const { client, sent, wait } = successorProbeClient(records);
+  const evidence = await live.submitConflictSuccessorProbe(
+    client,
+    successorHeader,
+    records,
+    undefined,
+    wait,
+    (kind) => {
+      if (kind === "later") throw new Error("Waitron SL ES89890001K failed generation");
+    },
+  );
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedBefore, "laterOriginal");
+  assert.equal(evidence.controlOriginal.lines[0].EstadoRegistro, "Correcto");
+  assert.equal(evidence.controlSuccessor.lines[0].EstadoRegistro, "Correcto");
+  assert.equal(evidence.laterOriginal.generationError, "[name] [NIF] failed generation");
+  assert.equal(sent.length, 2);
+  assert.equal(evidence.laterSuccessor, undefined);
+});
 
 test("conflict probe retries an actually unanswered sibling without calling it accepted", async () => {
   assert.equal(typeof live.submitConflictSuccessorProbe, "function");

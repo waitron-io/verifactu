@@ -726,8 +726,16 @@ async function submitSuccessorStages(
         return evidence;
       }
     }
-    // Build a synthetic chain after its preceding wait; a replay keeps that chain unchanged.
-    if (chain) prepareChain(chain);
+    // Prepare unsent synthetic records after waiting; never rebuild the record being replayed.
+    try {
+      if (chain) prepareChain(chain, stage);
+    } catch (error) {
+      evidence[stage] = { generationError: redact(error instanceof Error ? error.message : error) };
+      report(stage, evidence[stage]);
+      evidence.incomplete = true;
+      evidence.stoppedBefore = stage;
+      return evidence;
+    }
     const records = recordsForStage();
     let response;
     try {
@@ -836,6 +844,14 @@ async function submitSuccessorStages(
   return evidence;
 }
 
+export function prepareSuccessorProbeChain(records, kind, buildRecords, options, now, stage) {
+  if (stage === "batchLater") {
+    records.batch.later = refreshProbeRecordGeneration(records.batch.later, now);
+  } else {
+    records[kind] = buildRecords({ ...options, generatedAt: now })[kind];
+  }
+}
+
 export function submitConflictSuccessorProbe(
   client,
   cabecera,
@@ -858,7 +874,7 @@ export function submitConflictSuccessorProbe(
       ["batchOriginal", () => [records.batch.original], accepted, false, "batch"],
       ["batchConflict", () => [records.batch.changed, records.batch.successor], conflict, true],
       ["batchRetry", () => [records.batch.successor]],
-      ["batchLater", () => [records.batch.later]],
+      ["batchLater", () => [records.batch.later], undefined, false, "batch"],
     ],
     report,
     waitForSubmission,
@@ -2208,8 +2224,8 @@ async function main() {
         ? buildConflictSuccessorProbeRecords
         : buildHeldCancellationSuccessorProbeRecords;
     const records = buildRecords(options);
-    const prepareChain = (kind) => {
-      records[kind] = buildRecords({ ...options, generatedAt: new Date() })[kind];
+    const prepareChain = (kind, stage) => {
+      prepareSuccessorProbeChain(records, kind, buildRecords, options, new Date(), stage);
       process.stdout.write(
         `AEAT ${mode} ${kind} plan: ${JSON.stringify(
           Object.fromEntries(
