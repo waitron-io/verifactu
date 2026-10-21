@@ -293,10 +293,13 @@ cancellation are `Correcto`; the held record is `AceptadoConErrores`, code `2004
 hypotheses for the experiment. An unexpected warning or refusal remains in the evidence and
 makes the run fail; independent submissions still run after a complete, valid reply.
 Transport failures and missing, extra or malformed reply lines stop the probe as incomplete.
+The cancellation is attempted even if the first alta was refused; interpret it alongside that
+original reply.
 
 Retain the run ID, head SHA and each `AEAT outage-flag` JSON entry from the workflow log.
 The entries contain sent records, send times, complete parsed replies and raw SOAP replies;
-issuer, recipient and software identities are replaced with `[identity]`. Publish those
+issuer, recipient and software-provider names and tax IDs are replaced with `[identity]`,
+including XML character references. Fixed test-product names and IDs remain visible. Publish those
 results beside the earlier protocol evidence before drawing a conclusion about a caller's
 restart behaviour. The test-service endpoint is selected by the existing certificate-kind
 setting. These results do not establish production acceptance or legal compliance.

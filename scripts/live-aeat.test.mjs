@@ -4145,3 +4145,129 @@ test("outage cancellation keeps the original issue date when preparation crosses
     "21-10-2026",
   );
 });
+
+test("outage evidence redacts mixed decimal, hexadecimal and named XML references without changing other fields", () => {
+  const value = live.outageFlagEvidenceJson(
+    {
+      rawReply: "<name>Pe&#x00F1;a &amp; O&#00039;Brien</name><code>&#50;004</code>",
+      plain: "Peña & O'Brien",
+      code: 2004,
+    },
+    ["Peña & O'Brien"],
+  );
+  assert.deepEqual(JSON.parse(value), {
+    rawReply: "<name>[identity]</name><code>&#50;004</code>",
+    plain: "[identity]",
+    code: 2004,
+  });
+});
+
+for (const outcome of ["expected", "fresh-warning", "transport-failure"]) {
+  test(`outage CLI prints expectations first, redacts configured identities and exits for ${outcome}`, () => {
+    const target = new URL("./live-aeat.mjs", import.meta.url).href;
+    const fakeModule = new URL("../dist/testing/fake-aeat.js", import.meta.url).href;
+    const preload = `
+      import assert from "node:assert/strict";
+      import https from "node:https";
+      import { syncBuiltinESMExports } from "node:module";
+      import { EventEmitter } from "node:events";
+      import { fileURLToPath } from "node:url";
+      import { createFakeAeat } from ${JSON.stringify(fakeModule)};
+      const RealDate = Date;
+      const realTimeout = setTimeout;
+      let clock = RealDate.parse("2026-10-21T08:00:00Z");
+      globalThis.Date = class extends RealDate {
+        constructor(...args) { super(...(args.length ? args : [clock])); }
+        static now() { return clock; }
+      };
+      globalThis.setTimeout = (callback, milliseconds, ...args) => {
+        clock += milliseconds;
+        return realTimeout(callback, 0, ...args);
+      };
+      const fake = createFakeAeat({ serverNow: new RealDate(clock), tiempoEsperaInicial: 2 });
+      let sends = 0;
+      https.request = (url, options, callback) => {
+        assert.equal(new URL(url).hostname, "prewww1.aeat.es");
+        assert.equal(options.method, "POST");
+        const req = new EventEmitter();
+        req.destroy = (error) => req.emit("error", error);
+        req.end = (body) => {
+          sends++;
+          process.stdout.write("LOCAL_SEND\\n");
+          Promise.resolve().then(async () => {
+            if (${JSON.stringify(outcome)} === "transport-failure" && sends === 3) {
+              throw new Error("synthetic network failure");
+            }
+            fake.setServerNow(new RealDate(clock));
+            const response = await fake.fetch(url, { method: "POST", body });
+            let xml = await response.text();
+            if (sends === 2 || (${JSON.stringify(outcome)} === "fresh-warning" && sends === 1)) {
+              xml = xml.replace("<sfR:EstadoEnvio>Correcto</sfR:EstadoEnvio>", "<sfR:EstadoEnvio>ParcialmenteCorrecto</sfR:EstadoEnvio>")
+                .replace("<sfR:EstadoRegistro>Correcto</sfR:EstadoRegistro>", "<sfR:EstadoRegistro>AceptadoConErrores</sfR:EstadoRegistro><sfR:CodigoErrorRegistro>2004</sfR:CodigoErrorRegistro><sfR:DescripcionErrorRegistro>synthetic delay warning</sfR:DescripcionErrorRegistro>");
+            }
+            const incoming = new EventEmitter();
+            incoming.statusCode = 200;
+            callback(incoming);
+            incoming.emit("data", Buffer.from(xml));
+            incoming.emit("end");
+          }).catch((error) => req.emit("error", error));
+        };
+        return req;
+      };
+      syncBuiltinESMExports();
+      process.argv = [process.execPath, fileURLToPath(${JSON.stringify(target)}), "outage-flag"];
+      await import(${JSON.stringify(target)});
+    `;
+    const run = spawnSync(process.execPath, ["--input-type=module", "--eval", preload], {
+      encoding: "utf8",
+      timeout: 5000,
+      env: {
+        PATH: process.env.PATH,
+        AEAT_TEST_NIF: decimalOptions.nif,
+        AEAT_TEST_NAME: "Synthetic Issuer",
+        AEAT_TEST_SYSTEM_NIF: "B12345674",
+        AEAT_TEST_SYSTEM_NAME: "Software Peña & O'Neil",
+        AEAT_TEST_RECIPIENT_NIF: decimalOptions.recipientNif,
+        AEAT_TEST_RECIPIENT_NAME: "Synthetic Recipient",
+        AEAT_TEST_CERT_KIND: "personal",
+        AEAT_TEST_P12_BASE64: Buffer.from("synthetic").toString("base64"),
+        AEAT_TEST_P12_PASSWORD: "synthetic",
+        GITHUB_RUN_ID: "outage-cli-test",
+      },
+    });
+    assert.equal(run.error, undefined);
+    assert.equal(run.status, outcome === "expected" ? 0 : 1, run.stderr + run.stdout);
+    assert.match(run.stdout.split("\n")[0], /^AEAT outage-flag expectation:/);
+    assert.equal(
+      run.stdout.match(/^LOCAL_SEND$/gm)?.length,
+      outcome === "transport-failure" ? 3 : 4,
+    );
+    for (const identity of [
+      decimalOptions.nif,
+      "Synthetic Issuer",
+      "B12345674",
+      "Software Peña & O'Neil",
+      decimalOptions.recipientNif,
+      "Synthetic Recipient",
+    ]) {
+      assert.equal(run.stdout.includes(identity), false, identity);
+    }
+    const completeLine = run.stdout
+      .split("\n")
+      .find((line) => line.startsWith("AEAT outage-flag complete: "));
+    assert.ok(completeLine, run.stderr);
+    const evidence = JSON.parse(completeLine.slice("AEAT outage-flag complete: ".length));
+    assert.equal(evidence.delayedFlagged.response.RespuestaLinea[0].CodigoErrorRegistro, 2004);
+    assert.match(evidence.delayedFlagged.rawReply, /<sfR:CodigoErrorRegistro>2004/);
+    if (outcome === "transport-failure") {
+      assert.equal(evidence.incomplete, true);
+      assert.equal(evidence.stoppedAfter, "control");
+      assert.equal(evidence.control.rawReply, undefined);
+      assert.equal(evidence.control.transportError, "synthetic network failure");
+    } else {
+      assert.equal(evidence.incomplete, false);
+      assert.equal(evidence.freshFlagged.matchesExpectation, outcome === "expected");
+      assert.equal(evidence.cancellationFlagged.matchesExpectation, true);
+    }
+  });
+}

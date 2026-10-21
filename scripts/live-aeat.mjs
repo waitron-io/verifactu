@@ -287,24 +287,25 @@ export function buildTestRecord(options) {
 }
 
 export function outageFlagEvidenceJson(evidence, identities) {
-  const replacements = [
-    ...new Set(
-      identities
-        .filter(Boolean)
-        .flatMap((identity) => [
-          identity,
-          identity
-            .replaceAll("&", "&amp;")
-            .replaceAll("<", "&lt;")
-            .replaceAll(">", "&gt;")
-            .replaceAll('"', "&quot;")
-            .replaceAll("'", "&apos;"),
-        ]),
-    ),
-  ].sort((a, b) => b.length - a.length);
+  const named = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" };
+  const patterns = [...new Set(identities.filter(Boolean))]
+    .sort((a, b) => b.length - a.length)
+    .map(
+      (identity) =>
+        new RegExp(
+          [...identity]
+            .map((character) => {
+              const code = character.codePointAt(0);
+              const literal = character.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+              return `(?:${literal}|&#0*${code};|&#x0*${code.toString(16)};${named[character] ? "|" + named[character] : ""})`;
+            })
+            .join(""),
+          "giu",
+        ),
+    );
   return JSON.stringify(evidence, (_key, value) =>
     typeof value === "string"
-      ? replacements.reduce((text, identity) => text.replaceAll(identity, "[identity]"), value)
+      ? patterns.reduce((text, pattern) => text.replace(pattern, "[identity]"), value)
       : value,
   );
 }
