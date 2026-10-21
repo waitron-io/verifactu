@@ -4272,7 +4272,12 @@ for (const outcome of ["expected", "fresh-warning", "transport-failure"]) {
   });
 }
 
-async function runFourBehaviourProbe(adjust = () => {}, failWait = false, hideRaw = false) {
+async function runFourBehaviourProbe(
+  adjust = () => {},
+  failWait = false,
+  hideRaw = false,
+  faults = {},
+) {
   assert.equal(typeof live.submitFourBehaviourProbe, "function");
   let clock = decimalOptions.now.getTime();
   const fake = createFakeAeat({ serverNow: new Date(clock), tiempoEsperaInicial: 2 });
@@ -4281,6 +4286,7 @@ async function runFourBehaviourProbe(adjust = () => {}, failWait = false, hideRa
   const reports = [];
   const waits = [];
   let raw;
+  let submissions = 0;
   const client = createClient({
     endpoint: "https://fake.aeat.test/soap",
     fetch: async (url, init) => {
@@ -4295,10 +4301,15 @@ async function runFourBehaviourProbe(adjust = () => {}, failWait = false, hideRa
   const evidence = await live.submitFourBehaviourProbe(
     {
       async submit(header, records) {
+        faults.beforeSubmit?.(++submissions);
         const response = await client.submit(header, records);
         return adjust(response, requests.length) ?? response;
       },
-      consultar: client.consultar,
+      async consultar(...args) {
+        faults.beforeLookup?.();
+        const response = await client.consultar(...args);
+        return faults.adjustLookup?.(response) ?? response;
+      },
     },
     successorHeader,
     decimalOptions,
@@ -4309,7 +4320,10 @@ async function runFourBehaviourProbe(adjust = () => {}, failWait = false, hideRa
         if (failWait) throw new Error("wait failed");
         clock += seconds * 1000;
       },
-      rawReply: () => (hideRaw ? undefined : raw),
+      rawReply: () => (hideRaw === "empty" ? "" : hideRaw ? undefined : raw),
+      clearRawReply: () => {
+        raw = undefined;
+      },
       report: (stage, entry) => reports.push([stage, structuredClone(entry)]),
     },
   );
@@ -4380,9 +4394,10 @@ for (const fault of ["missing", "extra", "wrong-key", "bad-envelope"]) {
       if (fault === "bad-envelope") response.EstadoEnvio = "Incorrecto";
     });
     assert.equal(evidence.incomplete, true);
-    assert.equal(evidence.stoppedAfter, "original");
+    assert.deepEqual(evidence.incompleteStages, ["original"]);
     assert.ok(evidence.original.rawReply);
-    assert.equal(requests.length, 1);
+    assert.equal(requests.length, 7);
+    assert.ok(evidence.zero.consultation);
   });
 }
 
@@ -4440,10 +4455,10 @@ test("four-behaviour probe preserves transport failure and the completed cancell
 test("four-behaviour probe does not call parsed-only evidence complete", async () => {
   const { evidence, requests } = await runFourBehaviourProbe(undefined, false, true);
   assert.equal(evidence.incomplete, true);
-  assert.equal(evidence.stoppedAfter, "original");
+  assert.deepEqual(evidence.incompleteStages, ["original", "zero", "validHash", "wrongHash"]);
   assert.equal(evidence.original.response.EstadoEnvio, "Correcto");
   assert.equal(evidence.original.rawReply, undefined);
-  assert.equal(requests.length, 1);
+  assert.equal(requests.length, 4);
 });
 
 for (const outcome of ["expected", "hash-accepted", "transport-failure"]) {
@@ -4564,3 +4579,111 @@ for (const outcome of ["expected", "hash-accepted", "transport-failure"]) {
     }
   });
 }
+
+for (const fault of ["wrong-key", "warning"]) {
+  test(`four-behaviour probe continues independent observations after cancellation ${fault}`, async () => {
+    const { evidence, requests } = await runFourBehaviourProbe((response, count) => {
+      if (count !== 2) return;
+      if (fault === "wrong-key")
+        response.RespuestaLinea[0].IDFactura.NumSerieFactura = "other-invoice";
+      else {
+        response.EstadoEnvio = "ParcialmenteCorrecto";
+        response.RespuestaLinea[0].EstadoRegistro = "AceptadoConErrores";
+        response.RespuestaLinea[0].CodigoErrorRegistro = 2004;
+      }
+    });
+    assert.equal(requests.length, 10);
+    assert.equal(evidence.cancellation.matchesExpectation, false);
+    assert.ok(evidence.cancellation.rawReply);
+    assert.ok(evidence.cancellationRetry.response);
+    assert.ok(evidence.zero.consultation);
+    assert.ok(evidence.validHash.consultation);
+    assert.ok(evidence.wrongHash.consultation);
+    assert.equal(evidence.incomplete, fault === "wrong-key");
+  });
+}
+
+test("four-behaviour probe still measures independent invoices after a refused original", async () => {
+  const { evidence, requests } = await runFourBehaviourProbe((response, count) => {
+    if (count !== 1) return;
+    response.EstadoEnvio = "Incorrecto";
+    response.RespuestaLinea[0].EstadoRegistro = "Incorrecto";
+    response.RespuestaLinea[0].CodigoErrorRegistro = 1161;
+  });
+  assert.equal(requests.length, 7);
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.cancellation, undefined);
+  assert.equal(evidence.cancellationRetry, undefined);
+  assert.ok(evidence.zero.consultation);
+  assert.ok(evidence.wrongHash.consultation);
+});
+
+test("four-behaviour probe clears raw evidence before a submit that fails before sending", async () => {
+  const { evidence } = await runFourBehaviourProbe(undefined, false, false, {
+    beforeSubmit: (attempt) => {
+      if (attempt === 4) throw new Error("pre-send failure");
+    },
+  });
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedAfter, "zero");
+  assert.match(evidence.error, /pre-send failure/);
+  assert.ok(evidence.cancellationRetry.consultationRawReply);
+  assert.equal(evidence.zero.rawReply, undefined);
+});
+
+test("four-behaviour probe clears raw evidence before a lookup that fails before sending", async () => {
+  const { evidence } = await runFourBehaviourProbe(undefined, false, false, {
+    beforeLookup: () => {
+      throw new Error("lookup pre-send failure");
+    },
+  });
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedAfter, "cancellationRetry");
+  assert.ok(evidence.cancellationRetry.rawReply);
+  assert.equal(evidence.cancellationRetry.consultationRawReply, undefined);
+});
+
+for (const fault of ["code", "state"]) {
+  test(`four-behaviour probe marks a cancellation retry with unexpected duplicate ${fault} off-prediction`, async () => {
+    const { evidence } = await runFourBehaviourProbe((response, count) => {
+      if (count !== 3) return;
+      if (fault === "code") response.RespuestaLinea[0].CodigoErrorRegistro = 3002;
+      else response.RespuestaLinea[0].RegistroDuplicado.EstadoRegistroDuplicado = "Correcta";
+    });
+    assert.equal(evidence.incomplete, false);
+    assert.equal(evidence.cancellationRetry.matchesExpectation, false);
+    assert.ok(evidence.wrongHash.consultation);
+  });
+}
+
+test("four-behaviour probe calls an empty raw response incomplete", async () => {
+  const { evidence } = await runFourBehaviourProbe(undefined, false, "empty");
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.original.rawReply, "");
+});
+
+test("four-behaviour probe retains and refuses a malformed lookup result", async () => {
+  const { evidence } = await runFourBehaviourProbe(undefined, false, false, {
+    adjustLookup: (response) => {
+      response.ResultadoConsulta = "Invalid";
+    },
+  });
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedAfter, "cancellationRetry");
+  assert.match(evidence.error, /Unexpected AEAT consultation/);
+  assert.equal(evidence.cancellationRetry.consultation.ResultadoConsulta, "Invalid");
+  assert.ok(evidence.cancellationRetry.consultationRawReply);
+});
+
+test("four-behaviour probe does not attribute an unrelated warning to the corrupted fingerprint", async () => {
+  const { evidence } = await runFourBehaviourProbe((response, count) => {
+    if (count !== 9) return;
+    response.EstadoEnvio = "ParcialmenteCorrecto";
+    Object.assign(response.RespuestaLinea[0], {
+      EstadoRegistro: "AceptadoConErrores",
+      CodigoErrorRegistro: 2004,
+    });
+  });
+  assert.equal(evidence.incomplete, false);
+  assert.equal(evidence.wrongHash.matchesExpectation, false);
+});

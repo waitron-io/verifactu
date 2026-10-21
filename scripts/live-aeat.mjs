@@ -415,9 +415,10 @@ export async function submitFourBehaviourProbe(
     waitForSubmission = waitForNextSubmission,
     now = () => new Date(),
     rawReply = () => undefined,
+    clearRawReply = () => {},
   } = {},
 ) {
-  const evidence = { incomplete: false };
+  const evidence = { incomplete: false, incompleteStages: [] };
   let previous;
   let original;
   let issuedAt;
@@ -430,6 +431,7 @@ export async function submitFourBehaviourProbe(
     "validHash",
     "wrongHash",
   ]) {
+    if (stage.startsWith("cancellation") && !original) continue;
     const entry = {};
     try {
       if (previous) await waitForSubmission(previous.TiempoEsperaEnvio);
@@ -471,6 +473,7 @@ export async function submitFourBehaviourProbe(
         }
       }
       entry.record = record;
+      clearRawReply();
       entry.response = await client.submit(cabecera, [
         stage.startsWith("cancellation") ? { RegistroAnulacion: record } : { RegistroAlta: record },
       ]);
@@ -496,20 +499,20 @@ export async function submitFourBehaviourProbe(
           ? line.CodigoErrorRegistro === 3000 &&
             line.RegistroDuplicado?.EstadoRegistroDuplicado === "Anulada"
           : stage === "wrongHash"
-            ? line.EstadoRegistro === "AceptadoConErrores"
+            ? line.EstadoRegistro === "AceptadoConErrores" && line.CodigoErrorRegistro === 2000
             : line.EstadoRegistro === "Correcto");
       evidence[stage] = entry;
-      if (
-        !complete ||
-        (stage === "original" && line.EstadoRegistro !== "Correcto") ||
-        (stage === "cancellation" && line.EstadoRegistro !== "Correcto")
-      ) {
+      if (!complete || (stage === "original" && line.EstadoRegistro === "Incorrecto")) {
+        evidence.incomplete = true;
+        evidence.incompleteStages.push(stage);
+        if (stage === "original") original = undefined;
         report(stage, entry);
-        return { ...evidence, incomplete: true, stoppedAfter: stage };
+        continue;
       }
       if (["cancellationRetry", "zero", "validHash", "wrongHash"].includes(stage)) {
         const identity = successorRecordKey(record);
         const [day, month, year] = identity.FechaExpedicionFactura.split("-");
+        clearRawReply();
         entry.consultation = await client.consultar(
           issuerConsultaHeader(cabecera.ObligadoEmision),
           {
@@ -2465,7 +2468,7 @@ async function main() {
 
   if (mode === "four-behaviours") {
     process.stdout.write(
-      "AEAT four-behaviours expectation: original and cancellation Correcto; identical cancellation retry duplicate 3000/Anulada; zero F2 and valid-hash control Correcto; corrupted fingerprint AceptadoConErrores. Cancellation replies expected to name the cancelled invoice. Test service only; no production inference or Waitron policy change.\n",
+      "AEAT four-behaviours expectation: original and cancellation Correcto; identical cancellation retry duplicate 3000/Anulada; zero F2 and valid-hash control Correcto; corrupted fingerprint AceptadoConErrores/2000. Cancellation replies expected to name the cancelled invoice. Test service only; no production inference or Waitron policy change.\n",
     );
     const probeOptions = {
       nif,
@@ -2486,6 +2489,9 @@ async function main() {
     ];
     const evidence = await submitFourBehaviourProbe(client, cabecera, probeOptions, {
       rawReply: () => lastRawReply,
+      clearRawReply: () => {
+        lastRawReply = undefined;
+      },
       report: (stage, entry) =>
         process.stdout.write(
           `AEAT four-behaviours ${stage}: ${outageFlagEvidenceJson(entry, identities)}\n`,
