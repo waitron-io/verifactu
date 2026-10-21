@@ -272,3 +272,31 @@ installs and provisions itself, so nothing extra is required of a contributor.
 
 Apache License 2.0. See [`LICENSE`](./LICENSE). The AEAT documents this library is implemented
 from, and the references consulted, are recorded in [`PROVENANCE.md`](./PROVENANCE.md).
+
+## Outage-header preproduction probe
+
+After the probe change is reviewed and merged, run it from `main` using the existing
+`aeat-preproduction` environment:
+
+```sh
+gh workflow run live-aeat.yml --repo waitron-io/verifactu --ref main -f mode=outage-flag
+```
+
+This mode sends four synthetic test submissions: a freshly generated alta with
+`RemisionVoluntaria.Incidencia="S"`, an alta created before a six-minute hold with the same
+flag, a fresh unflagged alta, and a fresh flagged cancellation of the first alta. It respects
+each reply's `TiempoEsperaEnvio` before the next request and generates fresh records after
+those waits. The delayed record keeps its original generation time and hash.
+
+Before sending, it prints these expectations: the fresh flagged record, control and
+cancellation are `Correcto`; the held record is `AceptadoConErrores`, code `2004`. These are
+hypotheses for the experiment. An unexpected warning or refusal remains in the evidence and
+makes the run fail; independent submissions still run after a complete, valid reply.
+Transport failures and missing, extra or malformed reply lines stop the probe as incomplete.
+
+Retain the run ID, head SHA and each `AEAT outage-flag` JSON entry from the workflow log.
+The entries contain sent records, send times, complete parsed replies and raw SOAP replies;
+issuer, recipient and software identities are replaced with `[identity]`. Publish those
+results beside the earlier protocol evidence before drawing a conclusion about a caller's
+restart behaviour. The test-service endpoint is selected by the existing certificate-kind
+setting. These results do not establish production acceptance or legal compliance.
