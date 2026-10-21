@@ -29,6 +29,7 @@ on:
           - reply-order
           - conflict-successors
           - held-cancellation-successors
+          - outage-flag
         default: consult
         required: true
       excluded_regime:

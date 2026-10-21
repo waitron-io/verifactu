@@ -3909,3 +3909,365 @@ test("reply-order live mode is reachable from the CLI", () => {
   assert.equal(run.status, 1);
   assert.match(run.stderr, /Set AEAT_TEST_NIF/);
 });
+
+async function runOutageFlagProbe(adjust = () => {}, waitError, clockOptions = {}) {
+  assert.equal(typeof live.submitOutageFlagProbe, "function");
+  let clock = clockOptions.initialClock ?? decimalOptions.now.getTime();
+  let clockReads = 0;
+  const fake = createFakeAeat({ serverNow: new Date(clock), tiempoEsperaInicial: 2 });
+  const requests = [];
+  const replies = [];
+  const reports = [];
+  const waits = [];
+  let rawReply;
+  const client = createClient({
+    endpoint: "https://fake.aeat.test/soap",
+    fetch: async (url, init) => {
+      fake.setServerNow(new Date(clock));
+      requests.push({ xml: init.body, at: clock });
+      const result = await fake.fetch(url, init);
+      rawReply = await result.clone().text();
+      replies.push(rawReply);
+      return result;
+    },
+  });
+  const evidence = await live.submitOutageFlagProbe(
+    {
+      async submit(header, records) {
+        const response = await client.submit(header, records);
+        if (requests.length === 2) {
+          response.EstadoEnvio = "ParcialmenteCorrecto";
+          Object.assign(response.RespuestaLinea[0], {
+            EstadoRegistro: "AceptadoConErrores",
+            CodigoErrorRegistro: 2004,
+            DescripcionErrorRegistro: "Delayed generation timestamp",
+          });
+        }
+        return adjust(response, requests.length) ?? response;
+      },
+    },
+    successorHeader,
+    decimalOptions,
+    {
+      now: () => {
+        const result = new Date(clock);
+        if (clockReads++ === 0) clock += clockOptions.afterHold ?? 0;
+        return result;
+      },
+      waitForSubmission: async (seconds) => {
+        waits.push(seconds);
+        if (waitError) throw waitError;
+        clock += seconds * 1000;
+      },
+      rawReply: () => rawReply,
+      report: (stage, entry) => reports.push([stage, structuredClone(entry)]),
+    },
+  );
+  return { evidence, requests, replies, reports, waits, stored: fake.stored() };
+}
+
+test("outage probe sends fresh and truly held records, an unflagged control and a flagged cancellation", async () => {
+  const { evidence, requests, replies, reports, waits, stored } = await runOutageFlagProbe();
+  assert.equal(evidence.incomplete, false);
+  assert.deepEqual(
+    reports.map(([stage]) => stage),
+    ["freshFlagged", "delayedFlagged", "control", "cancellationFlagged"],
+  );
+  assert.equal(requests.length, 4);
+  assert.ok(waits.includes(358), "the delayed record must really be held for six minutes");
+  assert.ok(requests[1].at - requests[0].at >= 360_000);
+  for (const [index, [stage, entry]] of reports.entries()) {
+    const xml = requests[index].xml;
+    if (stage === "control") assert.doesNotMatch(xml, /RemisionVoluntaria|Incidencia/);
+    else
+      assert.match(
+        xml,
+        /<sf:RemisionVoluntaria><sf:Incidencia>S<\/sf:Incidencia><\/sf:RemisionVoluntaria>/,
+      );
+    assert.equal(entry.matchesExpectation, true);
+    assert.equal(entry.rawReply, replies[index]);
+    assert.equal(entry.response.RespuestaLinea.length, 1);
+    assert.equal(entry.records.length, 1);
+    const record = entry.records[0];
+    assert.deepEqual(validate(record), []);
+    assert.equal(record.Huella, computeHuella(record));
+    const age = requests[index].at - Date.parse(record.FechaHoraHusoGenRegistro);
+    assert.equal(age, stage === "delayedFlagged" ? 360_000 : 0);
+  }
+  assert.equal(evidence.delayedFlagged.response.RespuestaLinea[0].CodigoErrorRegistro, 2004);
+  assert.equal(
+    evidence.delayedFlagged.response.RespuestaLinea[0].DescripcionErrorRegistro,
+    "Delayed generation timestamp",
+  );
+  const original = evidence.freshFlagged.records[0];
+  const cancellation = evidence.cancellationFlagged.records[0];
+  assert.equal(cancellation.IDFactura.NumSerieFacturaAnulada, original.IDFactura.NumSerieFactura);
+  assert.deepEqual(cancellation.Encadenamiento.RegistroAnterior, {
+    ...original.IDFactura,
+    Huella: original.Huella,
+  });
+  assert.equal(
+    cancellation.SistemaInformatico.NumeroInstalacion,
+    original.SistemaInformatico.NumeroInstalacion,
+  );
+  assert.equal(stored.length, 3);
+  assert.equal(
+    stored.find(({ key }) => key.includes(original.IDFactura.NumSerieFactura)).estado,
+    "Anulado",
+  );
+});
+
+for (const fault of [
+  "missing",
+  "duplicate",
+  "wrong-key",
+  "extra",
+  "invalid-envelope",
+  "invalid-state",
+]) {
+  test(`outage probe retains ${fault} replies as incomplete evidence`, async () => {
+    const { evidence, reports } = await runOutageFlagProbe((response, count) => {
+      if (count !== 1) return;
+      if (fault === "missing") response.RespuestaLinea = [];
+      if (fault === "duplicate")
+        response.RespuestaLinea.push(structuredClone(response.RespuestaLinea[0]));
+      if (fault === "wrong-key")
+        response.RespuestaLinea[0].IDFactura.FechaExpedicionFactura = "01-01-2020";
+      if (fault === "extra")
+        response.RespuestaLinea.push({
+          ...response.RespuestaLinea[0],
+          IDFactura: { ...response.RespuestaLinea[0].IDFactura, NumSerieFactura: "OTHER" },
+        });
+      if (fault === "invalid-envelope") response.EstadoEnvio = "unknown";
+      if (fault === "invalid-state") response.RespuestaLinea[0].EstadoRegistro = "unknown";
+    });
+    assert.equal(evidence.incomplete, true);
+    assert.equal(evidence.stoppedAfter, "freshFlagged");
+    assert.equal(reports.length, 1);
+    assert.deepEqual(evidence.freshFlagged, reports[0][1]);
+  });
+}
+
+test("outage probe records unexpected valid warnings and still runs the independent controls", async () => {
+  const { evidence, requests } = await runOutageFlagProbe((response, count) => {
+    if (count !== 1) return;
+    response.EstadoEnvio = "ParcialmenteCorrecto";
+    Object.assign(response.RespuestaLinea[0], {
+      EstadoRegistro: "AceptadoConErrores",
+      CodigoErrorRegistro: 2004,
+      DescripcionErrorRegistro: "Unexpected warning on a fresh flagged record",
+    });
+  });
+  assert.equal(evidence.incomplete, false);
+  assert.equal(evidence.freshFlagged.matchesExpectation, false);
+  assert.equal(evidence.freshFlagged.response.RespuestaLinea[0].CodigoErrorRegistro, 2004);
+  assert.equal(requests.length, 4);
+  assert.equal(evidence.control.matchesExpectation, true);
+});
+
+test("outage probe retains the completed stage when the required wait fails", async () => {
+  const { evidence, reports, requests } = await runOutageFlagProbe(
+    undefined,
+    new Error("wait failed"),
+  );
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedAfter, "freshFlagged");
+  assert.equal(evidence.waitError, "wait failed");
+  assert.equal(requests.length, 1);
+  assert.equal(reports.length, 1);
+});
+
+test("outage-flag is a reachable live CLI mode", () => {
+  const run = spawnSync(process.execPath, ["scripts/live-aeat.mjs", "outage-flag"], {
+    encoding: "utf8",
+    timeout: 5000,
+    env: { PATH: process.env.PATH },
+  });
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /Set AEAT_TEST_NIF/);
+  assert.doesNotMatch(run.stderr, /Unknown AEAT preproduction mode/);
+});
+
+test("outage evidence keeps full reply fields while redacting identities in JSON and raw XML", () => {
+  assert.equal(typeof live.outageFlagEvidenceJson, "function");
+  const serialized = live.outageFlagEvidenceJson(
+    {
+      response: { CSV: "receipt", NIF: "89890001K", NombreRazon: "Example & Co", code: 2004 },
+      rawReply: "<reply><name>Example &amp; Co</name><nif>89890001K</nif><code>2004</code></reply>",
+    },
+    ["89890001K", "Example & Co"],
+  );
+  assert.deepEqual(JSON.parse(serialized), {
+    response: { CSV: "receipt", NIF: "[identity]", NombreRazon: "[identity]", code: 2004 },
+    rawReply: "<reply><name>[identity]</name><nif>[identity]</nif><code>2004</code></reply>",
+  });
+});
+
+test("outage probe retains a transport failure and its raw reply without further sends", async () => {
+  const { evidence, requests, replies, reports } = await runOutageFlagProbe(() => {
+    throw new Error("SOAP request refused");
+  });
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedAfter, "freshFlagged");
+  assert.equal(evidence.freshFlagged.transportError, "SOAP request refused");
+  assert.equal(evidence.freshFlagged.rawReply, replies[0]);
+  assert.equal(requests.length, 1);
+  assert.equal(reports.length, 1);
+});
+
+for (const [batchState, lineState] of [
+  ["Correcto", "AceptadoConErrores"],
+  ["Incorrecto", "Correcto"],
+  ["ParcialmenteCorrecto", "Incorrecto"],
+  ["ParcialmenteCorrecto", "Correcto"],
+]) {
+  test(`outage probe marks inconsistent ${batchState}/${lineState} replies incomplete`, async () => {
+    const { evidence, requests } = await runOutageFlagProbe((response) => {
+      response.EstadoEnvio = batchState;
+      response.RespuestaLinea[0].EstadoRegistro = lineState;
+    });
+    assert.equal(evidence.incomplete, true);
+    assert.equal(evidence.stoppedAfter, "freshFlagged");
+    assert.equal(requests.length, 1);
+  });
+}
+
+test("outage cancellation keeps the original issue date when preparation crosses Madrid midnight", async () => {
+  const { evidence } = await runOutageFlagProbe(undefined, undefined, {
+    initialClock: Date.parse("2026-10-20T21:59:59.999Z"),
+    afterHold: 2,
+  });
+  assert.equal(evidence.incomplete, false);
+  assert.equal(evidence.delayedFlagged.records[0].IDFactura.FechaExpedicionFactura, "20-10-2026");
+  assert.equal(evidence.freshFlagged.records[0].IDFactura.FechaExpedicionFactura, "21-10-2026");
+  assert.equal(
+    evidence.cancellationFlagged.records[0].IDFactura.FechaExpedicionFacturaAnulada,
+    "21-10-2026",
+  );
+});
+
+test("outage evidence redacts mixed decimal, hexadecimal and named XML references without changing other fields", () => {
+  const value = live.outageFlagEvidenceJson(
+    {
+      rawReply: "<name>Pe&#x00F1;a &amp; O&#00039;Brien</name><code>&#50;004</code>",
+      plain: "Peña & O'Brien",
+      code: 2004,
+    },
+    ["Peña & O'Brien"],
+  );
+  assert.deepEqual(JSON.parse(value), {
+    rawReply: "<name>[identity]</name><code>&#50;004</code>",
+    plain: "[identity]",
+    code: 2004,
+  });
+});
+
+for (const outcome of ["expected", "fresh-warning", "transport-failure"]) {
+  test(`outage CLI prints expectations first, redacts configured identities and exits for ${outcome}`, () => {
+    const target = new URL("./live-aeat.mjs", import.meta.url).href;
+    const fakeModule = new URL("../dist/testing/fake-aeat.js", import.meta.url).href;
+    const preload = `
+      import assert from "node:assert/strict";
+      import https from "node:https";
+      import { syncBuiltinESMExports } from "node:module";
+      import { EventEmitter } from "node:events";
+      import { fileURLToPath } from "node:url";
+      import { createFakeAeat } from ${JSON.stringify(fakeModule)};
+      const RealDate = Date;
+      const realTimeout = setTimeout;
+      let clock = RealDate.parse("2026-10-21T08:00:00Z");
+      globalThis.Date = class extends RealDate {
+        constructor(...args) { super(...(args.length ? args : [clock])); }
+        static now() { return clock; }
+      };
+      globalThis.setTimeout = (callback, milliseconds, ...args) => {
+        clock += milliseconds;
+        return realTimeout(callback, 0, ...args);
+      };
+      const fake = createFakeAeat({ serverNow: new RealDate(clock), tiempoEsperaInicial: 2 });
+      let sends = 0;
+      https.request = (url, options, callback) => {
+        assert.equal(new URL(url).hostname, "prewww1.aeat.es");
+        assert.equal(options.method, "POST");
+        const req = new EventEmitter();
+        req.destroy = (error) => req.emit("error", error);
+        req.end = (body) => {
+          sends++;
+          process.stdout.write("LOCAL_SEND\\n");
+          Promise.resolve().then(async () => {
+            if (${JSON.stringify(outcome)} === "transport-failure" && sends === 3) {
+              throw new Error("synthetic network failure");
+            }
+            fake.setServerNow(new RealDate(clock));
+            const response = await fake.fetch(url, { method: "POST", body });
+            let xml = await response.text();
+            if (sends === 2 || (${JSON.stringify(outcome)} === "fresh-warning" && sends === 1)) {
+              xml = xml.replace("<sfR:EstadoEnvio>Correcto</sfR:EstadoEnvio>", "<sfR:EstadoEnvio>ParcialmenteCorrecto</sfR:EstadoEnvio>")
+                .replace("<sfR:EstadoRegistro>Correcto</sfR:EstadoRegistro>", "<sfR:EstadoRegistro>AceptadoConErrores</sfR:EstadoRegistro><sfR:CodigoErrorRegistro>2004</sfR:CodigoErrorRegistro><sfR:DescripcionErrorRegistro>synthetic delay warning</sfR:DescripcionErrorRegistro>");
+            }
+            const incoming = new EventEmitter();
+            incoming.statusCode = 200;
+            callback(incoming);
+            incoming.emit("data", Buffer.from(xml));
+            incoming.emit("end");
+          }).catch((error) => req.emit("error", error));
+        };
+        return req;
+      };
+      syncBuiltinESMExports();
+      process.argv = [process.execPath, fileURLToPath(${JSON.stringify(target)}), "outage-flag"];
+      await import(${JSON.stringify(target)});
+    `;
+    const run = spawnSync(process.execPath, ["--input-type=module", "--eval", preload], {
+      encoding: "utf8",
+      timeout: 5000,
+      env: {
+        PATH: process.env.PATH,
+        AEAT_TEST_NIF: decimalOptions.nif,
+        AEAT_TEST_NAME: "Synthetic Issuer",
+        AEAT_TEST_SYSTEM_NIF: "B12345674",
+        AEAT_TEST_SYSTEM_NAME: "Software Peña & O'Neil",
+        AEAT_TEST_RECIPIENT_NIF: decimalOptions.recipientNif,
+        AEAT_TEST_RECIPIENT_NAME: "Synthetic Recipient",
+        AEAT_TEST_CERT_KIND: "personal",
+        AEAT_TEST_P12_BASE64: Buffer.from("synthetic").toString("base64"),
+        AEAT_TEST_P12_PASSWORD: "synthetic",
+        GITHUB_RUN_ID: "outage-cli-test",
+      },
+    });
+    assert.equal(run.error, undefined);
+    assert.equal(run.status, outcome === "expected" ? 0 : 1, run.stderr + run.stdout);
+    assert.match(run.stdout.split("\n")[0], /^AEAT outage-flag expectation:/);
+    assert.equal(
+      run.stdout.match(/^LOCAL_SEND$/gm)?.length,
+      outcome === "transport-failure" ? 3 : 4,
+    );
+    for (const identity of [
+      decimalOptions.nif,
+      "Synthetic Issuer",
+      "B12345674",
+      "Software Peña & O'Neil",
+      decimalOptions.recipientNif,
+      "Synthetic Recipient",
+    ]) {
+      assert.equal(run.stdout.includes(identity), false, identity);
+    }
+    const completeLine = run.stdout
+      .split("\n")
+      .find((line) => line.startsWith("AEAT outage-flag complete: "));
+    assert.ok(completeLine, run.stderr);
+    const evidence = JSON.parse(completeLine.slice("AEAT outage-flag complete: ".length));
+    assert.equal(evidence.delayedFlagged.response.RespuestaLinea[0].CodigoErrorRegistro, 2004);
+    assert.match(evidence.delayedFlagged.rawReply, /<sfR:CodigoErrorRegistro>2004/);
+    if (outcome === "transport-failure") {
+      assert.equal(evidence.incomplete, true);
+      assert.equal(evidence.stoppedAfter, "control");
+      assert.equal(evidence.control.rawReply, undefined);
+      assert.equal(evidence.control.transportError, "synthetic network failure");
+    } else {
+      assert.equal(evidence.incomplete, false);
+      assert.equal(evidence.freshFlagged.matchesExpectation, outcome === "expected");
+      assert.equal(evidence.cancellationFlagged.matchesExpectation, true);
+    }
+  });
+}

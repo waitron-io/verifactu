@@ -286,6 +286,126 @@ export function buildTestRecord(options) {
   });
 }
 
+export function outageFlagEvidenceJson(evidence, identities) {
+  const named = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" };
+  const patterns = [...new Set(identities.filter(Boolean))]
+    .sort((a, b) => b.length - a.length)
+    .map(
+      (identity) =>
+        new RegExp(
+          [...identity]
+            .map((character) => {
+              const code = character.codePointAt(0);
+              const literal = character.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+              return `(?:${literal}|&#0*${code};|&#x0*${code.toString(16)};${named[character] ? "|" + named[character] : ""})`;
+            })
+            .join(""),
+          "giu",
+        ),
+    );
+  return JSON.stringify(evidence, (_key, value) =>
+    typeof value === "string"
+      ? patterns.reduce((text, pattern) => text.replace(pattern, "[identity]"), value)
+      : value,
+  );
+}
+
+export async function submitOutageFlagProbe(
+  client,
+  cabecera,
+  options,
+  {
+    report = () => {},
+    waitForSubmission = waitForNextSubmission,
+    now = () => new Date(),
+    rawReply = () => undefined,
+  } = {},
+) {
+  const alta = (stage, generatedAt) =>
+    buildTestRecord({
+      ...options,
+      now: generatedAt,
+      runId: `${options.runId}-OUTAGE-${stage}`,
+    });
+  const heldAt = now();
+  const delayed = alta("delayed", heldAt);
+  const evidence = { incomplete: false };
+  let original;
+  let originalIssuedAt;
+  let previous;
+  let previousStage;
+  for (const stage of ["freshFlagged", "delayedFlagged", "control", "cancellationFlagged"]) {
+    try {
+      if (previous) await waitForSubmission(previous.TiempoEsperaEnvio);
+      if (stage === "delayedFlagged") {
+        const remaining = Math.ceil((heldAt.getTime() + 360_000 - now().getTime()) / 1000);
+        if (remaining > 0) await waitForSubmission(remaining);
+      }
+    } catch (error) {
+      return {
+        ...evidence,
+        incomplete: true,
+        stoppedAfter: previousStage,
+        waitError: error instanceof Error ? error.message : String(error),
+      };
+    }
+    const sentAt = now();
+    const record =
+      stage === "delayedFlagged"
+        ? delayed
+        : stage === "cancellationFlagged"
+          ? buildTestCancellation({ record: original, issuedAt: originalIssuedAt, now: sentAt })
+          : alta(stage, sentAt);
+    if (stage === "freshFlagged") {
+      original = record;
+      originalIssuedAt = sentAt;
+    }
+    const header =
+      stage === "control" ? cabecera : { ...cabecera, RemisionVoluntaria: { Incidencia: "S" } };
+    const entry = {
+      sentAt: sentAt.toISOString(),
+      records: [record],
+      incidence: stage === "control" ? null : "S",
+    };
+    try {
+      entry.response = await client.submit(header, [
+        stage === "cancellationFlagged" ? { RegistroAnulacion: record } : { RegistroAlta: record },
+      ]);
+      entry.rawReply = rawReply();
+    } catch (error) {
+      entry.transportError = error instanceof Error ? error.message : String(error);
+      entry.rawReply = rawReply();
+      evidence[stage] = entry;
+      report(stage, entry);
+      return { ...evidence, incomplete: true, stoppedAfter: stage };
+    }
+    const response = entry.response;
+    const lines = response.RespuestaLinea ?? [];
+    const line = lines[0];
+    const batchState = {
+      Correcto: "Correcto",
+      AceptadoConErrores: "ParcialmenteCorrecto",
+      Incorrecto: "Incorrecto",
+    }[line?.EstadoRegistro];
+    const complete =
+      lines.length === 1 &&
+      isDeepStrictEqual(line.IDFactura, successorRecordKey(record)) &&
+      batchState !== undefined &&
+      response.EstadoEnvio === batchState;
+    entry.matchesExpectation =
+      complete &&
+      (stage === "delayedFlagged"
+        ? line.EstadoRegistro === "AceptadoConErrores" && line.CodigoErrorRegistro === 2004
+        : line.EstadoRegistro === "Correcto");
+    evidence[stage] = entry;
+    report(stage, entry);
+    if (!complete) return { ...evidence, incomplete: true, stoppedAfter: stage };
+    previous = response;
+    previousStage = stage;
+  }
+  return evidence;
+}
+
 export function buildDecimalVariantTestRecord(options) {
   const built = buildTestRecordWith(options, {
     serialPrefix: "CI-DECIMAL",
@@ -2152,6 +2272,7 @@ async function main() {
       "reply-order",
       "conflict-successors",
       "held-cancellation-successors",
+      "outage-flag",
     ].includes(mode)
   ) {
     throw new Error("Unknown AEAT preproduction mode");
@@ -2207,6 +2328,46 @@ async function main() {
   };
   const cabecera = submissionHeader(obligadoEmision);
   const runId = process.env.GITHUB_RUN_ID ?? String(now.getTime());
+
+  if (mode === "outage-flag") {
+    process.stdout.write(
+      "AEAT outage-flag expectation: fresh flagged alta, fresh unflagged control and fresh flagged cancellation Correcto; six-minute-held flagged alta AceptadoConErrores with code 2004. Test service only; results do not establish production behaviour.\n",
+    );
+    const probeOptions = {
+      nif,
+      name,
+      systemNif: required("AEAT_TEST_SYSTEM_NIF"),
+      systemName: required("AEAT_TEST_SYSTEM_NAME"),
+      recipientNif: recipient.NIF,
+      recipientName: recipient.NombreRazon,
+      runId,
+    };
+    const identities = [
+      nif,
+      name,
+      probeOptions.systemNif,
+      probeOptions.systemName,
+      recipient.NIF,
+      recipient.NombreRazon,
+    ];
+    const evidence = await submitOutageFlagProbe(client, cabecera, probeOptions, {
+      rawReply: () => lastRawReply,
+      report: (stage, entry) =>
+        process.stdout.write(
+          `AEAT outage-flag ${stage}: ${outageFlagEvidenceJson(entry, identities)}\n`,
+        ),
+    });
+    process.stdout.write(
+      `AEAT outage-flag complete: ${outageFlagEvidenceJson(evidence, identities)}\n`,
+    );
+    if (
+      evidence.incomplete ||
+      Object.values(evidence).some((entry) => entry && entry.matchesExpectation === false)
+    ) {
+      process.exitCode = 1;
+    }
+    return;
+  }
 
   if (mode === "conflict-successors" || mode === "held-cancellation-successors") {
     const options = {
