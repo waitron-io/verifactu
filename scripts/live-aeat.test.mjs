@@ -4271,3 +4271,419 @@ for (const outcome of ["expected", "fresh-warning", "transport-failure"]) {
     }
   });
 }
+
+async function runFourBehaviourProbe(
+  adjust = () => {},
+  failWait = false,
+  hideRaw = false,
+  faults = {},
+) {
+  assert.equal(typeof live.submitFourBehaviourProbe, "function");
+  let clock = decimalOptions.now.getTime();
+  const fake = createFakeAeat({ serverNow: new Date(clock), tiempoEsperaInicial: 2 });
+  const requests = [];
+  const replies = [];
+  const reports = [];
+  const waits = [];
+  let raw;
+  let submissions = 0;
+  const client = createClient({
+    endpoint: "https://fake.aeat.test/soap",
+    fetch: async (url, init) => {
+      fake.setServerNow(new Date(clock));
+      requests.push(init.body);
+      const response = await fake.fetch(url, init);
+      raw = await response.clone().text();
+      replies.push(raw);
+      return response;
+    },
+  });
+  const evidence = await live.submitFourBehaviourProbe(
+    {
+      async submit(header, records) {
+        faults.beforeSubmit?.(++submissions);
+        const response = await client.submit(header, records);
+        return adjust(response, requests.length) ?? response;
+      },
+      async consultar(...args) {
+        faults.beforeLookup?.();
+        const response = await client.consultar(...args);
+        return faults.adjustLookup?.(response) ?? response;
+      },
+    },
+    successorHeader,
+    decimalOptions,
+    {
+      now: () => new Date(clock),
+      waitForSubmission: async (seconds) => {
+        waits.push(seconds);
+        if (failWait) throw new Error("wait failed");
+        clock += seconds * 1000;
+      },
+      rawReply: () => (hideRaw === "empty" ? "" : hideRaw ? undefined : raw),
+      clearRawReply: () => {
+        raw = undefined;
+      },
+      report: (stage, entry) => reports.push([stage, structuredClone(entry)]),
+    },
+  );
+  return { evidence, requests, replies, reports, waits };
+}
+
+test("four-behaviour probe sends an identical cancellation twice, zero F2 and one corrupted hash", async () => {
+  const { evidence, requests, replies, reports, waits } = await runFourBehaviourProbe();
+  assert.equal(evidence.incomplete, false);
+  assert.deepEqual(
+    reports.map(([stage]) => stage),
+    ["original", "cancellation", "cancellationRetry", "zero", "validHash", "wrongHash"],
+  );
+  assert.equal(requests.length, 10); // six submissions and four consultas
+  assert.equal(waits.length, 5);
+  assert.deepEqual(waits, [2, 1, 1, 1, 1]);
+  assert.equal(requests[1], requests[2]);
+  const records = reports.map(([, entry]) => entry.record);
+  assert.deepEqual(records[1], records[2]);
+  assert.deepEqual(records[1].Encadenamiento.RegistroAnterior, {
+    ...records[0].IDFactura,
+    Huella: records[0].Huella,
+  });
+  assert.deepEqual(
+    evidence.cancellation.response.RespuestaLinea[0].IDFactura,
+    records[0].IDFactura,
+  );
+  const zero = evidence.zero.record;
+  assert.equal(zero.TipoFactura, "F2");
+  assert.equal(zero.Destinatarios, undefined);
+  assert.equal(zero.CuotaTotal, "0.00");
+  assert.equal(zero.ImporteTotal, "0.00");
+  assert.equal(zero.Desglose[0].BaseImponibleOimporteNoSujeto, "0.00");
+  assert.equal(zero.Desglose[0].CuotaRepercutida, "0.00");
+  const installations = new Set();
+  for (const stage of ["original", "zero", "validHash", "wrongHash"]) {
+    const entry = evidence[stage];
+    installations.add(entry.record.SistemaInformatico.NumeroInstalacion);
+    assert.deepEqual(entry.record.Encadenamiento, { PrimerRegistro: "S" });
+    assert.equal(Date.parse(entry.record.FechaHoraHusoGenRegistro), Date.parse(entry.sentAt));
+    assert.deepEqual(
+      validate(entry.record).map(({ code }) => code),
+      stage === "wrongHash" ? ["HUELLA_MISMATCH"] : [],
+    );
+    if (stage !== "wrongHash") assert.equal(entry.record.Huella, computeHuella(entry.record));
+  }
+  assert.equal(installations.size, 4);
+  assert.notEqual(evidence.wrongHash.record.Huella, computeHuella(evidence.wrongHash.record));
+  for (const stage of ["cancellationRetry", "zero", "validHash", "wrongHash"]) {
+    assert.ok(evidence[stage].consultation);
+    assert.ok(evidence[stage].consultationRawReply.includes("Envelope"));
+  }
+  for (const [, entry] of reports) {
+    assert.ok(replies.includes(entry.rawReply));
+    assert.equal(entry.response.RespuestaLinea.length, 1);
+  }
+  assert.equal(evidence.cancellationRetry.record.Huella, evidence.cancellation.record.Huella);
+});
+
+for (const fault of ["missing", "extra", "wrong-key", "bad-envelope"]) {
+  test(`four-behaviour probe retains ${fault} response without presenting it as complete`, async () => {
+    const { evidence, requests } = await runFourBehaviourProbe((response, count) => {
+      if (count !== 1) return;
+      if (fault === "missing") response.RespuestaLinea = [];
+      if (fault === "extra") response.RespuestaLinea.push(response.RespuestaLinea[0]);
+      if (fault === "wrong-key")
+        response.RespuestaLinea[0].IDFactura.FechaExpedicionFactura = "01-01-2000";
+      if (fault === "bad-envelope") response.EstadoEnvio = "Incorrecto";
+    });
+    assert.equal(evidence.incomplete, true);
+    assert.deepEqual(evidence.incompleteStages, ["original"]);
+    assert.ok(evidence.original.rawReply);
+    assert.equal(requests.length, 7);
+    assert.ok(evidence.zero.consultation);
+  });
+}
+
+test("four-behaviour probe keeps unexpected fingerprint acceptance for an owner decision", async () => {
+  const { evidence } = await runFourBehaviourProbe((response, count) => {
+    if (count !== 9) return;
+    response.EstadoEnvio = "Correcto";
+    Object.assign(response.RespuestaLinea[0], { EstadoRegistro: "Correcto" });
+    delete response.RespuestaLinea[0].CodigoErrorRegistro;
+    delete response.RespuestaLinea[0].DescripcionErrorRegistro;
+  });
+  assert.equal(evidence.incomplete, false);
+  assert.equal(evidence.wrongHash.matchesExpectation, false);
+  assert.equal(evidence.wrongHash.response.RespuestaLinea[0].EstadoRegistro, "Correcto");
+  assert.ok(evidence.wrongHash.rawReply);
+});
+
+test("four-behaviour probe keeps the completed reply when the next wait fails", async () => {
+  const { evidence, requests } = await runFourBehaviourProbe(undefined, true);
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedAfter, "cancellation");
+  assert.match(evidence.error, /wait failed/);
+  assert.ok(evidence.original.rawReply);
+  assert.equal(requests.length, 1);
+});
+
+test("four-behaviours mode reaches credential validation without making a request", () => {
+  const run = spawnSync(process.execPath, ["scripts/live-aeat.mjs", "four-behaviours"], {
+    cwd: new URL("..", import.meta.url),
+    env: { ...process.env, AEAT_TEST_NIF: "" },
+    encoding: "utf8",
+  });
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /Set AEAT_TEST_NIF/);
+});
+
+test("four-behaviour probe does not attach a previous reply to an unsent stage", async () => {
+  const { evidence } = await runFourBehaviourProbe(undefined, true);
+  assert.equal(evidence.cancellation.record, undefined);
+  assert.equal(evidence.cancellation.rawReply, undefined);
+});
+
+test("four-behaviour probe preserves transport failure and the completed cancellation evidence", async () => {
+  const { evidence, requests } = await runFourBehaviourProbe((_response, count) => {
+    if (count === 3) throw new Error("reply lost after submit");
+  });
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedAfter, "cancellationRetry");
+  assert.match(evidence.error, /reply lost after submit/);
+  assert.ok(evidence.cancellation.rawReply);
+  assert.ok(evidence.cancellationRetry.rawReply);
+  assert.equal(requests.length, 3);
+});
+
+test("four-behaviour probe does not call parsed-only evidence complete", async () => {
+  const { evidence, requests } = await runFourBehaviourProbe(undefined, false, true);
+  assert.equal(evidence.incomplete, true);
+  assert.deepEqual(evidence.incompleteStages, ["original", "zero", "validHash", "wrongHash"]);
+  assert.equal(evidence.original.response.EstadoEnvio, "Correcto");
+  assert.equal(evidence.original.rawReply, undefined);
+  assert.equal(requests.length, 4);
+});
+
+for (const outcome of ["expected", "hash-accepted", "transport-failure"]) {
+  test(`four-behaviours CLI retains redacted raw evidence and exit status for ${outcome}`, () => {
+    const target = new URL("./live-aeat.mjs", import.meta.url).href;
+    const fakeModule = new URL("../dist/testing/fake-aeat.js", import.meta.url).href;
+    const preload = `
+      import assert from "node:assert/strict";
+      import https from "node:https";
+      import { syncBuiltinESMExports } from "node:module";
+      import { EventEmitter } from "node:events";
+      import { fileURLToPath } from "node:url";
+      import { createFakeAeat } from ${JSON.stringify(fakeModule)};
+      const RealDate = Date;
+      const realTimeout = setTimeout;
+      let clock = RealDate.parse("2026-10-21T08:00:00Z");
+      globalThis.Date = class extends RealDate {
+        constructor(...args) { super(...(args.length ? args : [clock])); }
+        static now() { return clock; }
+      };
+      globalThis.setTimeout = (callback, milliseconds, ...args) => {
+        clock += milliseconds;
+        return realTimeout(callback, 0, ...args);
+      };
+      const fake = createFakeAeat({ serverNow: new RealDate(clock), tiempoEsperaInicial: 2 });
+      let sends = 0;
+      https.request = (url, options, callback) => {
+        assert.equal(new URL(url).hostname, "prewww1.aeat.es");
+        assert.equal(options.method, "POST");
+        const req = new EventEmitter();
+        req.destroy = (error) => req.emit("error", error);
+        req.end = (body) => {
+          sends++;
+          process.stdout.write("LOCAL_SEND\\n");
+          Promise.resolve().then(async () => {
+            if (${JSON.stringify(outcome)} === "transport-failure" && sends === 3) {
+              throw new Error("synthetic network failure");
+            }
+            fake.setServerNow(new RealDate(clock));
+            const response = await fake.fetch(url, { method: "POST", body });
+            let xml = await response.text();
+            if (sends === 9 && ${JSON.stringify(outcome)} === "expected") {
+              xml = xml.replace("<sfR:EstadoEnvio>Correcto</sfR:EstadoEnvio>", "<sfR:EstadoEnvio>ParcialmenteCorrecto</sfR:EstadoEnvio>")
+                .replace("<sfR:EstadoRegistro>Correcto</sfR:EstadoRegistro>", "<sfR:EstadoRegistro>AceptadoConErrores</sfR:EstadoRegistro><sfR:CodigoErrorRegistro>2000</sfR:CodigoErrorRegistro><sfR:DescripcionErrorRegistro>synthetic fingerprint warning</sfR:DescripcionErrorRegistro>");
+            }
+            const incoming = new EventEmitter();
+            incoming.statusCode = 200;
+            callback(incoming);
+            incoming.emit("data", Buffer.from(xml));
+            incoming.emit("end");
+          }).catch((error) => req.emit("error", error));
+        };
+        return req;
+      };
+      syncBuiltinESMExports();
+      process.argv = [process.execPath, fileURLToPath(${JSON.stringify(target)}), "four-behaviours"];
+      await import(${JSON.stringify(target)});
+    `;
+    const run = spawnSync(process.execPath, ["--input-type=module", "--eval", preload], {
+      encoding: "utf8",
+      timeout: 5000,
+      env: {
+        PATH: process.env.PATH,
+        AEAT_TEST_NIF: decimalOptions.nif,
+        AEAT_TEST_NAME: "Synthetic Issuer",
+        AEAT_TEST_SYSTEM_NIF: "B12345674",
+        AEAT_TEST_SYSTEM_NAME: "Synthetic Software & Co",
+        AEAT_TEST_RECIPIENT_NIF: decimalOptions.recipientNif,
+        AEAT_TEST_RECIPIENT_NAME: "Synthetic Recipient",
+        AEAT_TEST_CERT_KIND: "personal",
+        AEAT_TEST_P12_BASE64: Buffer.from("synthetic").toString("base64"),
+        AEAT_TEST_P12_PASSWORD: "synthetic",
+        GITHUB_RUN_ID: "four-cli-test",
+      },
+    });
+    assert.equal(run.error, undefined);
+    assert.equal(run.status, outcome === "expected" ? 0 : 1, run.stderr + run.stdout);
+    assert.match(run.stdout.split("\n")[0], /^AEAT four-behaviours expectation:/);
+    assert.equal(
+      run.stdout.match(/^LOCAL_SEND$/gm)?.length,
+      outcome === "transport-failure" ? 3 : 10,
+    );
+    for (const identity of [
+      decimalOptions.nif,
+      "Synthetic Issuer",
+      "B12345674",
+      "Synthetic Software & Co",
+      decimalOptions.recipientNif,
+      "Synthetic Recipient",
+    ]) {
+      assert.equal(run.stdout.includes(identity), false, identity);
+    }
+    const line = run.stdout
+      .split("\n")
+      .find((value) => value.startsWith("AEAT four-behaviours complete: "));
+    assert.ok(line, run.stderr);
+    const evidence = JSON.parse(line.slice("AEAT four-behaviours complete: ".length));
+    assert.ok(evidence.cancellation.rawReply);
+    assert.equal(
+      evidence.cancellation.record.IDFactura.FechaExpedicionFacturaAnulada,
+      "21-10-2026",
+    );
+    assert.equal(
+      evidence.cancellation.record.FechaHoraHusoGenRegistro,
+      "2026-10-21T10:00:02+02:00",
+    );
+    if (outcome === "transport-failure") {
+      assert.equal(evidence.incomplete, true);
+      assert.equal(evidence.stoppedAfter, "cancellationRetry");
+      assert.equal(evidence.cancellationRetry.rawReply, undefined);
+      assert.match(evidence.error, /synthetic network failure/);
+    } else {
+      assert.equal(evidence.incomplete, false);
+      assert.equal(evidence.wrongHash.matchesExpectation, outcome === "expected");
+      assert.ok(evidence.wrongHash.rawReply);
+      assert.ok(evidence.wrongHash.consultationRawReply);
+      assert.deepEqual(evidence.cancellationRetry.record, evidence.cancellation.record);
+    }
+  });
+}
+
+for (const fault of ["wrong-key", "warning"]) {
+  test(`four-behaviour probe continues independent observations after cancellation ${fault}`, async () => {
+    const { evidence, requests } = await runFourBehaviourProbe((response, count) => {
+      if (count !== 2) return;
+      if (fault === "wrong-key")
+        response.RespuestaLinea[0].IDFactura.NumSerieFactura = "other-invoice";
+      else {
+        response.EstadoEnvio = "ParcialmenteCorrecto";
+        response.RespuestaLinea[0].EstadoRegistro = "AceptadoConErrores";
+        response.RespuestaLinea[0].CodigoErrorRegistro = 2004;
+      }
+    });
+    assert.equal(requests.length, 10);
+    assert.equal(evidence.cancellation.matchesExpectation, false);
+    assert.ok(evidence.cancellation.rawReply);
+    assert.ok(evidence.cancellationRetry.response);
+    assert.ok(evidence.zero.consultation);
+    assert.ok(evidence.validHash.consultation);
+    assert.ok(evidence.wrongHash.consultation);
+    assert.equal(evidence.incomplete, fault === "wrong-key");
+  });
+}
+
+test("four-behaviour probe still measures independent invoices after a refused original", async () => {
+  const { evidence, requests } = await runFourBehaviourProbe((response, count) => {
+    if (count !== 1) return;
+    response.EstadoEnvio = "Incorrecto";
+    response.RespuestaLinea[0].EstadoRegistro = "Incorrecto";
+    response.RespuestaLinea[0].CodigoErrorRegistro = 1161;
+  });
+  assert.equal(requests.length, 7);
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.cancellation, undefined);
+  assert.equal(evidence.cancellationRetry, undefined);
+  assert.ok(evidence.zero.consultation);
+  assert.ok(evidence.wrongHash.consultation);
+});
+
+test("four-behaviour probe clears raw evidence before a submit that fails before sending", async () => {
+  const { evidence } = await runFourBehaviourProbe(undefined, false, false, {
+    beforeSubmit: (attempt) => {
+      if (attempt === 4) throw new Error("pre-send failure");
+    },
+  });
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedAfter, "zero");
+  assert.match(evidence.error, /pre-send failure/);
+  assert.ok(evidence.cancellationRetry.consultationRawReply);
+  assert.equal(evidence.zero.rawReply, undefined);
+});
+
+test("four-behaviour probe clears raw evidence before a lookup that fails before sending", async () => {
+  const { evidence } = await runFourBehaviourProbe(undefined, false, false, {
+    beforeLookup: () => {
+      throw new Error("lookup pre-send failure");
+    },
+  });
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedAfter, "cancellationRetry");
+  assert.ok(evidence.cancellationRetry.rawReply);
+  assert.equal(evidence.cancellationRetry.consultationRawReply, undefined);
+});
+
+for (const fault of ["code", "state"]) {
+  test(`four-behaviour probe marks a cancellation retry with unexpected duplicate ${fault} off-prediction`, async () => {
+    const { evidence } = await runFourBehaviourProbe((response, count) => {
+      if (count !== 3) return;
+      if (fault === "code") response.RespuestaLinea[0].CodigoErrorRegistro = 3002;
+      else response.RespuestaLinea[0].RegistroDuplicado.EstadoRegistroDuplicado = "Correcta";
+    });
+    assert.equal(evidence.incomplete, false);
+    assert.equal(evidence.cancellationRetry.matchesExpectation, false);
+    assert.ok(evidence.wrongHash.consultation);
+  });
+}
+
+test("four-behaviour probe calls an empty raw response incomplete", async () => {
+  const { evidence } = await runFourBehaviourProbe(undefined, false, "empty");
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.original.rawReply, "");
+});
+
+test("four-behaviour probe retains and refuses a malformed lookup result", async () => {
+  const { evidence } = await runFourBehaviourProbe(undefined, false, false, {
+    adjustLookup: (response) => {
+      response.ResultadoConsulta = "Invalid";
+    },
+  });
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedAfter, "cancellationRetry");
+  assert.match(evidence.error, /Unexpected AEAT consultation/);
+  assert.equal(evidence.cancellationRetry.consultation.ResultadoConsulta, "Invalid");
+  assert.ok(evidence.cancellationRetry.consultationRawReply);
+});
+
+test("four-behaviour probe does not attribute an unrelated warning to the corrupted fingerprint", async () => {
+  const { evidence } = await runFourBehaviourProbe((response, count) => {
+    if (count !== 9) return;
+    response.EstadoEnvio = "ParcialmenteCorrecto";
+    Object.assign(response.RespuestaLinea[0], {
+      EstadoRegistro: "AceptadoConErrores",
+      CodigoErrorRegistro: 2004,
+    });
+  });
+  assert.equal(evidence.incomplete, false);
+  assert.equal(evidence.wrongHash.matchesExpectation, false);
+});

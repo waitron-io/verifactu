@@ -406,6 +406,142 @@ export async function submitOutageFlagProbe(
   return evidence;
 }
 
+export async function submitFourBehaviourProbe(
+  client,
+  cabecera,
+  options,
+  {
+    report = () => {},
+    waitForSubmission = waitForNextSubmission,
+    now = () => new Date(),
+    rawReply = () => undefined,
+    clearRawReply = () => {},
+  } = {},
+) {
+  const evidence = { incomplete: false, incompleteStages: [] };
+  let previous;
+  let original;
+  let issuedAt;
+  let cancellation;
+  for (const stage of [
+    "original",
+    "cancellation",
+    "cancellationRetry",
+    "zero",
+    "validHash",
+    "wrongHash",
+  ]) {
+    if (stage.startsWith("cancellation") && !original) continue;
+    const entry = {};
+    try {
+      if (previous) await waitForSubmission(previous.TiempoEsperaEnvio);
+      const sentAt = now();
+      entry.sentAt = sentAt.toISOString();
+      let record;
+      if (stage === "cancellation") {
+        cancellation = buildTestCancellation({ record: original, issuedAt, now: sentAt });
+        record = cancellation;
+      } else if (stage === "cancellationRetry") {
+        record = cancellation;
+      } else {
+        const built = buildTestRecord({
+          ...options,
+          now: sentAt,
+          runId: `${options.runId}-FOUR-${stage}`,
+        });
+        record = { ...built, TipoFactura: "F2" };
+        delete record.Destinatarios;
+        if (stage === "zero") {
+          record = {
+            ...record,
+            Desglose: record.Desglose.map((line) => ({
+              ...line,
+              BaseImponibleOimporteNoSujeto: "0.00",
+              CuotaRepercutida: "0.00",
+            })),
+            CuotaTotal: "0.00",
+            ImporteTotal: "0.00",
+          };
+        }
+        record.Huella = computeHuella(record);
+        if (stage === "wrongHash") {
+          record.Huella = (record.Huella[0] === "0" ? "1" : "0") + record.Huella.slice(1);
+        }
+        if (stage === "original") {
+          original = record;
+          issuedAt = sentAt;
+        }
+      }
+      entry.record = record;
+      clearRawReply();
+      entry.response = await client.submit(cabecera, [
+        stage.startsWith("cancellation") ? { RegistroAnulacion: record } : { RegistroAlta: record },
+      ]);
+      entry.rawReply = rawReply();
+      previous = entry.response;
+      const lines = entry.response.RespuestaLinea ?? [];
+      const line = lines[0];
+      const batchState = {
+        Correcto: "Correcto",
+        AceptadoConErrores: "ParcialmenteCorrecto",
+        Incorrecto: "Incorrecto",
+      }[line?.EstadoRegistro];
+      const complete =
+        typeof entry.rawReply === "string" &&
+        entry.rawReply.length > 0 &&
+        lines.length === 1 &&
+        isDeepStrictEqual(line.IDFactura, successorRecordKey(record)) &&
+        batchState !== undefined &&
+        entry.response.EstadoEnvio === batchState;
+      entry.matchesExpectation =
+        complete &&
+        (stage === "cancellationRetry"
+          ? line.CodigoErrorRegistro === 3000 &&
+            line.RegistroDuplicado?.EstadoRegistroDuplicado === "Anulada"
+          : stage === "wrongHash"
+            ? line.EstadoRegistro === "AceptadoConErrores" && line.CodigoErrorRegistro === 2000
+            : line.EstadoRegistro === "Correcto");
+      evidence[stage] = entry;
+      if (!complete || (stage === "original" && line.EstadoRegistro === "Incorrecto")) {
+        evidence.incomplete = true;
+        evidence.incompleteStages.push(stage);
+        if (stage === "original") original = undefined;
+        report(stage, entry);
+        continue;
+      }
+      if (["cancellationRetry", "zero", "validHash", "wrongHash"].includes(stage)) {
+        const identity = successorRecordKey(record);
+        const [day, month, year] = identity.FechaExpedicionFactura.split("-");
+        clearRawReply();
+        entry.consultation = await client.consultar(
+          issuerConsultaHeader(cabecera.ObligadoEmision),
+          {
+            Ejercicio: year,
+            Periodo: month,
+            NumSerieFactura: identity.NumSerieFactura,
+            FechaExpedicionFactura: `${day}-${month}-${year}`,
+          },
+        );
+        entry.consultationRawReply = rawReply();
+        assertConsultation(entry.consultation);
+      }
+      report(stage, entry);
+    } catch (error) {
+      if (entry.record && !entry.response) entry.rawReply = rawReply();
+      else if (entry.response && !entry.consultation) entry.consultationRawReply = rawReply();
+      evidence[stage] = entry;
+      report(stage, entry);
+      return {
+        ...evidence,
+        incomplete: true,
+        stoppedAfter: stage,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+  return evidence;
+}
+
 export function buildDecimalVariantTestRecord(options) {
   const built = buildTestRecordWith(options, {
     serialPrefix: "CI-DECIMAL",
@@ -2273,6 +2409,7 @@ async function main() {
       "conflict-successors",
       "held-cancellation-successors",
       "outage-flag",
+      "four-behaviours",
     ].includes(mode)
   ) {
     throw new Error("Unknown AEAT preproduction mode");
@@ -2328,6 +2465,49 @@ async function main() {
   };
   const cabecera = submissionHeader(obligadoEmision);
   const runId = process.env.GITHUB_RUN_ID ?? String(now.getTime());
+
+  if (mode === "four-behaviours") {
+    process.stdout.write(
+      "AEAT four-behaviours expectation: original and cancellation Correcto; identical cancellation retry duplicate 3000/Anulada; zero F2 and valid-hash control Correcto; corrupted fingerprint AceptadoConErrores/2000. Cancellation replies expected to name the cancelled invoice. Test service only; no production inference or Waitron policy change.\n",
+    );
+    const probeOptions = {
+      nif,
+      name,
+      systemNif: required("AEAT_TEST_SYSTEM_NIF"),
+      systemName: required("AEAT_TEST_SYSTEM_NAME"),
+      recipientNif: recipient.NIF,
+      recipientName: recipient.NombreRazon,
+      runId,
+    };
+    const identities = [
+      nif,
+      name,
+      probeOptions.systemNif,
+      probeOptions.systemName,
+      recipient.NIF,
+      recipient.NombreRazon,
+    ];
+    const evidence = await submitFourBehaviourProbe(client, cabecera, probeOptions, {
+      rawReply: () => lastRawReply,
+      clearRawReply: () => {
+        lastRawReply = undefined;
+      },
+      report: (stage, entry) =>
+        process.stdout.write(
+          `AEAT four-behaviours ${stage}: ${outageFlagEvidenceJson(entry, identities)}\n`,
+        ),
+    });
+    process.stdout.write(
+      `AEAT four-behaviours complete: ${outageFlagEvidenceJson(evidence, identities)}\n`,
+    );
+    if (
+      evidence.incomplete ||
+      Object.values(evidence).some((entry) => entry?.matchesExpectation === false)
+    ) {
+      process.exitCode = 1;
+    }
+    return;
+  }
 
   if (mode === "outage-flag") {
     process.stdout.write(

@@ -30,6 +30,7 @@ on:
           - conflict-successors
           - held-cancellation-successors
           - outage-flag
+          - four-behaviours
         default: consult
         required: true
       excluded_regime:
