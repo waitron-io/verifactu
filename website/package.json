@@ -20,7 +20,7 @@
     "sharp": "^0.35.3",
     "starlight-typedoc": "^0.23.1",
     "typedoc": "^0.28.15",
-    "typedoc-plugin-markdown": "^4.9.0"
+    "typedoc-plugin-markdown": "^4.14.0"
   },
   "devDependencies": {
     "jsqr": "^1.4.0",
