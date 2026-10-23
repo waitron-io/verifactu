@@ -1190,6 +1190,118 @@ export function buildFreshInstallationProbeRecords(options) {
   return { existing: recordFor("EXISTING"), fresh: recordFor("FRESH") };
 }
 
+export async function submitHandoverTailProbe(
+  client,
+  cabecera,
+  options,
+  {
+    report = () => {},
+    waitForSubmission = waitForNextSubmission,
+    now = () => new Date(),
+    rawReply = () => undefined,
+    clearRawReply = () => {},
+  } = {},
+) {
+  const evidence = { incomplete: true };
+  const heads = new Map();
+  let previous;
+  let originalA3;
+  const prepare = (stage, generatedAt) => {
+    const installation = stage[0];
+    const prior = heads.get(installation);
+    const record = buildTestRecord({ ...options, now: generatedAt, runId: options.runId });
+    record.IDFactura.NumSerieFactura = record.IDFactura.NumSerieFactura.replace(
+      "CI/",
+      `CI-HANDOVER-${stage}/`,
+    );
+    record.RefExterna = `CI-HANDOVER-${options.runId}-${stage}`;
+    record.SistemaInformatico.NumeroInstalacion = `CI-HANDOVER-${options.runId}-${installation}`;
+    record.Encadenamiento = prior
+      ? { RegistroAnterior: { ...prior.IDFactura, Huella: prior.Huella } }
+      : { PrimerRegistro: "S" };
+    record.Huella = computeHuella(record);
+    assertValid(record);
+    heads.set(installation, record);
+    return record;
+  };
+  for (const stage of ["A1", "A2", "A3", "B1", "B2", "A4", "B3", "A5", "A3Replay", "storedA3"]) {
+    const entry = {};
+    let requestStarted = false;
+    try {
+      if (stage === "storedA3") {
+        const [, month, year] = originalA3.IDFactura.FechaExpedicionFactura.split("-");
+        entry.filter = expandedIssuerConsultaFilter(originalA3, year, month);
+        clearRawReply();
+        requestStarted = true;
+        entry.response = await client.consultar(
+          issuerConsultaHeader(cabecera.ObligadoEmision),
+          entry.filter,
+        );
+        entry.rawReply = rawReply();
+        assertConsultation(entry.response);
+        const matches = entry.response.registros.filter((stored) =>
+          isDeepStrictEqual(stored.IDFactura, originalA3.IDFactura),
+        );
+        entry.record = matches[0];
+        const software = entry.record?.DatosRegistroFacturacion.SistemaInformatico;
+        entry.matchesExpectation =
+          matches.length === 1 &&
+          entry.record.EstadoRegistro === "Correcto" &&
+          entry.record.DatosRegistroFacturacion.Huella === originalA3.Huella &&
+          software?.NIF === originalA3.SistemaInformatico.NIF &&
+          software?.IdSistemaInformatico === originalA3.SistemaInformatico.IdSistemaInformatico &&
+          software?.NumeroInstalacion === originalA3.SistemaInformatico.NumeroInstalacion;
+      } else {
+        if (previous) await waitForSubmission(previous.TiempoEsperaEnvio);
+        let record = originalA3;
+        if (stage !== "A3Replay") {
+          const generatedAt = now();
+          if (stage === "B1") {
+            evidence.tailPrepared = {
+              A4: prepare("A4", generatedAt),
+              A5: prepare("A5", generatedAt),
+            };
+          }
+          record = evidence.tailPrepared?.[stage] ?? prepare(stage, generatedAt);
+          if (stage === "A3") originalA3 = record;
+        }
+        entry.record = record;
+        clearRawReply();
+        requestStarted = true;
+        entry.response = await client.submit(cabecera, [{ RegistroAlta: record }]);
+        entry.rawReply = rawReply();
+        const lines = entry.response.RespuestaLinea ?? [];
+        const line = lines[0];
+        const replay = stage === "A3Replay";
+        entry.matchesExpectation =
+          lines.length === 1 &&
+          isDeepStrictEqual(line.IDFactura, record.IDFactura) &&
+          entry.response.EstadoEnvio === (replay ? "Incorrecto" : "Correcto") &&
+          line.EstadoRegistro === (replay ? "Incorrecto" : "Correcto") &&
+          (replay
+            ? line.CodigoErrorRegistro === 3000 &&
+              line.RegistroDuplicado?.EstadoRegistroDuplicado === "Correcta"
+            : line.CodigoErrorRegistro === undefined);
+        previous = entry.response;
+      }
+      evidence[stage] = entry;
+      report(stage, entry);
+      if (!entry.matchesExpectation) return { ...evidence, stoppedAfter: stage };
+    } catch (error) {
+      if (requestStarted) entry.rawReply = rawReply();
+      evidence[stage] = entry;
+      report(stage, entry);
+      return {
+        ...evidence,
+        stoppedAfter: stage,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+  evidence.incomplete = false;
+  return evidence;
+}
+
 export function buildRegisteredNameMismatchProbeRecords(options) {
   const base = buildTestRecord(options);
   const named = (kind, issuerName) => {
@@ -2403,6 +2515,7 @@ async function main() {
       "cancellation-comparison",
       "changed-duplicate",
       "fresh-installation",
+      "handover-tail",
       "registered-name-mismatch",
       "rejected-invoice-credit",
       "reply-order",
@@ -2465,6 +2578,44 @@ async function main() {
   };
   const cabecera = submissionHeader(obligadoEmision);
   const runId = process.env.GITHUB_RUN_ID ?? String(now.getTime());
+
+  if (mode === "handover-tail") {
+    const probeOptions = {
+      nif,
+      name,
+      systemNif: required("AEAT_TEST_SYSTEM_NIF"),
+      systemName: required("AEAT_TEST_SYSTEM_NAME"),
+      recipientNif: recipient.NIF,
+      recipientName: recipient.NombreRazon,
+      runId,
+    };
+    const identities = [
+      nif,
+      name,
+      probeOptions.systemNif,
+      probeOptions.systemName,
+      recipient.NIF,
+      recipient.NombreRazon,
+    ];
+    process.stdout.write(
+      "AEAT handover-tail failure criteria: A1,A2,A3,B1,B2,A4,B3,A5 must each return one matching Correcto line and Correcto batch without an error; each installation's successor must retain its own predecessor. A3Replay must be the original bytes and return Incorrecto/3000 with stored state Correcta. Expanded issuer lookup must find exactly one A3 with the original identity, fingerprint and generating software NIF/system/installation, state Correcto. Any refusal, warning, unexpected reply, failed wait or transport/lookup error stops the probe. Preproduction only; no legal or fencing conclusion.\n",
+    );
+    const evidence = await submitHandoverTailProbe(client, cabecera, probeOptions, {
+      rawReply: () => lastRawReply,
+      clearRawReply: () => {
+        lastRawReply = undefined;
+      },
+      report: (stage, entry) =>
+        process.stdout.write(
+          `AEAT handover-tail ${stage}: ${outageFlagEvidenceJson(entry, identities)}\n`,
+        ),
+    });
+    process.stdout.write(
+      `AEAT handover-tail complete: ${outageFlagEvidenceJson(evidence, identities)}\n`,
+    );
+    if (evidence.incomplete) process.exitCode = 1;
+    return;
+  }
 
   if (mode === "four-behaviours") {
     process.stdout.write(
