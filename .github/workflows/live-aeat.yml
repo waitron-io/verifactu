@@ -24,6 +24,7 @@ on:
           - cancellation-comparison
           - changed-duplicate
           - fresh-installation
+          - handover-tail
           - registered-name-mismatch
           - rejected-invoice-credit
           - reply-order

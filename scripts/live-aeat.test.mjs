@@ -68,6 +68,243 @@ import {
 import { createFakeAeat } from "../dist/testing/fake-aeat.js";
 import * as live from "./live-aeat.mjs";
 
+async function runHandoverTailProbe(faults = {}) {
+  assert.equal(typeof live.submitHandoverTailProbe, "function");
+  let clock = decimalOptions.now.getTime();
+  const fake = createFakeAeat({ serverNow: new Date(clock), tiempoEsperaInicial: 61 });
+  let raw;
+  const client = createClient({
+    endpoint: "https://fake.aeat.test/soap",
+    fetch: async (url, init) => {
+      const response = await fake.fetch(url, init);
+      raw = await response.clone().text();
+      return response;
+    },
+  });
+  const sent = [];
+  const lookups = [];
+  const waits = [];
+  const reports = [];
+  const evidence = await live.submitHandoverTailProbe(
+    {
+      async submit(header, records) {
+        sent.push(...records.map(({ RegistroAlta }) => structuredClone(RegistroAlta)));
+        clock += faults.latency ?? 0;
+        fake.setServerNow(new Date(clock));
+        const response = await client.submit(header, records);
+        if (faults.constantWait) response.TiempoEsperaEnvio = 60;
+        if (
+          faults.ageLimit &&
+          sent.length < 9 &&
+          records.some(
+            ({ RegistroAlta }) =>
+              clock - Date.parse(RegistroAlta.FechaHoraHusoGenRegistro) > 240000,
+          )
+        ) {
+          response.EstadoEnvio = "ParcialmenteCorrecto";
+          Object.assign(response.RespuestaLinea[0], {
+            EstadoRegistro: "AceptadoConErrores",
+            CodigoErrorRegistro: 2004,
+          });
+        }
+        return faults.submission?.(response, sent.length) ?? response;
+      },
+      async consultar(header, filter) {
+        lookups.push(structuredClone(filter));
+        if (faults.lookupFailure) throw new Error("lookup preparation failed");
+        const response = await client.consultar(header, filter);
+        return faults.lookup?.(response, lookups.length) ?? response;
+      },
+    },
+    successorHeader,
+    decimalOptions,
+    {
+      now: () => new Date(clock),
+      rawReply: () => raw,
+      clearRawReply: () => {
+        raw = undefined;
+      },
+      waitForSubmission: async (seconds) => {
+        waits.push(seconds);
+        if (faults.wait) throw new Error("wait failed");
+        clock += seconds * 1000;
+      },
+      report: (stage, entry) => reports.push([stage, structuredClone(entry)]),
+    },
+  );
+  return { evidence, sent, lookups, waits, reports };
+}
+
+test("handover sends A's surviving tail around B's chain and replays A3 unchanged", async () => {
+  const { evidence, sent, lookups, waits, reports } = await runHandoverTailProbe();
+  assert.equal(evidence.incomplete, false);
+  assert.deepEqual(
+    reports.map(([stage]) => stage),
+    ["A1", "A2", "A3", "B1B2", "A4", "B3", "A5", "A3Replay", "storedA3"],
+  );
+  assert.deepEqual(
+    sent.map((entry) => entry.SistemaInformatico.NumeroInstalacion),
+    [
+      "CI-HANDOVER-12345-A",
+      "CI-HANDOVER-12345-A",
+      "CI-HANDOVER-12345-A",
+      "CI-HANDOVER-12345-B",
+      "CI-HANDOVER-12345-B",
+      "CI-HANDOVER-12345-A",
+      "CI-HANDOVER-12345-B",
+      "CI-HANDOVER-12345-A",
+      "CI-HANDOVER-12345-A",
+    ],
+  );
+  const previous = new Map();
+  for (const entry of sent.slice(0, 8)) {
+    const installation = entry.SistemaInformatico.NumeroInstalacion;
+    const prior = previous.get(installation);
+    assert.deepEqual(
+      entry.Encadenamiento,
+      prior
+        ? {
+            RegistroAnterior: { ...prior.IDFactura, Huella: prior.Huella },
+          }
+        : { PrimerRegistro: "S" },
+    );
+    assert.equal(entry.Huella, computeHuella(entry));
+    assert.deepEqual(validate(entry), []);
+    previous.set(installation, entry);
+  }
+  assert.deepEqual(sent[8], sent[2]);
+  assert.equal(new Set(sent.slice(0, 8).map((entry) => entry.IDFactura.NumSerieFactura)).size, 8);
+  assert.equal(
+    Date.parse(sent[7].FechaHoraHusoGenRegistro) - Date.parse(sent[0].FechaHoraHusoGenRegistro),
+    180000,
+  );
+  assert.deepEqual(waits, [61, 60, 59, 58, 57, 56, 55]);
+  assert.equal(lookups.length, 1);
+  assert.equal(lookups[0].NumSerieFactura, sent[2].IDFactura.NumSerieFactura);
+  assert.deepEqual(lookups[0].SistemaInformatico, sent[2].SistemaInformatico);
+  assert.equal(lookups[0].DatosAdicionalesRespuesta.MostrarSistemaInformatico, "S");
+  assert.deepEqual(evidence.tailPrepared.A4, sent[5]);
+  assert.deepEqual(evidence.tailPrepared.A5, sent[7]);
+  assert.equal(sent[5].FechaHoraHusoGenRegistro, sent[3].FechaHoraHusoGenRegistro);
+  assert.equal(sent[7].FechaHoraHusoGenRegistro, sent[3].FechaHoraHusoGenRegistro);
+  assert.equal(evidence.A3Replay.response.RespuestaLinea[0].CodigoErrorRegistro, 3000);
+  assert.equal(evidence.storedA3.record.DatosRegistroFacturacion.Huella, sent[2].Huella);
+  assert.equal(
+    evidence.storedA3.record.DatosRegistroFacturacion.SistemaInformatico.NumeroInstalacion,
+    "CI-HANDOVER-12345-A",
+  );
+});
+
+test("handover stops on every refused or ambiguous new record before sending its successor", async () => {
+  for (const index of [1, 2, 3, 5, 6, 7, 8]) {
+    const { evidence, sent, lookups } = await runHandoverTailProbe({
+      submission(response, count) {
+        if (count === index) {
+          response.EstadoEnvio = "Incorrecto";
+          Object.assign(response.RespuestaLinea[0], {
+            EstadoRegistro: "Incorrecto",
+            CodigoErrorRegistro: 2000,
+          });
+        }
+      },
+    });
+    assert.equal(evidence.incomplete, true);
+    assert.equal(sent.length, index);
+    assert.equal(lookups.length, 0);
+  }
+});
+
+test("handover does not call a different replay result a verified duplicate", async () => {
+  for (const mutate of [
+    (r) => {
+      r.RespuestaLinea[0].CodigoErrorRegistro = 3001;
+    },
+    (r) => {
+      r.RespuestaLinea[0].EstadoRegistro = "Correcto";
+    },
+    (r) => {
+      r.EstadoEnvio = "Correcto";
+    },
+    (r) => {
+      r.RespuestaLinea.push(structuredClone(r.RespuestaLinea[0]));
+    },
+    (r) => {
+      r.RespuestaLinea[0].IDFactura.FechaExpedicionFactura = "26-09-2026";
+    },
+    (r) => {
+      r.RespuestaLinea[0].RegistroDuplicado.EstadoRegistroDuplicado = "Anulada";
+    },
+  ]) {
+    const { evidence, sent, lookups } = await runHandoverTailProbe({
+      submission(response, count) {
+        if (count === 9) mutate(response);
+      },
+    });
+    assert.equal(evidence.incomplete, true);
+    assert.equal(evidence.stoppedAfter, "A3Replay");
+    assert.equal(sent.length, 9);
+    assert.equal(lookups.length, 0);
+  }
+});
+
+test("handover lookup rejects a different hash, installation, identity, state or ambiguous match", async () => {
+  for (const mutate of [
+    (r) => {
+      r.registros[0].DatosRegistroFacturacion.Huella = "F".repeat(64);
+    },
+    (r) => {
+      r.registros[0].DatosRegistroFacturacion.SistemaInformatico.NumeroInstalacion =
+        "CI-HANDOVER-12345-B";
+    },
+    (r) => {
+      r.registros[0].DatosRegistroFacturacion.SistemaInformatico.IdSistemaInformatico = "ZZ";
+    },
+    (r) => {
+      r.registros[0].DatosRegistroFacturacion.SistemaInformatico.NIF = "B99999997";
+    },
+    (r) => {
+      r.registros[0].IDFactura.IDEmisorFactura = "11111111H";
+    },
+    (r) => {
+      r.registros[0].EstadoRegistro = "Anulada";
+    },
+    (r) => {
+      r.registros.push(structuredClone(r.registros[0]));
+    },
+    (r) => {
+      r.registros = [];
+      r.ResultadoConsulta = "SinDatos";
+    },
+  ]) {
+    const { evidence } = await runHandoverTailProbe({
+      lookup(response) {
+        mutate(response);
+      },
+    });
+    assert.equal(evidence.incomplete, true);
+    assert.equal(evidence.stoppedAfter, "storedA3");
+  }
+});
+
+test("handover retains the last completed stage when the wait fails", async () => {
+  const { evidence, sent } = await runHandoverTailProbe({ wait: true });
+  assert.equal(evidence.incomplete, true);
+  assert.equal(sent.length, 1);
+  assert.equal(evidence.stoppedAfter, "A2");
+  assert.match(evidence.error, /wait failed/);
+  assert.equal(evidence.A1.response.EstadoEnvio, "Correcto");
+});
+
+test("handover-tail mode reaches credential validation from the CLI", () => {
+  const run = spawnSync(process.execPath, ["scripts/live-aeat.mjs", "handover-tail"], {
+    cwd: new URL("..", import.meta.url),
+    env: { ...process.env, AEAT_TEST_NIF: "" },
+    encoding: "utf8",
+  });
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /Set AEAT_TEST_NIF/);
+});
+
 const record = {
   IDFactura: { NumSerieFactura: "CI/123" },
   Huella: "A".repeat(64),
@@ -4686,4 +4923,167 @@ test("four-behaviour probe does not attribute an unrelated warning to the corrup
   });
   assert.equal(evidence.incomplete, false);
   assert.equal(evidence.wrongHash.matchesExpectation, false);
+});
+
+for (const outcome of ["expected", "rejected-tail", "malformed-response", "transport-failure"]) {
+  test(`handover-tail CLI collects redacted evidence and exits correctly for ${outcome}`, () => {
+    const target = new URL("./live-aeat.mjs", import.meta.url).href;
+    const fakeModule = new URL("../dist/testing/fake-aeat.js", import.meta.url).href;
+    const preload = `
+      import assert from "node:assert/strict";
+      import https from "node:https";
+      import { syncBuiltinESMExports } from "node:module";
+      import { EventEmitter } from "node:events";
+      import { fileURLToPath } from "node:url";
+      import { createFakeAeat } from ${JSON.stringify(fakeModule)};
+      const RealDate = Date;
+      const realTimeout = setTimeout;
+      let clock = RealDate.parse("2026-10-21T08:00:00Z");
+      globalThis.Date = class extends RealDate {
+        constructor(...args) { super(...(args.length ? args : [clock])); }
+        static now() { return clock; }
+      };
+      globalThis.setTimeout = (callback, milliseconds, ...args) => {
+        clock += milliseconds;
+        return realTimeout(callback, 0, ...args);
+      };
+      const fake = createFakeAeat({ serverNow: new RealDate(clock), tiempoEsperaInicial: 60 });
+      let sends = 0;
+      https.request = (url, options, callback) => {
+        assert.equal(new URL(url).hostname, "prewww1.aeat.es");
+        assert.equal(options.method, "POST");
+        const req = new EventEmitter();
+        req.destroy = (error) => req.emit("error", error);
+        req.end = (body) => {
+          sends++;
+          process.stdout.write("LOCAL_SEND\\n");
+          Promise.resolve().then(async () => {
+            if (${JSON.stringify(outcome)} === "transport-failure" && sends === 5) {
+              throw new Error("synthetic network failure");
+            }
+            fake.setServerNow(new RealDate(clock));
+            const response = await fake.fetch(url, { method: "POST", body });
+            let xml = await response.text();
+            if (sends === 5 && ${JSON.stringify(outcome)} === "malformed-response") xml = "<not-soap>";
+            if (sends === 5 && ${JSON.stringify(outcome)} === "rejected-tail") {
+              xml = xml.replaceAll(">Correcto<", ">Incorrecto<").replace("</sfR:EstadoRegistro>", "</sfR:EstadoRegistro><sfR:CodigoErrorRegistro>2000</sfR:CodigoErrorRegistro>");
+            }
+            const incoming = new EventEmitter();
+            incoming.statusCode = 200;
+            callback(incoming);
+            incoming.emit("data", Buffer.from(xml));
+            incoming.emit("end");
+          }).catch((error) => req.emit("error", error));
+        };
+        return req;
+      };
+      syncBuiltinESMExports();
+      process.argv = [process.execPath, fileURLToPath(${JSON.stringify(target)}), "handover-tail"];
+      await import(${JSON.stringify(target)});
+    `;
+    const run = spawnSync(process.execPath, ["--input-type=module", "--eval", preload], {
+      encoding: "utf8",
+      timeout: 5000,
+      env: {
+        PATH: process.env.PATH,
+        AEAT_TEST_NIF: decimalOptions.nif,
+        AEAT_TEST_NAME: "Synthetic Issuer",
+        AEAT_TEST_SYSTEM_NIF: "B12345674",
+        AEAT_TEST_SYSTEM_NAME: "Synthetic Software & Co",
+        AEAT_TEST_RECIPIENT_NIF: decimalOptions.recipientNif,
+        AEAT_TEST_RECIPIENT_NAME: "Synthetic Recipient",
+        AEAT_TEST_CERT_KIND: "personal",
+        AEAT_TEST_P12_BASE64: Buffer.from("synthetic").toString("base64"),
+        AEAT_TEST_P12_PASSWORD: "synthetic",
+        GITHUB_RUN_ID: "handover-cli-test",
+      },
+    });
+
+    assert.equal(run.error, undefined);
+    assert.equal(run.status, outcome === "expected" ? 0 : 1, run.stderr + run.stdout);
+    assert.match(run.stdout.split("\n")[0], /^AEAT handover-tail failure criteria:/);
+    assert.equal(run.stdout.match(/^LOCAL_SEND$/gm)?.length, outcome === "expected" ? 9 : 5);
+    for (const identity of [
+      decimalOptions.nif,
+      "Synthetic Issuer",
+      "B12345674",
+      "Synthetic Software & Co",
+      decimalOptions.recipientNif,
+      "Synthetic Recipient",
+    ]) {
+      assert.equal(run.stdout.includes(identity), false, identity);
+    }
+    const line = run.stdout
+      .split("\n")
+      .find((value) => value.startsWith("AEAT handover-tail complete: "));
+    assert.ok(line, run.stderr);
+    const evidence = JSON.parse(line.slice("AEAT handover-tail complete: ".length));
+    assert.ok(evidence.A3.rawReply.includes("Envelope"));
+    if (outcome === "expected") {
+      assert.equal(evidence.incomplete, false);
+      assert.deepEqual(evidence.A3.record, evidence.A3Replay.record);
+      assert.deepEqual(evidence.tailPrepared.A4, evidence.A4.record);
+      assert.deepEqual(evidence.tailPrepared.A5, evidence.A5.record);
+      assert.equal(evidence.storedA3.matchesExpectation, true);
+      assert.ok(evidence.storedA3.rawReply.includes("Envelope"));
+    } else {
+      assert.equal(evidence.incomplete, true);
+      assert.equal(evidence.stoppedAfter, "A4");
+      assert.equal(evidence.B3, undefined);
+      if (outcome === "malformed-response") assert.equal(evidence.A4.rawReply, "<not-soap>");
+      if (outcome === "transport-failure") assert.equal(evidence.A4.rawReply, undefined);
+      if (outcome === "rejected-tail")
+        assert.equal(evidence.A4.response.RespuestaLinea[0].CodigoErrorRegistro, 2000);
+    }
+  });
+}
+
+test("handover finishes saved tail within 240 seconds despite constant waits and network latency", async () => {
+  const { evidence, sent } = await runHandoverTailProbe({
+    constantWait: true,
+    latency: 1000,
+    ageLimit: true,
+  });
+  assert.equal(evidence.incomplete, false, JSON.stringify(evidence));
+  assert.ok(
+    Date.parse(sent[7].FechaHoraHusoGenRegistro) <= Date.parse(sent[3].FechaHoraHusoGenRegistro),
+  );
+});
+
+test("handover keeps no previous raw reply when lookup fails before transport", async () => {
+  const { evidence } = await runHandoverTailProbe({ lookupFailure: true });
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedAfter, "storedA3");
+  assert.ok(evidence.A3Replay.rawReply.includes("Envelope"));
+  assert.equal(evidence.storedA3.rawReply, undefined);
+  assert.match(evidence.error, /lookup preparation failed/);
+});
+
+test("handover rejects contradictory error codes and each ambiguous B batch", async () => {
+  for (const mutate of [
+    (response) => {
+      response.RespuestaLinea[0].CodigoErrorRegistro = 2004;
+    },
+    (response) => {
+      response.RespuestaLinea[1].CodigoErrorRegistro = 2004;
+    },
+    (response) => {
+      response.RespuestaLinea[1].IDFactura = structuredClone(response.RespuestaLinea[0].IDFactura);
+    },
+    (response) => {
+      response.RespuestaLinea.pop();
+    },
+    (response) => {
+      response.RespuestaLinea[1].EstadoRegistro = "AceptadoConErrores";
+    },
+  ]) {
+    const { evidence, sent } = await runHandoverTailProbe({
+      submission(response, count) {
+        if (count === 5) mutate(response);
+      },
+    });
+    assert.equal(evidence.incomplete, true);
+    assert.equal(evidence.stoppedAfter, "B1B2");
+    assert.equal(sent.length, 5);
+  }
 });
