@@ -1224,7 +1224,7 @@ export async function submitHandoverTailProbe(
     heads.set(installation, record);
     return record;
   };
-  for (const stage of ["A1", "A2", "A3", "B1", "B2", "A4", "B3", "A5", "A3Replay", "storedA3"]) {
+  for (const stage of ["A1", "A2", "A3", "B1B2", "A4", "B3", "A5", "A3Replay", "storedA3"]) {
     const entry = {};
     let requestStarted = false;
     try {
@@ -1253,35 +1253,49 @@ export async function submitHandoverTailProbe(
           software?.NumeroInstalacion === originalA3.SistemaInformatico.NumeroInstalacion;
       } else {
         if (previous) await waitForSubmission(previous.TiempoEsperaEnvio);
-        let record = originalA3;
+        let records = [originalA3];
         if (stage !== "A3Replay") {
           const generatedAt = now();
-          if (stage === "B1") {
+          if (stage === "B1B2") {
             evidence.tailPrepared = {
               A4: prepare("A4", generatedAt),
               A5: prepare("A5", generatedAt),
             };
           }
-          record = evidence.tailPrepared?.[stage] ?? prepare(stage, generatedAt);
-          if (stage === "A3") originalA3 = record;
+          records =
+            stage === "B1B2"
+              ? [prepare("B1", generatedAt), prepare("B2", generatedAt)]
+              : [evidence.tailPrepared?.[stage] ?? prepare(stage, generatedAt)];
+          if (stage === "A3") originalA3 = records[0];
         }
-        entry.record = record;
+        if (records.length === 1) entry.record = records[0];
+        else entry.records = records;
         clearRawReply();
         requestStarted = true;
-        entry.response = await client.submit(cabecera, [{ RegistroAlta: record }]);
+        entry.response = await client.submit(
+          cabecera,
+          records.map((record) => ({ RegistroAlta: record })),
+        );
         entry.rawReply = rawReply();
         const lines = entry.response.RespuestaLinea ?? [];
-        const line = lines[0];
         const replay = stage === "A3Replay";
         entry.matchesExpectation =
-          lines.length === 1 &&
-          isDeepStrictEqual(line.IDFactura, record.IDFactura) &&
+          lines.length === records.length &&
           entry.response.EstadoEnvio === (replay ? "Incorrecto" : "Correcto") &&
-          line.EstadoRegistro === (replay ? "Incorrecto" : "Correcto") &&
-          (replay
-            ? line.CodigoErrorRegistro === 3000 &&
-              line.RegistroDuplicado?.EstadoRegistroDuplicado === "Correcta"
-            : line.CodigoErrorRegistro === undefined);
+          records.every((record) => {
+            const matches = lines.filter((line) =>
+              isDeepStrictEqual(line.IDFactura, record.IDFactura),
+            );
+            const line = matches[0];
+            return (
+              matches.length === 1 &&
+              line.EstadoRegistro === (replay ? "Incorrecto" : "Correcto") &&
+              (replay
+                ? line.CodigoErrorRegistro === 3000 &&
+                  line.RegistroDuplicado?.EstadoRegistroDuplicado === "Correcta"
+                : line.CodigoErrorRegistro === undefined)
+            );
+          });
         previous = entry.response;
       }
       evidence[stage] = entry;

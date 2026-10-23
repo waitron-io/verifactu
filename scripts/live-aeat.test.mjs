@@ -72,7 +72,15 @@ async function runHandoverTailProbe(faults = {}) {
   assert.equal(typeof live.submitHandoverTailProbe, "function");
   let clock = decimalOptions.now.getTime();
   const fake = createFakeAeat({ serverNow: new Date(clock), tiempoEsperaInicial: 61 });
-  const client = createClient({ endpoint: "https://fake.aeat.test/soap", fetch: fake.fetch });
+  let raw;
+  const client = createClient({
+    endpoint: "https://fake.aeat.test/soap",
+    fetch: async (url, init) => {
+      const response = await fake.fetch(url, init);
+      raw = await response.clone().text();
+      return response;
+    },
+  });
   const sent = [];
   const lookups = [];
   const waits = [];
@@ -80,13 +88,30 @@ async function runHandoverTailProbe(faults = {}) {
   const evidence = await live.submitHandoverTailProbe(
     {
       async submit(header, records) {
-        sent.push(structuredClone(records[0].RegistroAlta));
+        sent.push(...records.map(({ RegistroAlta }) => structuredClone(RegistroAlta)));
+        clock += faults.latency ?? 0;
         fake.setServerNow(new Date(clock));
         const response = await client.submit(header, records);
+        if (faults.constantWait) response.TiempoEsperaEnvio = 60;
+        if (
+          faults.ageLimit &&
+          sent.length < 9 &&
+          records.some(
+            ({ RegistroAlta }) =>
+              clock - Date.parse(RegistroAlta.FechaHoraHusoGenRegistro) > 240000,
+          )
+        ) {
+          response.EstadoEnvio = "ParcialmenteCorrecto";
+          Object.assign(response.RespuestaLinea[0], {
+            EstadoRegistro: "AceptadoConErrores",
+            CodigoErrorRegistro: 2004,
+          });
+        }
         return faults.submission?.(response, sent.length) ?? response;
       },
       async consultar(header, filter) {
         lookups.push(structuredClone(filter));
+        if (faults.lookupFailure) throw new Error("lookup preparation failed");
         const response = await client.consultar(header, filter);
         return faults.lookup?.(response, lookups.length) ?? response;
       },
@@ -95,6 +120,10 @@ async function runHandoverTailProbe(faults = {}) {
     decimalOptions,
     {
       now: () => new Date(clock),
+      rawReply: () => raw,
+      clearRawReply: () => {
+        raw = undefined;
+      },
       waitForSubmission: async (seconds) => {
         waits.push(seconds);
         if (faults.wait) throw new Error("wait failed");
@@ -111,7 +140,7 @@ test("handover sends A's surviving tail around B's chain and replays A3 unchange
   assert.equal(evidence.incomplete, false);
   assert.deepEqual(
     reports.map(([stage]) => stage),
-    ["A1", "A2", "A3", "B1", "B2", "A4", "B3", "A5", "A3Replay", "storedA3"],
+    ["A1", "A2", "A3", "B1B2", "A4", "B3", "A5", "A3Replay", "storedA3"],
   );
   assert.deepEqual(
     sent.map((entry) => entry.SistemaInformatico.NumeroInstalacion),
@@ -149,7 +178,7 @@ test("handover sends A's surviving tail around B's chain and replays A3 unchange
     Date.parse(sent[7].FechaHoraHusoGenRegistro) - Date.parse(sent[0].FechaHoraHusoGenRegistro),
     180000,
   );
-  assert.deepEqual(waits, [61, 60, 59, 58, 57, 56, 55, 54]);
+  assert.deepEqual(waits, [61, 60, 59, 58, 57, 56, 55]);
   assert.equal(lookups.length, 1);
   assert.equal(lookups[0].NumSerieFactura, sent[2].IDFactura.NumSerieFactura);
   assert.deepEqual(lookups[0].SistemaInformatico, sent[2].SistemaInformatico);
@@ -167,7 +196,7 @@ test("handover sends A's surviving tail around B's chain and replays A3 unchange
 });
 
 test("handover stops on every refused or ambiguous new record before sending its successor", async () => {
-  for (const index of [1, 2, 3, 4, 5, 6, 7, 8]) {
+  for (const index of [1, 2, 3, 5, 6, 7, 8]) {
     const { evidence, sent, lookups } = await runHandoverTailProbe({
       submission(response, count) {
         if (count === index) {
@@ -229,6 +258,9 @@ test("handover lookup rejects a different hash, installation, identity, state or
     },
     (r) => {
       r.registros[0].DatosRegistroFacturacion.SistemaInformatico.IdSistemaInformatico = "ZZ";
+    },
+    (r) => {
+      r.registros[0].DatosRegistroFacturacion.SistemaInformatico.NIF = "B99999997";
     },
     (r) => {
       r.registros[0].IDFactura.IDEmisorFactura = "11111111H";
@@ -4926,14 +4958,14 @@ for (const outcome of ["expected", "rejected-tail", "malformed-response", "trans
           sends++;
           process.stdout.write("LOCAL_SEND\\n");
           Promise.resolve().then(async () => {
-            if (${JSON.stringify(outcome)} === "transport-failure" && sends === 6) {
+            if (${JSON.stringify(outcome)} === "transport-failure" && sends === 5) {
               throw new Error("synthetic network failure");
             }
             fake.setServerNow(new RealDate(clock));
             const response = await fake.fetch(url, { method: "POST", body });
             let xml = await response.text();
-            if (sends === 6 && ${JSON.stringify(outcome)} === "malformed-response") xml = "<not-soap>";
-            if (sends === 6 && ${JSON.stringify(outcome)} === "rejected-tail") {
+            if (sends === 5 && ${JSON.stringify(outcome)} === "malformed-response") xml = "<not-soap>";
+            if (sends === 5 && ${JSON.stringify(outcome)} === "rejected-tail") {
               xml = xml.replaceAll(">Correcto<", ">Incorrecto<").replace("</sfR:EstadoRegistro>", "</sfR:EstadoRegistro><sfR:CodigoErrorRegistro>2000</sfR:CodigoErrorRegistro>");
             }
             const incoming = new EventEmitter();
@@ -4970,7 +5002,7 @@ for (const outcome of ["expected", "rejected-tail", "malformed-response", "trans
     assert.equal(run.error, undefined);
     assert.equal(run.status, outcome === "expected" ? 0 : 1, run.stderr + run.stdout);
     assert.match(run.stdout.split("\n")[0], /^AEAT handover-tail failure criteria:/);
-    assert.equal(run.stdout.match(/^LOCAL_SEND$/gm)?.length, outcome === "expected" ? 10 : 6);
+    assert.equal(run.stdout.match(/^LOCAL_SEND$/gm)?.length, outcome === "expected" ? 9 : 5);
     for (const identity of [
       decimalOptions.nif,
       "Synthetic Issuer",
@@ -5005,3 +5037,53 @@ for (const outcome of ["expected", "rejected-tail", "malformed-response", "trans
     }
   });
 }
+
+test("handover finishes saved tail within 240 seconds despite constant waits and network latency", async () => {
+  const { evidence, sent } = await runHandoverTailProbe({
+    constantWait: true,
+    latency: 1000,
+    ageLimit: true,
+  });
+  assert.equal(evidence.incomplete, false, JSON.stringify(evidence));
+  assert.ok(
+    Date.parse(sent[7].FechaHoraHusoGenRegistro) <= Date.parse(sent[3].FechaHoraHusoGenRegistro),
+  );
+});
+
+test("handover keeps no previous raw reply when lookup fails before transport", async () => {
+  const { evidence } = await runHandoverTailProbe({ lookupFailure: true });
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedAfter, "storedA3");
+  assert.ok(evidence.A3Replay.rawReply.includes("Envelope"));
+  assert.equal(evidence.storedA3.rawReply, undefined);
+  assert.match(evidence.error, /lookup preparation failed/);
+});
+
+test("handover rejects contradictory error codes and each ambiguous B batch", async () => {
+  for (const mutate of [
+    (response) => {
+      response.RespuestaLinea[0].CodigoErrorRegistro = 2004;
+    },
+    (response) => {
+      response.RespuestaLinea[1].CodigoErrorRegistro = 2004;
+    },
+    (response) => {
+      response.RespuestaLinea[1].IDFactura = structuredClone(response.RespuestaLinea[0].IDFactura);
+    },
+    (response) => {
+      response.RespuestaLinea.pop();
+    },
+    (response) => {
+      response.RespuestaLinea[1].EstadoRegistro = "AceptadoConErrores";
+    },
+  ]) {
+    const { evidence, sent } = await runHandoverTailProbe({
+      submission(response, count) {
+        if (count === 5) mutate(response);
+      },
+    });
+    assert.equal(evidence.incomplete, true);
+    assert.equal(evidence.stoppedAfter, "B1B2");
+    assert.equal(sent.length, 5);
+  }
+});
