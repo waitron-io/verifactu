@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
-import { gunzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { parse } from "parse5";
@@ -181,7 +181,7 @@ async function readSource(source, fetcher) {
   if (source.kind === "github-head") {
     const { sha } = JSON.parse(content.toString("utf8"));
     if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error("GitHub did not return a commit SHA");
-    return { fingerprint: sha, content, extension: ".json" };
+    return { fingerprint: sha, content: gzipSync(content), extension: ".json.gz" };
   }
   if (source.kind === "pdf" && !content.subarray(0, 5).equals(Buffer.from("%PDF-"))) {
     throw new Error("Expected PDF content");

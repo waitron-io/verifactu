@@ -252,8 +252,8 @@
       "url": "https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1.0/cont/ws/RespuestaConsultaLR.xsd"
     },
     "conformance-fixtures": {
-      "path": "archive/conformance-fixtures/e5d914aac86a8fcebbe729339676c5af8bd55ff7c6e6616f388ed3c4053a3182.json",
-      "sha256": "e5d914aac86a8fcebbe729339676c5af8bd55ff7c6e6616f388ed3c4053a3182",
+      "path": "archive/conformance-fixtures/7f770bd5ddd80e822728e5c2b6191ecb92815e41ed10bb856f7140de45fafd00.json.gz",
+      "sha256": "7f770bd5ddd80e822728e5c2b6191ecb92815e41ed10bb856f7140de45fafd00",
       "url": "https://api.github.com/repos/borjamrd/verifactu-conformance/commits/main",
       "repository": {
         "path": "archive/conformance-fixtures/25e2e2130469f76723f8340530f7eeaf0601b74202eb068cce6e3d0db0d76ccd.tar.gz",
@@ -262,8 +262,8 @@
       }
     },
     "inoguerols-code": {
-      "path": "archive/inoguerols-code/ae02e83b53898ab855d20b0b09d2c122645303956f5e044bd6939b5f9dabe6d0.json",
-      "sha256": "ae02e83b53898ab855d20b0b09d2c122645303956f5e044bd6939b5f9dabe6d0",
+      "path": "archive/inoguerols-code/fc22a8ac169610635f0f8ff6e5ee7ac4cfe6b49ad428d9180c13f228ad5df152.json.gz",
+      "sha256": "fc22a8ac169610635f0f8ff6e5ee7ac4cfe6b49ad428d9180c13f228ad5df152",
       "url": "https://api.github.com/repos/inoguerols/verifactu/commits/main",
       "repository": {
         "path": "archive/inoguerols-code/3a581bcb14cd2499721fd9d700330ecee012acc6b87b91d9c9cc2d93db873951.tar.gz",

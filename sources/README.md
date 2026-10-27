@@ -30,7 +30,7 @@ the new page to `scripts/source-watch.mjs` before refreshing the baseline.
 
 Fingerprints tell you that something changed; the copies in `archive/` let you inspect it.
 `--refresh` saves the normalized HTML text that was hashed, the original PDF and schema bytes,
-and each watched GitHub commit's metadata and repository tarball. `watch-baseline.json` names
+and each watched GitHub commit's gzip-compressed metadata and repository tarball. `watch-baseline.json` names
 those files, their URLs and their SHA-256 checksums. Repository tarballs name the observed commit,
 so a later branch update cannot silently replace the requested revision.
 

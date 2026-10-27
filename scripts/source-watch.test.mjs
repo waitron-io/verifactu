@@ -259,7 +259,7 @@ test("refresh archives a GitHub repository at the watched commit, never its movi
   const baselinePath = join(directory, "watch-baseline.json");
   const sha = "a".repeat(40);
   const metadata = JSON.stringify({ sha, message: "watched commit" });
-  const { gzipSync } = await import("node:zlib");
+  const { gzipSync, gunzipSync } = await import("node:zlib");
   const tarball = gzipSync(Buffer.alloc(1024));
   const entry = {
     id: "upstream",
@@ -274,7 +274,14 @@ test("refresh archives a GitHub repository at the watched commit, never its movi
   assert.deepEqual(urls, [entry.url, `https://api.github.com/repos/example/rules/tarball/${sha}`]);
   const baseline = JSON.parse(await readFile(baselinePath, "utf8"));
   assert.equal(baseline.fingerprints.upstream, sha);
-  assert.equal(await readFile(join(directory, baseline.archives.upstream.path), "utf8"), metadata);
+  assert.ok(
+    baseline.archives.upstream.path.endsWith(".json.gz"),
+    "upstream metadata is a compressed source copy",
+  );
+  assert.equal(
+    gunzipSync(await readFile(join(directory, baseline.archives.upstream.path))).toString(),
+    metadata,
+  );
   assert.deepEqual(
     await readFile(join(directory, baseline.archives.upstream.repository.path)),
     tarball,
@@ -335,7 +342,7 @@ test("every pinned source has a readable archive with matching bytes and provena
     assert.equal(archive.url, source.url, source.id);
     assert.equal(hash, archive.sha256, source.id);
     if (source.kind === "github-head") {
-      assert.equal(JSON.parse(bytes).sha, baseline.fingerprints[source.id]);
+      assert.equal(JSON.parse(gunzipSync(bytes)).sha, baseline.fingerprints[source.id]);
       assert.ok(archive.repository.url.endsWith(`/tarball/${baseline.fingerprints[source.id]}`));
       const tarball = await readFile(
         new URL(`../sources/${archive.repository.path}`, import.meta.url),
