@@ -26,6 +26,26 @@ main text and links, so navigation or footer changes should not cause an alert. 
 fingerprints cover the downloaded bytes. A new FAQ page changes the index fingerprint; add
 the new page to `scripts/source-watch.mjs` before refreshing the baseline.
 
+## Compare source revisions
+
+Fingerprints tell you that something changed; the copies in `archive/` let you inspect it.
+`--refresh` saves the normalized HTML text that was hashed, the original PDF and schema bytes,
+and each watched GitHub commit's gzip-compressed metadata and repository tarball. `watch-baseline.json` names
+those files, their URLs and their SHA-256 checksums. Repository tarballs name the observed commit,
+so a later branch update cannot silently replace the requested revision.
+
+The files are addressed by content hash. Refreshing adds new versions and retains older files.
+It publishes a replacement baseline only after every download and archive write succeeds.
+An interrupted refresh can leave extra archive files; it does not publish a half-written baseline.
+The archive is excluded from formatting because reformatting source copies would change their
+checksums. Read-only checks neither refresh the baseline nor write archive files. Change reports
+name the previous source copy for comparison.
+
+The initial [seed manifest](archive/seed-2026-10-27.json) records all 43 sources downloaded on
+27 October 2026 and the 20 September Wayback copy of the FAQ index. It does not contain the lost
+September bodies of the 18 linked FAQ pages. The [October FAQ review](reviews/2026-10-27-faq.md)
+records what could be recovered and the limits of the current-rule audit.
+
 ## The bundled FNMT certificate
 
 [`fnmt-ac-componentes-informaticos.pem`](fnmt-ac-componentes-informaticos.pem) is FNMT-RCM's

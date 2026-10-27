@@ -189,6 +189,10 @@ label claims that the deployment complies.
 
 ### P2: application scope
 
+**Rechecked 27 October 2026:** [current-rule review and source archive](sources/reviews/2026-10-27-faq.md).
+The exact October edit could not be recovered from the old fingerprint. The original E17
+dispositions below remain historical; their references to guides describe the guides then.
+
 | Entry | Subject                                                           | Disposition                                                                                                                   |
 | ----: | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 |   2.1 | Who is covered and the four exclusions                            | Both boundary guides direct the caller to decide taxpayer, invoice, SII, foral, and exemption scope before using the package. |

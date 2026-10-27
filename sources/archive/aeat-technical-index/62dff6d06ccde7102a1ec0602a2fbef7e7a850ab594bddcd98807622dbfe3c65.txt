@@ -1,0 +1,13 @@
+Información técnica Te informamos de todo lo que debes saber sobre información técnica Saltar índice de la información Índice Índice: Portal de Pruebas externas Diseños de registro WSDL de los servicios web Esquemas Documento de validaciones y errores Especificaciones de los servicios de remisión voluntaria de registros de facturación y sus validaciones Algoritmo de cálculo de codificación de la huella o "hash" Especificaciones técnicas de la firma electrónica de los registros de facturación y de evento Características del QR y especificaciones del servicio de cotejo o remisión de información por parte del receptor de la factura Ejemplos de declaraciones responsables Portal de Pruebas externas Portal de Pruebas externas Generar PDF Cerrar La generación del PDF puede tardar varios minutos dependiendo de la cantidad de información. Seleccione la información que desee incluir en el PDF: Sólo la página actual Todas las páginas del índice Puede cancelar la generación del PDF en cualquier momento. Cancelar Continuar Generar PDF Siguiente Diseños de registro
+#js-nombre-canal-paginado
+/Sede/iva/sistemas-informaticos-facturacion-verifactu/informacion-tecnica/disenos-registro.html
+/Sede/iva/sistemas-informaticos-facturacion-verifactu/informacion-tecnica/wsdl-servicios-web.html
+/Sede/iva/sistemas-informaticos-facturacion-verifactu/informacion-tecnica/esquemas.html
+/Sede/iva/sistemas-informaticos-facturacion-verifactu/informacion-tecnica/documento-validaciones-errores.html
+/Sede/iva/sistemas-informaticos-facturacion-verifactu/informacion-tecnica/especificaciones-servicios-remision-voluntaria-registros-validaciones.html
+/Sede/iva/sistemas-informaticos-facturacion-verifactu/informacion-tecnica/algoritmo-calculo-codificacion-huella-hash.html
+/Sede/iva/sistemas-informaticos-facturacion-verifactu/informacion-tecnica/especificaciones-tecnicas-firma-electronica-registros-evento.html
+/Sede/iva/sistemas-informaticos-facturacion-verifactu/informacion-tecnica/caracteristicas-qr-especificaciones-servicio-cotejo-factura.html
+/Sede/iva/sistemas-informaticos-facturacion-verifactu/informacion-tecnica/ejemplo-declaracion-responsable.html
+https://preportal.aeat.es
+/Sede/iva/sistemas-informaticos-facturacion-verifactu/informacion-tecnica/disenos-registro.html

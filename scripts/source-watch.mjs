@@ -1,6 +1,8 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { dirname, extname, join } from "node:path";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { parse } from "parse5";
@@ -159,7 +161,7 @@ export function legacyCurlArgs(url) {
   return ["-fsSL", "--retry", "2", "--cacert", legacyCaFile, url];
 }
 
-export async function fingerprintSource(source, fetcher = fetch) {
+async function readSource(source, fetcher) {
   let content;
   if (fetcher === fetch && source.url.startsWith(docsLegacy)) {
     const { stdout } = await execFileAsync("curl", legacyCurlArgs(source.url), {
@@ -179,7 +181,7 @@ export async function fingerprintSource(source, fetcher = fetch) {
   if (source.kind === "github-head") {
     const { sha } = JSON.parse(content.toString("utf8"));
     if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error("GitHub did not return a commit SHA");
-    return sha;
+    return { fingerprint: sha, content: gzipSync(content), extension: ".json.gz" };
   }
   if (source.kind === "pdf" && !content.subarray(0, 5).equals(Buffer.from("%PDF-"))) {
     throw new Error("Expected PDF content");
@@ -190,7 +192,84 @@ export async function fingerprintSource(source, fetcher = fetch) {
   ) {
     throw new Error("Expected schema content, received HTML");
   }
-  return sha256(source.kind === "html" ? meaningfulHtml(content.toString("utf8")) : content);
+  if (source.kind === "html") content = Buffer.from(meaningfulHtml(content.toString("utf8")));
+  return {
+    fingerprint: sha256(content),
+    content,
+    extension:
+      source.kind === "html"
+        ? ".txt"
+        : source.kind === "pdf"
+          ? ".pdf"
+          : extname(new URL(source.url).pathname),
+  };
+}
+
+export async function fingerprintSource(source, fetcher = fetch) {
+  return (await readSource(source, fetcher)).fingerprint;
+}
+
+async function writeAtomic(path, content) {
+  await mkdir(dirname(path), { recursive: true });
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, content);
+    await rename(temporary, path);
+  } finally {
+    await rm(temporary, { force: true });
+  }
+}
+
+export async function refreshSources(entries, baselinePath, fetcher = fetch) {
+  // Publish the baseline only after every download and archive write succeeds.
+  const snapshots = await Promise.all(
+    entries.map(async (source) => {
+      const snapshot = await readSource(source, fetcher);
+      if (source.kind === "github-head") {
+        const repository = source.url.match(
+          /^https:\/\/api\.github\.com\/repos\/([^/]+\/[^/]+)\/commits\//,
+        )?.[1];
+        if (!repository) throw new Error("Expected a GitHub repository commit URL");
+        const url = `https://api.github.com/repos/${repository}/tarball/${snapshot.fingerprint}`;
+        const response = await fetcher(url, {
+          headers: { "User-Agent": "waitron-verifactu-source-watch", Accept: "*/*" },
+          signal: AbortSignal.timeout(30_000),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const content = Buffer.from(await response.arrayBuffer());
+        if (content[0] !== 0x1f || content[1] !== 0x8b)
+          throw new Error("Expected gzip repository archive");
+        gunzipSync(content, { maxOutputLength: 256 * 1024 * 1024 });
+        snapshot.repository = { content, url };
+      }
+      return { source, ...snapshot };
+    }),
+  );
+  const archives = {};
+  for (const snapshot of snapshots) {
+    const { source, content, extension, repository } = snapshot;
+    const save = async (bytes, suffix, url) => {
+      const hash = sha256(bytes);
+      const path = `archive/${encodeURIComponent(source.id)}/${hash}${suffix}`;
+      await writeAtomic(join(dirname(baselinePath), path), bytes);
+      return { path, sha256: hash, url };
+    };
+    archives[source.id] = await save(content, extension, source.url);
+    if (repository)
+      archives[source.id].repository = await save(repository.content, ".tar.gz", repository.url);
+  }
+  const fingerprints = Object.fromEntries(
+    snapshots.map(({ source, fingerprint }) => [source.id, fingerprint]),
+  );
+  await writeAtomic(
+    baselinePath,
+    `${JSON.stringify({ checked: new Date().toISOString().slice(0, 10), fingerprints, archives }, null, 2)}\n`,
+  );
+  return snapshots.map(({ source, fingerprint }) => ({
+    ...source,
+    current: fingerprint,
+    status: "new",
+  }));
 }
 
 export async function inspectSources(entries, baseline, fetcher = fetch) {
@@ -213,13 +292,14 @@ export async function inspectSources(entries, baseline, fetcher = fetch) {
   return results;
 }
 
-export function formatReport(results) {
+export function formatReport(results, archives = {}) {
   const changed = results.filter(({ status }) => status !== "same");
   if (changed.length === 0)
     return "All watched Veri*Factu sources match the pinned fingerprints.\n";
   const lines = ["# Veri*Factu source changes", ""];
   for (const item of changed) {
     lines.push(`- **${item.id}** (${item.status}): ${item.url}`);
+    if (archives[item.id]) lines.push(`  - Previous source: \`sources/${archives[item.id].path}\``);
     if (item.status === "error") lines.push(`  - ${item.error}`);
     else lines.push(`  - Pinned: \`${item.previous ?? "none"}\`; current: \`${item.current}\``);
   }
@@ -237,19 +317,15 @@ async function main() {
   const reportIndex = args.indexOf("--report");
   const reportPath = reportIndex >= 0 ? args[reportIndex + 1] : undefined;
   if (reportIndex >= 0 && !reportPath) throw new Error("--report needs a path");
-  const baseline = refresh ? {} : JSON.parse(await readFile(baselineUrl, "utf8")).fingerprints;
-  const results = await inspectSources(sources, baseline);
-  const report = formatReport(results);
+  const baseline = refresh ? {} : JSON.parse(await readFile(baselineUrl, "utf8"));
+  const results = refresh
+    ? await refreshSources(sources, fileURLToPath(baselineUrl))
+    : await inspectSources(sources, baseline.fingerprints);
+  const report = formatReport(results, baseline.archives);
   process.stdout.write(report);
   if (reportPath) await writeFile(reportPath, report);
   if (results.some(({ status }) => status === "error")) process.exitCode = 1;
-  else if (refresh) {
-    const fingerprints = Object.fromEntries(results.map(({ id, current }) => [id, current]));
-    await writeFile(
-      baselineUrl,
-      `${JSON.stringify({ checked: new Date().toISOString().slice(0, 10), fingerprints }, null, 2)}\n`,
-    );
-  } else if (results.some(({ status }) => status !== "same")) process.exitCode = 2;
+  else if (!refresh && results.some(({ status }) => status !== "same")) process.exitCode = 2;
 }
 
 if (
