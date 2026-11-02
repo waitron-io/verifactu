@@ -5087,3 +5087,305 @@ test("handover rejects contradictory error codes and each ambiguous B batch", as
     assert.equal(sent.length, 5);
   }
 });
+
+async function doubleCorrectionProbe(fault = {}) {
+  assert.equal(typeof live.submitDoubleCorrectionProbe, "function");
+  let clock = decimalOptions.now.getTime();
+  const fake = createFakeAeat({ serverNow: new Date(clock), tiempoEsperaInicial: 13 });
+  let exchange;
+  const sent = [];
+  const waits = [];
+  const reports = [];
+  let submissions = 0;
+  let consultations = 0;
+  const soap = createClient({
+    endpoint: "https://fake.aeat.test/soap",
+    fetch: async (url, init) => {
+      exchange = { request: init.body };
+      const response = await fake.fetch(url, init);
+      exchange.reply = await response.clone().text();
+      return response;
+    },
+  });
+  const evidence = await live.submitDoubleCorrectionProbe(
+    {
+      async submit(header, records) {
+        submissions++;
+        sent.push(structuredClone(records[0].RegistroAlta));
+        if (fault.transportAt === submissions) {
+          exchange = { request: serializeEnvio(header, records) };
+          throw new Error("connection closed");
+        }
+        const response = await soap.submit(header, records);
+        response.TiempoEsperaEnvio = submissions === 1 ? 13 : 27;
+        return fault.submission?.(response, submissions) ?? response;
+      },
+      async consultar(header, filter) {
+        consultations++;
+        if (fault.consultTransport) throw new Error("lookup unavailable");
+        const response = await soap.consultar(header, filter);
+        return fault.consultation?.(response) ?? response;
+      },
+    },
+    successorHeader,
+    decimalOptions,
+    {
+      now: () => new Date(clock),
+      waitForSubmission: async (seconds) => {
+        waits.push(seconds);
+        if (fault.wait) throw new Error("wait interrupted");
+        clock += seconds * 1000;
+        fake.setServerNow(new Date(clock));
+      },
+      rawExchange: () => (fault.noExchange ? undefined : structuredClone(exchange)),
+      clearRawExchange: () => {
+        exchange = undefined;
+      },
+      report: (stage, entry) => reports.push([stage, structuredClone(entry)]),
+    },
+  );
+  return { evidence, sent, waits, reports, submissions, consultations };
+}
+
+test("double correction appends two fresh same-identity versions through the SOAP client", async () => {
+  const { evidence, sent, waits, reports, consultations } = await doubleCorrectionProbe();
+  assert.equal(evidence.incomplete, false);
+  assert.equal(consultations, 1);
+  assert.deepEqual(waits, [13, 27]);
+  assert.deepEqual(
+    reports.map(([stage]) => stage),
+    ["original", "firstCorrection", "secondCorrection", "consultation"],
+  );
+  assert.equal(sent.length, 3);
+  assert.equal(sent[0].IDFactura.NumSerieFactura, "CI/20260927/12345-DOUBLE");
+  assert.deepEqual(sent[1].IDFactura, sent[0].IDFactura);
+  assert.deepEqual(sent[2].IDFactura, sent[0].IDFactura);
+  assert.equal(sent[0].Encadenamiento.PrimerRegistro, "S");
+  assert.equal(sent[0].Subsanacion, undefined);
+  assert.equal(sent[0].RechazoPrevio, undefined);
+  assert.deepEqual(
+    sent.map((record) => record.FechaHoraHusoGenRegistro),
+    ["2026-09-27T14:00:00+02:00", "2026-09-27T14:00:13+02:00", "2026-09-27T14:00:40+02:00"],
+  );
+  assert.equal(new Set(sent.map((record) => record.DescripcionOperacion)).size, 3);
+  assert.equal(new Set(sent.map((record) => record.Huella)).size, 3);
+  for (let i = 1; i < 3; i++) {
+    assert.equal(sent[i].Subsanacion, "S");
+    assert.equal(sent[i].RechazoPrevio, "N");
+    assert.equal(sent[i].Encadenamiento.PrimerRegistro, undefined);
+    assert.deepEqual(sent[i].Encadenamiento.RegistroAnterior, {
+      ...sent[i - 1].IDFactura,
+      Huella: sent[i - 1].Huella,
+    });
+    assert.deepEqual(sent[i].SistemaInformatico, sent[0].SistemaInformatico);
+    assert.deepEqual(validate(sent[i]), []);
+  }
+  for (const stage of ["original", "firstCorrection", "secondCorrection"]) {
+    assert.equal(evidence[stage].response.EstadoEnvio, "Correcto");
+    assert.equal(evidence[stage].response.RespuestaLinea[0].EstadoRegistro, "Correcto");
+    assert.equal(evidence[stage].matchesExpectation, true);
+    assert.match(evidence[stage].exchange.request, /RegFactuSistemaFacturacion/);
+    assert.match(evidence[stage].exchange.reply, /RespuestaRegFactuSistemaFacturacion/);
+    assert.equal(
+      evidence[stage].record.Huella,
+      sent[["original", "firstCorrection", "secondCorrection"].indexOf(stage)].Huella,
+    );
+  }
+  assert.equal(
+    evidence.consultation.response.registros[0].DatosRegistroFacturacion.Huella,
+    sent[2].Huella,
+  );
+  assert.match(evidence.consultation.exchange.request, /ConsultaFactuSistemaFacturacion/);
+  assert.match(evidence.consultation.exchange.reply, /RespuestaConsultaFactuSistemaFacturacion/);
+});
+
+for (const at of [1, 2, 3]) {
+  test(`double correction stops after a refusal at submission ${at} and retains consultation`, async () => {
+    const { evidence, submissions, consultations } = await doubleCorrectionProbe({
+      submission(response, n) {
+        if (n === at) {
+          response.EstadoEnvio = "Incorrecto";
+          response.RespuestaLinea[0].EstadoRegistro = "Incorrecto";
+          response.RespuestaLinea[0].CodigoErrorRegistro = 3000;
+        }
+        return response;
+      },
+    });
+    assert.equal(evidence.incomplete, true);
+    assert.equal(
+      evidence.stoppedAfter,
+      ["original", "firstCorrection", "secondCorrection"][at - 1],
+    );
+    assert.equal(submissions, at);
+    assert.equal(consultations, 1);
+    assert.equal(
+      evidence[evidence.stoppedAfter].response.RespuestaLinea[0].CodigoErrorRegistro,
+      3000,
+    );
+    assert.ok(evidence.consultation.exchange.reply);
+  });
+}
+
+for (const [name, mutate] of [
+  [
+    "wrong issuer",
+    (r) => {
+      r.RespuestaLinea[0].IDFactura.IDEmisorFactura = "B99999997";
+    },
+  ],
+  [
+    "wrong date",
+    (r) => {
+      r.RespuestaLinea[0].IDFactura.FechaExpedicionFactura = "28-09-2026";
+    },
+  ],
+  [
+    "wrong serial",
+    (r) => {
+      r.RespuestaLinea[0].IDFactura.NumSerieFactura = "other";
+    },
+  ],
+  [
+    "duplicate reply",
+    (r) => {
+      r.RespuestaLinea.push(structuredClone(r.RespuestaLinea[0]));
+    },
+  ],
+  [
+    "missing reply",
+    (r) => {
+      r.RespuestaLinea = [];
+    },
+  ],
+  [
+    "warning",
+    (r) => {
+      r.EstadoEnvio = "ParcialmenteCorrecto";
+      r.RespuestaLinea[0].EstadoRegistro = "AceptadoConErrores";
+    },
+  ],
+  [
+    "bad envelope",
+    (r) => {
+      r.EstadoEnvio = "Incorrecto";
+    },
+  ],
+]) {
+  test(`double correction does not count ${name} as acceptance`, async () => {
+    const { evidence, submissions } = await doubleCorrectionProbe({
+      submission(response, n) {
+        if (n === 2) mutate(response);
+        return response;
+      },
+    });
+    assert.equal(evidence.incomplete, true);
+    assert.equal(evidence.stoppedAfter, "firstCorrection");
+    assert.equal(submissions, 2);
+    assert.equal(evidence.firstCorrection.matchesExpectation, false);
+  });
+}
+
+for (const [name, mutate] of [
+  [
+    "old fingerprint",
+    (r) => {
+      r.registros[0].DatosRegistroFacturacion.Huella = "0".repeat(64);
+    },
+  ],
+  [
+    "wrong identity",
+    (r) => {
+      r.registros[0].IDFactura.IDEmisorFactura = "B99999997";
+    },
+  ],
+  [
+    "wrong date",
+    (r) => {
+      r.registros[0].IDFactura.FechaExpedicionFactura = "28-09-2026";
+    },
+  ],
+  [
+    "wrong serial",
+    (r) => {
+      r.registros[0].IDFactura.NumSerieFactura = "other";
+    },
+  ],
+  [
+    "missing record",
+    (r) => {
+      r.ResultadoConsulta = "SinDatos";
+      r.registros = [];
+    },
+  ],
+  [
+    "duplicate record",
+    (r) => {
+      r.registros.push(structuredClone(r.registros[0]));
+    },
+  ],
+  [
+    "cancelled state",
+    (r) => {
+      r.registros[0].EstadoRegistro = "Anulado";
+    },
+  ],
+]) {
+  test(`double correction does not count consultation ${name} as proof`, async () => {
+    const { evidence } = await doubleCorrectionProbe({
+      consultation(response) {
+        mutate(response);
+        return response;
+      },
+    });
+    assert.equal(evidence.incomplete, true);
+    assert.equal(evidence.consultation.matchesExpectation, false);
+  });
+}
+
+for (const at of [1, 2, 3]) {
+  test(`double correction retains transport failure at submission ${at} without resending`, async () => {
+    const { evidence, submissions, consultations } = await doubleCorrectionProbe({
+      transportAt: at,
+    });
+    assert.equal(evidence.incomplete, true);
+    assert.equal(submissions, at);
+    assert.equal(consultations, 1);
+    assert.match(evidence[evidence.stoppedAfter].error, /connection closed/);
+    assert.ok(evidence[evidence.stoppedAfter].exchange.request);
+    assert.equal(evidence[evidence.stoppedAfter].exchange.reply, undefined);
+  });
+}
+
+test("double correction retains an interrupted wait without sending stale evidence", async () => {
+  const { evidence, submissions } = await doubleCorrectionProbe({ wait: true });
+  assert.equal(evidence.incomplete, true);
+  assert.equal(submissions, 1);
+  assert.equal(evidence.stoppedAfter, "firstCorrection");
+  assert.match(evidence.firstCorrection.error, /wait interrupted/);
+  assert.equal(evidence.firstCorrection.exchange, undefined);
+});
+
+test("double correction retains a failed final consultation", async () => {
+  const { evidence, submissions } = await doubleCorrectionProbe({ consultTransport: true });
+  assert.equal(evidence.incomplete, true);
+  assert.equal(submissions, 3);
+  assert.match(evidence.consultation.error, /lookup unavailable/);
+});
+
+test("double-correction is a reachable live CLI mode", () => {
+  const run = spawnSync(process.execPath, ["scripts/live-aeat.mjs", "double-correction"], {
+    encoding: "utf8",
+    timeout: 5000,
+    env: { PATH: process.env.PATH },
+  });
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /Set AEAT_TEST_NIF/);
+  assert.doesNotMatch(run.stderr, /Unknown AEAT preproduction mode/);
+});
+
+test("double correction cannot claim complete proof without raw exchanges", async () => {
+  const { evidence, submissions } = await doubleCorrectionProbe({ noExchange: true });
+  assert.equal(evidence.incomplete, true);
+  assert.equal(submissions, 1);
+  assert.equal(evidence.original.matchesExpectation, false);
+});
