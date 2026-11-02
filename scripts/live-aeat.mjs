@@ -406,6 +406,114 @@ export async function submitOutageFlagProbe(
   return evidence;
 }
 
+export async function submitDoubleCorrectionProbe(
+  client,
+  cabecera,
+  options,
+  {
+    report = () => {},
+    waitForSubmission = waitForNextSubmission,
+    now = () => new Date(),
+    rawExchange = () => undefined,
+    clearRawExchange = () => {},
+  } = {},
+) {
+  const evidence = { incomplete: false };
+  let previousResponse;
+  let previousRecord;
+  let original;
+  let expectedStored;
+  for (const stage of ["original", "firstCorrection", "secondCorrection"]) {
+    const entry = {};
+    let attempted = false;
+    try {
+      if (previousResponse) await waitForSubmission(previousResponse.TiempoEsperaEnvio);
+      const generatedAt = now();
+      if (stage === "original") {
+        original = buildTestRecord({
+          ...options,
+          now: generatedAt,
+          runId: `${options.runId}-DOUBLE`,
+        });
+        entry.record = original;
+      } else {
+        const correction = {
+          ...original,
+          DescripcionOperacion: `Double correction probe: ${stage}`,
+          Subsanacion: "S",
+          RechazoPrevio: "N",
+          Encadenamiento: {
+            RegistroAnterior: { ...previousRecord.IDFactura, Huella: previousRecord.Huella },
+          },
+        };
+        entry.record = refreshProbeRecordGeneration(correction, generatedAt);
+      }
+      assertValid(entry.record);
+      clearRawExchange();
+      attempted = true;
+      entry.response = await client.submit(cabecera, [{ RegistroAlta: entry.record }]);
+      entry.exchange = rawExchange();
+      const lines = entry.response.RespuestaLinea ?? [];
+      entry.matchesExpectation =
+        Boolean(entry.exchange?.request && entry.exchange?.reply) &&
+        entry.response.EstadoEnvio === "Correcto" &&
+        lines.length === 1 &&
+        lines[0].EstadoRegistro === "Correcto" &&
+        isDeepStrictEqual(lines[0].IDFactura, entry.record.IDFactura);
+      if (entry.matchesExpectation) expectedStored = entry.record;
+    } catch (error) {
+      entry.error = error instanceof Error ? error.message : String(error);
+      if (attempted) entry.exchange = rawExchange();
+      entry.matchesExpectation = false;
+    }
+    evidence[stage] = entry;
+    report(stage, entry);
+    if (!entry.matchesExpectation) {
+      evidence.incomplete = true;
+      evidence.stoppedAfter = stage;
+      break;
+    }
+    previousRecord = entry.record;
+    previousResponse = entry.response;
+  }
+  if (original) {
+    const entry = {};
+    try {
+      const [day, month, year] = original.IDFactura.FechaExpedicionFactura.split("-");
+      entry.filter = {
+        Ejercicio: year,
+        Periodo: month,
+        NumSerieFactura: original.IDFactura.NumSerieFactura,
+        FechaExpedicionFactura: `${day}-${month}-${year}`,
+      };
+      clearRawExchange();
+      entry.response = await client.consultar(
+        issuerConsultaHeader(cabecera.ObligadoEmision),
+        entry.filter,
+      );
+      entry.exchange = rawExchange();
+      assertConsultation(entry.response);
+      const records = entry.response.registros;
+      entry.matchesExpectation =
+        Boolean(entry.exchange?.request && entry.exchange?.reply) &&
+        expectedStored !== undefined &&
+        entry.response.ResultadoConsulta === "ConDatos" &&
+        records.length === 1 &&
+        isDeepStrictEqual(records[0].IDFactura, original.IDFactura) &&
+        records[0].EstadoRegistro === "Correcto" &&
+        records[0].DatosRegistroFacturacion.Huella === expectedStored.Huella;
+    } catch (error) {
+      entry.exchange = rawExchange();
+      entry.error = error instanceof Error ? error.message : String(error);
+      entry.matchesExpectation = false;
+    }
+    evidence.consultation = entry;
+    report("consultation", entry);
+    if (!entry.matchesExpectation) evidence.incomplete = true;
+  }
+  return evidence;
+}
+
 export async function submitFourBehaviourProbe(
   client,
   cabecera,
@@ -2537,6 +2645,7 @@ async function main() {
       "held-cancellation-successors",
       "outage-flag",
       "four-behaviours",
+      "double-correction",
     ].includes(mode)
   ) {
     throw new Error("Unknown AEAT preproduction mode");
@@ -2548,10 +2657,12 @@ async function main() {
   const endpoint = (kind === "sello" ? SOAP_ENDPOINTS_SELLO : SOAP_ENDPOINTS).preproduction;
   const sendToAeat = certificateFetch(endpoint, await loadCertificate(), passphrase);
   let lastRawReply;
+  let lastRawRequest;
   const client = createClient({
     endpoint,
     fetch: async (url, init) => {
       lastRawReply = undefined;
+      lastRawRequest = init.body;
       const response = await sendToAeat(url, init);
       lastRawReply = await response.clone().text();
       return response;
@@ -2626,6 +2737,42 @@ async function main() {
     });
     process.stdout.write(
       `AEAT handover-tail complete: ${outageFlagEvidenceJson(evidence, identities)}\n`,
+    );
+    if (evidence.incomplete) process.exitCode = 1;
+    return;
+  }
+
+  if (mode === "double-correction") {
+    const probeOptions = {
+      nif,
+      name,
+      systemNif: required("AEAT_TEST_SYSTEM_NIF"),
+      systemName: required("AEAT_TEST_SYSTEM_NAME"),
+      recipientNif: recipient.NIF,
+      recipientName: recipient.NombreRazon,
+      runId,
+    };
+    const identities = [
+      nif,
+      name,
+      probeOptions.systemNif,
+      probeOptions.systemName,
+      recipient.NIF,
+      recipient.NombreRazon,
+    ];
+    const evidence = await submitDoubleCorrectionProbe(client, cabecera, probeOptions, {
+      rawExchange: () => ({ request: lastRawRequest, reply: lastRawReply }),
+      clearRawExchange: () => {
+        lastRawRequest = undefined;
+        lastRawReply = undefined;
+      },
+      report: (stage, entry) =>
+        process.stdout.write(
+          `AEAT double-correction ${stage}: ${outageFlagEvidenceJson(entry, identities)}\n`,
+        ),
+    });
+    process.stdout.write(
+      `AEAT double-correction complete: ${outageFlagEvidenceJson(evidence, identities)}\n`,
     );
     if (evidence.incomplete) process.exitCode = 1;
     return;
