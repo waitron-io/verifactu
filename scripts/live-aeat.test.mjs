@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import {
   assertConsultation,
   assertExpandedStoredRecord,
@@ -5520,6 +5521,381 @@ for (const refusal of [false, true]) {
       evidence.consultation.response.registros[0].DatosRegistroFacturacion.Huella,
       evidence[refusal ? "firstCorrection" : "secondCorrection"].record.Huella,
     );
+    for (const identity of [
+      "89890001K",
+      "B99999997",
+      "11111111H",
+      "Issuer",
+      "Partners",
+      "Software &",
+      "Systems",
+      "Guest",
+      "Friends",
+      "synthetic-password-never-logged",
+    ]) {
+      assert.equal(run.stdout.includes(identity), false, identity);
+      assert.equal(run.stderr.includes(identity), false, identity);
+    }
+  });
+}
+
+const FINAL_CENT_STAGES = [
+  "aSale",
+  "aCorrection1",
+  "aCorrection2",
+  "bSale",
+  "bCorrection1",
+  "bCorrection2",
+  "bCorrection3",
+];
+
+async function finalCentProbe(fault = {}) {
+  assert.equal(typeof live.submitFinalCentCorrectionProbe, "function");
+  let clock = decimalOptions.now.getTime();
+  const fake = createFakeAeat({ serverNow: new Date(clock), tiempoEsperaInicial: 13 });
+  let exchange;
+  const sent = [];
+  const waits = [];
+  const reports = [];
+  const soap = createClient({
+    endpoint: "https://fake.aeat.test/soap",
+    fetch: async (url, init) => {
+      exchange = { request: init.body };
+      const response = await fake.fetch(url, init);
+      exchange.reply = await response.clone().text();
+      return response;
+    },
+  });
+  const evidence = await live.submitFinalCentCorrectionProbe(
+    {
+      async submit(header, records) {
+        sent.push(structuredClone(records[0].RegistroAlta));
+        if (fault.transportAt === sent.length) {
+          exchange = { ...exchange, request: serializeEnvio(header, records) };
+          throw new Error("connection closed");
+        }
+        if (fault.preTransportAt === sent.length) throw new Error("failed before transport");
+        const response = await soap.submit(header, records);
+        response.TiempoEsperaEnvio = sent.length + 10;
+        return fault.submission?.(response, sent.length) ?? response;
+      },
+    },
+    successorHeader,
+    decimalOptions,
+    {
+      now: () => new Date(clock),
+      waitForSubmission: async (seconds) => {
+        waits.push(seconds);
+        if (fault.waitBefore === sent.length + 1) throw new Error("wait interrupted");
+        clock += seconds * 1000;
+        fake.setServerNow(new Date(clock));
+      },
+      rawExchange: () => {
+        if (fault.noExchange || !exchange) return undefined;
+        const copy = structuredClone(exchange);
+        if (fault.dropExchange) delete copy[fault.dropExchange];
+        return copy;
+      },
+      clearRawExchange: () => {
+        exchange = undefined;
+      },
+      report: (stage, entry) => reports.push([stage, structuredClone(entry)]),
+    },
+  );
+  return { evidence, sent, waits, reports };
+}
+
+test("final cent correction files two F2 scenarios and their R5 corrections in one chain", async () => {
+  const { evidence, sent, waits, reports } = await finalCentProbe();
+  assert.equal(evidence.incomplete, false);
+  assert.deepEqual(
+    reports.map(([stage]) => stage),
+    FINAL_CENT_STAGES,
+  );
+  assert.deepEqual(waits, [11, 12, 13, 14, 15, 16]);
+  assert.deepEqual(
+    sent.map((record) => [
+      record.TipoFactura,
+      record.Desglose.map((line) => [
+        line.TipoImpositivo,
+        line.BaseImponibleOimporteNoSujeto,
+        line.CuotaRepercutida,
+      ]),
+      record.CuotaTotal,
+      record.ImporteTotal,
+    ]),
+    [
+      ["F2", [["21.00", "9.90", "2.10"]], "2.10", "12.00"],
+      ["R5", [["21.00", "-9.90", "-2.08"]], "-2.08", "-11.98"],
+      ["R5", [["21.00", "0.00", "-0.02"]], "-0.02", "-0.02"],
+      ["F2", [["21.00", "10.00", "2.10"]], "2.10", "12.10"],
+      ["R5", [["21.00", "-5.00", "-1.05"]], "-1.05", "-6.05"],
+      ["R5", [["21.00", "-4.98", "-1.04"]], "-1.04", "-6.02"],
+      ["R5", [["21.00", "-0.02", "-0.01"]], "-0.01", "-0.03"],
+    ],
+  );
+  assert.equal(sent[0].IDFactura.NumSerieFactura, "CI-F2/20260927/12345-CENT-A");
+  assert.equal(sent[6].IDFactura.NumSerieFactura, "CI-R5/20260927/12345-CENT-B3");
+  assert.equal(new Set(sent.map((record) => record.IDFactura.NumSerieFactura)).size, 7);
+  assert.equal(sent[0].Encadenamiento.PrimerRegistro, "S");
+  for (const [i, record] of sent.entries()) {
+    assert.deepEqual(validate(record), []);
+    assert.equal(record.Destinatarios, undefined);
+    assert.equal(record.ImporteRectificacion, undefined);
+    assert.deepEqual(record.SistemaInformatico, sent[0].SistemaInformatico);
+    if (i > 0) {
+      assert.deepEqual(record.Encadenamiento, {
+        RegistroAnterior: { ...sent[i - 1].IDFactura, Huella: sent[i - 1].Huella },
+      });
+    }
+    const corrected = i < 3 ? sent[0] : sent[3];
+    if (record.TipoFactura === "R5") {
+      assert.equal(record.TipoRectificativa, "I");
+      assert.deepEqual(record.FacturasRectificadas, {
+        IDFacturaRectificada: [corrected.IDFactura],
+      });
+    } else {
+      assert.equal(record.TipoRectificativa, undefined);
+      assert.equal(record.FacturasRectificadas, undefined);
+    }
+    const entry = evidence[FINAL_CENT_STAGES[i]];
+    assert.equal(entry.matchesExpectation, true);
+    assert.equal(entry.record.Huella, record.Huella);
+    assert.match(entry.exchange.request, /RegFactuSistemaFacturacion/);
+    assert.match(entry.exchange.reply, /RespuestaRegFactuSistemaFacturacion/);
+  }
+});
+
+for (const [name, at, mutate] of [
+  [
+    "an accepted-with-errors final cent",
+    3,
+    (r) => {
+      r.EstadoEnvio = "ParcialmenteCorrecto";
+      r.RespuestaLinea[0].EstadoRegistro = "AceptadoConErrores";
+      r.RespuestaLinea[0].CodigoErrorRegistro = 1100;
+      r.RespuestaLinea[0].DescripcionErrorRegistro = "controlled warning";
+    },
+  ],
+  [
+    "a refused correction",
+    6,
+    (r) => {
+      r.EstadoEnvio = "Incorrecto";
+      r.RespuestaLinea[0].EstadoRegistro = "Incorrecto";
+      r.RespuestaLinea[0].CodigoErrorRegistro = 1100;
+      r.RespuestaLinea[0].DescripcionErrorRegistro = "controlled refusal";
+    },
+  ],
+  [
+    "a reply naming another invoice",
+    2,
+    (r) => {
+      r.RespuestaLinea[0].IDFactura.NumSerieFactura = "other";
+    },
+  ],
+]) {
+  test(`final cent correction stops after ${name} and sends nothing further`, async () => {
+    const { evidence, sent } = await finalCentProbe({
+      submission(response, n) {
+        if (n === at) mutate(response);
+        return response;
+      },
+    });
+    assert.equal(sent.length, at);
+    assert.equal(evidence.incomplete, true);
+    assert.equal(evidence.stoppedAfter, FINAL_CENT_STAGES[at - 1]);
+    assert.equal(evidence[FINAL_CENT_STAGES[at - 1]].matchesExpectation, false);
+    assert.equal(evidence[FINAL_CENT_STAGES[at]], undefined);
+    const line = evidence[FINAL_CENT_STAGES[at - 1]].response.RespuestaLinea[0];
+    assert.equal(
+      line.DescripcionErrorRegistro,
+      { 3: "controlled warning", 6: "controlled refusal" }[at],
+    );
+  });
+}
+
+for (const [name, at, mutate] of [
+  [
+    "an empty reply line list",
+    2,
+    (r) => {
+      r.RespuestaLinea = [];
+    },
+  ],
+  [
+    "a duplicated reply line",
+    4,
+    (r) => {
+      r.RespuestaLinea.push(structuredClone(r.RespuestaLinea[0]));
+    },
+  ],
+  [
+    "an envelope not Correcto over a Correcto line",
+    5,
+    (r) => {
+      r.EstadoEnvio = "ParcialmenteCorrecto";
+    },
+  ],
+  [
+    "an accepted-with-errors line under a Correcto envelope",
+    7,
+    (r) => {
+      r.RespuestaLinea[0].EstadoRegistro = "AceptadoConErrores";
+    },
+  ],
+]) {
+  test(`final cent correction does not count ${name} as acceptance`, async () => {
+    const { evidence, sent } = await finalCentProbe({
+      submission(response, n) {
+        if (n === at) mutate(response);
+        return response;
+      },
+    });
+    assert.equal(sent.length, at);
+    assert.equal(evidence.incomplete, true);
+    assert.equal(evidence.stoppedAfter, FINAL_CENT_STAGES[at - 1]);
+    assert.equal(evidence[FINAL_CENT_STAGES[at - 1]].matchesExpectation, false);
+    assert.equal(evidence[FINAL_CENT_STAGES[at - 1]].error, undefined);
+    assert.equal(evidence[FINAL_CENT_STAGES[at - 2]].matchesExpectation, true);
+    assert.equal(evidence[FINAL_CENT_STAGES[at]], undefined);
+  });
+}
+
+for (const [name, fault] of [
+  ["any raw exchange", { noExchange: true }],
+  ["the raw request", { dropExchange: "request" }],
+  ["the raw reply", { dropExchange: "reply" }],
+]) {
+  test(`final cent correction cannot claim acceptance without ${name}`, async () => {
+    const { evidence, sent } = await finalCentProbe(fault);
+    assert.equal(sent.length, 1);
+    assert.equal(evidence.incomplete, true);
+    assert.equal(evidence.stoppedAfter, "aSale");
+    assert.equal(evidence.aSale.response.EstadoEnvio, "Correcto");
+    assert.equal(evidence.aSale.matchesExpectation, false);
+    assert.equal(evidence.aCorrection1, undefined);
+  });
+}
+
+test("final cent correction stops at a transport error and keeps the request", async () => {
+  const { evidence, sent } = await finalCentProbe({ transportAt: 2 });
+  assert.equal(sent.length, 2);
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedAfter, "aCorrection1");
+  assert.match(evidence.aCorrection1.error, /connection closed/);
+  assert.ok(evidence.aCorrection1.exchange.request);
+  assert.equal(evidence.aCorrection1.exchange.reply, undefined);
+  assert.equal(evidence.aCorrection2, undefined);
+});
+
+test("final cent correction retains an interrupted wait without sending stale evidence", async () => {
+  const { evidence, sent, waits } = await finalCentProbe({ waitBefore: 4 });
+  assert.equal(sent.length, 3);
+  assert.deepEqual(waits, [11, 12, 13]);
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedAfter, "bSale");
+  assert.match(evidence.bSale.error, /wait interrupted/);
+  assert.equal(evidence.bSale.response, undefined);
+  assert.equal(evidence.bSale.exchange, undefined);
+  assert.equal(evidence.aCorrection2.matchesExpectation, true);
+  assert.equal(evidence.bCorrection1, undefined);
+});
+
+test("final cent correction clears earlier SOAP when submission fails before transport", async () => {
+  const { evidence, sent } = await finalCentProbe({ preTransportAt: 3 });
+  assert.equal(sent.length, 3);
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedAfter, "aCorrection2");
+  assert.match(evidence.aCorrection2.error, /failed before transport/);
+  assert.equal(evidence.aCorrection2.exchange, undefined);
+  assert.equal(evidence.aCorrection1.matchesExpectation, true);
+  assert.equal(evidence.bSale, undefined);
+});
+
+test("final-cent-correction is a reachable live CLI mode listed in the workflow", () => {
+  const run = spawnSync(process.execPath, ["scripts/live-aeat.mjs", "final-cent-correction"], {
+    encoding: "utf8",
+    timeout: 5000,
+    env: { PATH: process.env.PATH },
+  });
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /Set AEAT_TEST_NIF/);
+  assert.doesNotMatch(run.stderr, /Unknown AEAT preproduction mode/);
+  const workflow = readFileSync(".github/workflows/live-aeat.yml", "utf8");
+  assert.match(workflow, /^ {10}- final-cent-correction$/m);
+});
+
+function finalCentCli(refuseAt) {
+  const source = `
+    import https from "node:https";
+    import { syncBuiltinESMExports } from "node:module";
+    import { EventEmitter } from "node:events";
+    import { pathToFileURL } from "node:url";
+    import { createFakeAeat } from "./dist/testing/fake-aeat.js";
+    import { parseEnvio } from "./dist/index.js";
+    const fake = createFakeAeat({ serverNow: new Date(), tiempoEsperaInicial: 0 });
+    let submissions = 0;
+    globalThis.fetch = () => { throw new Error("unexpected external request"); };
+    https.request = (url, options, callback) => {
+      if (!url.startsWith("https://prewww") || options.method !== "POST") throw new Error("unexpected endpoint");
+      const req = new EventEmitter();
+      req.end = async (body) => {
+        try {
+          fake.setServerNow(new Date());
+          if (++submissions === ${refuseAt}) {
+            const id = parseEnvio(body).registros[0].RegistroAlta.IDFactura;
+            fake.reject(id.IDEmisorFactura + "|" + id.NumSerieFactura + "|" + id.FechaExpedicionFactura, 1100, "controlled refusal");
+          }
+          const result = await fake.fetch(url, { method: options.method, headers: options.headers, body });
+          const response = new EventEmitter();
+          response.statusCode = result.status;
+          callback(response);
+          response.emit("data", Buffer.from(await result.text()));
+          response.emit("end");
+        } catch (error) { req.emit("error", error); }
+      };
+      return req;
+    };
+    syncBuiltinESMExports();
+    process.argv = [process.execPath, process.cwd() + "/scripts/live-aeat.mjs", "final-cent-correction"];
+    await import(pathToFileURL(process.argv[1]));
+  `;
+  return spawnSync(process.execPath, ["--input-type=module", "--eval", source], {
+    encoding: "utf8",
+    timeout: 10000,
+    env: {
+      PATH: process.env.PATH,
+      AEAT_TEST_P12_BASE64: Buffer.from("invalid synthetic certificate").toString("base64"),
+      AEAT_TEST_P12_PASSWORD: "synthetic-password-never-logged",
+      AEAT_TEST_NIF: "89890001K",
+      AEAT_TEST_NAME: "Issuer & Partners <A>",
+      AEAT_TEST_SYSTEM_NIF: "B99999997",
+      AEAT_TEST_SYSTEM_NAME: "Software & Systems <B>",
+      AEAT_TEST_RECIPIENT_NIF: "11111111H",
+      AEAT_TEST_RECIPIENT_NAME: "Guest & Friends <C>",
+      GITHUB_RUN_ID: "7654321",
+    },
+  });
+}
+
+for (const refuseAt of [0, 3]) {
+  test(`final cent correction CLI exits ${refuseAt ? 1 : 0} with redacted evidence`, () => {
+    const run = finalCentCli(refuseAt);
+    assert.equal(run.status, refuseAt ? 1 : 0, run.stderr + run.stdout);
+    const lines = run.stdout.trim().split("\n");
+    assert.equal(lines.length, (refuseAt || 7) + 1, run.stdout);
+    const evidence = JSON.parse(lines.at(-1).replace("AEAT final-cent-correction complete: ", ""));
+    assert.equal(evidence.incomplete, Boolean(refuseAt));
+    if (refuseAt) assert.equal(evidence.stoppedAfter, "aCorrection2");
+    const sentStages = FINAL_CENT_STAGES.slice(0, refuseAt || 7);
+    for (const stage of sentStages) {
+      assert.match(evidence[stage].exchange.request, /\[identity\]/);
+      assert.ok(evidence[stage].exchange.reply);
+    }
+    for (const stage of FINAL_CENT_STAGES.slice(sentStages.length)) {
+      assert.equal(evidence[stage], undefined);
+    }
     for (const identity of [
       "89890001K",
       "B99999997",

@@ -514,6 +514,100 @@ export async function submitDoubleCorrectionProbe(
   return evidence;
 }
 
+const FINAL_CENT_PLAN = [
+  ["aSale", "A", "F2", "9.90", "2.10", "12.00"],
+  ["aCorrection1", "A1", "R5", "-9.90", "-2.08", "-11.98"],
+  ["aCorrection2", "A2", "R5", "0.00", "-0.02", "-0.02"],
+  ["bSale", "B", "F2", "10.00", "2.10", "12.10"],
+  ["bCorrection1", "B1", "R5", "-5.00", "-1.05", "-6.05"],
+  ["bCorrection2", "B2", "R5", "-4.98", "-1.04", "-6.02"],
+  ["bCorrection3", "B3", "R5", "-0.02", "-0.01", "-0.03"],
+];
+
+export async function submitFinalCentCorrectionProbe(
+  client,
+  cabecera,
+  options,
+  {
+    report = () => {},
+    waitForSubmission = waitForNextSubmission,
+    now = () => new Date(),
+    rawExchange = () => undefined,
+    clearRawExchange = () => {},
+  } = {},
+) {
+  const evidence = { incomplete: false };
+  let previousResponse;
+  let previousRecord;
+  let sale;
+  for (const [stage, label, tipo, base, cuota, total] of FINAL_CENT_PLAN) {
+    const entry = {};
+    let attempted = false;
+    try {
+      if (previousResponse) await waitForSubmission(previousResponse.TiempoEsperaEnvio);
+      const built = buildTestRecord({ ...options, now: now(), runId: `${options.runId}-CENT` });
+      const body = { ...built };
+      delete body.Destinatarios;
+      const record = {
+        ...body,
+        IDFactura: {
+          ...built.IDFactura,
+          NumSerieFactura: `${built.IDFactura.NumSerieFactura.replace("CI/", `CI-${tipo}/`)}-${label}`,
+        },
+        RefExterna: `${built.RefExterna}-${label}`,
+        DescripcionOperacion: `Final cent correction probe: ${stage}`,
+        TipoFactura: tipo,
+        ...(tipo === "R5"
+          ? {
+              TipoRectificativa: "I",
+              FacturasRectificadas: { IDFacturaRectificada: [sale.IDFactura] },
+            }
+          : {}),
+        Desglose: [
+          { ...built.Desglose[0], BaseImponibleOimporteNoSujeto: base, CuotaRepercutida: cuota },
+        ],
+        CuotaTotal: cuota,
+        ImporteTotal: total,
+        ...(previousRecord
+          ? {
+              Encadenamiento: {
+                RegistroAnterior: { ...previousRecord.IDFactura, Huella: previousRecord.Huella },
+              },
+            }
+          : {}),
+      };
+      entry.record = { ...record, Huella: computeHuella(record) };
+      if (tipo === "F2") sale = entry.record;
+      assertValid(entry.record);
+      clearRawExchange();
+      attempted = true;
+      entry.response = await client.submit(cabecera, [{ RegistroAlta: entry.record }]);
+      entry.exchange = rawExchange();
+      const lines = entry.response.RespuestaLinea ?? [];
+      entry.matchesExpectation =
+        Boolean(entry.exchange?.request && entry.exchange?.reply) &&
+        entry.response.EstadoEnvio === "Correcto" &&
+        lines.length === 1 &&
+        lines[0].EstadoRegistro === "Correcto" &&
+        isDeepStrictEqual(lines[0].IDFactura, entry.record.IDFactura);
+    } catch (error) {
+      entry.error = error instanceof Error ? error.message : String(error);
+      if (attempted) entry.exchange = rawExchange();
+      entry.matchesExpectation = false;
+    }
+    evidence[stage] = entry;
+    report(stage, entry);
+    if (!entry.matchesExpectation) {
+      evidence.incomplete = true;
+      evidence.stoppedAfter = stage;
+      break;
+    }
+    previousRecord = entry.record;
+    previousResponse = entry.response;
+  }
+  return evidence;
+}
+
 export async function submitFourBehaviourProbe(
   client,
   cabecera,
@@ -2646,6 +2740,7 @@ async function main() {
       "outage-flag",
       "four-behaviours",
       "double-correction",
+      "final-cent-correction",
     ].includes(mode)
   ) {
     throw new Error("Unknown AEAT preproduction mode");
@@ -2737,6 +2832,42 @@ async function main() {
     });
     process.stdout.write(
       `AEAT handover-tail complete: ${outageFlagEvidenceJson(evidence, identities)}\n`,
+    );
+    if (evidence.incomplete) process.exitCode = 1;
+    return;
+  }
+
+  if (mode === "final-cent-correction") {
+    const probeOptions = {
+      nif,
+      name,
+      systemNif: required("AEAT_TEST_SYSTEM_NIF"),
+      systemName: required("AEAT_TEST_SYSTEM_NAME"),
+      recipientNif: recipient.NIF,
+      recipientName: recipient.NombreRazon,
+      runId,
+    };
+    const identities = [
+      nif,
+      name,
+      probeOptions.systemNif,
+      probeOptions.systemName,
+      recipient.NIF,
+      recipient.NombreRazon,
+    ];
+    const evidence = await submitFinalCentCorrectionProbe(client, cabecera, probeOptions, {
+      rawExchange: () => ({ request: lastRawRequest, reply: lastRawReply }),
+      clearRawExchange: () => {
+        lastRawRequest = undefined;
+        lastRawReply = undefined;
+      },
+      report: (stage, entry) =>
+        process.stdout.write(
+          `AEAT final-cent-correction ${stage}: ${outageFlagEvidenceJson(entry, identities)}\n`,
+        ),
+    });
+    process.stdout.write(
+      `AEAT final-cent-correction complete: ${outageFlagEvidenceJson(evidence, identities)}\n`,
     );
     if (evidence.incomplete) process.exitCode = 1;
     return;

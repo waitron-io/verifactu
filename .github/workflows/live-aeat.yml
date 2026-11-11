@@ -33,6 +33,7 @@ on:
           - outage-flag
           - four-behaviours
           - double-correction
+          - final-cent-correction
         default: consult
         required: true
       excluded_regime:
