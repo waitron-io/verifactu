@@ -38,26 +38,5 @@ jobs:
       - name: Put the declaración responsable on the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          tag="$GITHUB_REF_NAME"
-          file=DECLARACION-RESPONSABLE.md
-          view_err="$RUNNER_TEMP/release-view.err"
-          if assets=$(gh release view "$tag" --json assets --jq '.assets[].name' 2>"$view_err"); then
-            if printf '%s\n' "$assets" | grep -Fqx "$file"; then
-              published="$RUNNER_TEMP/published"
-              gh release download "$tag" --pattern "$file" --dir "$published"
-              if ! cmp "$file" "$published/$file"; then
-                echo "::error::The Release for $tag already holds a different $file; a published declaration never changes."
-                exit 1
-              fi
-            else
-              gh release upload "$tag" "$file"
-            fi
-          elif grep -Fq "release not found" "$view_err"; then
-            node scripts/declaration.mjs changelog "${tag#v}" > "$RUNNER_TEMP/notes.md"
-            gh release create "$tag" "$file" --verify-tag --title "$tag" --notes-file "$RUNNER_TEMP/notes.md"
-          else
-            cat "$view_err" >&2
-            exit 1
-          fi
+        run: bash scripts/release-declaration.sh
       - run: npm publish --access public --provenance

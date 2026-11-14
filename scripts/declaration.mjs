@@ -9,6 +9,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const OUTPUT = "DECLARACION-RESPONSABLE.md";
 const PRODUCER_VARIABLES = {
@@ -24,7 +25,7 @@ function refuse(message) {
 }
 
 function parseArgs(argv) {
-  const options = { root: new URL("..", import.meta.url).pathname, positional: [] };
+  const options = { root: fileURLToPath(new URL("..", import.meta.url)), positional: [] };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--preview") options.preview = true;
@@ -87,6 +88,13 @@ function render({ root, template, preview }) {
     if (!(slot in values)) refuse(`${template} has a slot nothing fills: ${slot}`);
     return values[slot];
   });
+  // The template's slots are the only place these marks belong, so any left means a slot was not
+  // filled (one split across lines) or a setting carried one; the message must not quote either.
+  if (/[‹›]/.test(text)) {
+    refuse(
+      `the filled text still holds ‹ or ›: a slot split across lines, or a setting containing one.`,
+    );
+  }
   if (preview) {
     console.error("declaration: the date shown is today's, a stand-in for the tag's date.");
     process.stdout.write(text);

@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { after } from "node:test";
+import { fileURLToPath } from "node:url";
 
-const SCRIPT = new URL("./declaration.mjs", import.meta.url).pathname;
-const REAL_TEMPLATE = new URL("../declarations/template.md", import.meta.url).pathname;
+const SCRIPT = fileURLToPath(new URL("./declaration.mjs", import.meta.url));
+const REAL_TEMPLATE = fileURLToPath(new URL("../declarations/template.md", import.meta.url));
+const BLOCKER = /^<!-- release-blocker: .* -->$/;
 const OUTPUT = "DECLARACION-RESPONSABLE.md";
 
 const PRODUCER = {
@@ -62,11 +64,14 @@ function git(dir, args, extraEnv = {}) {
   assert.equal(result.status, 0, result.stderr);
 }
 
+/** The real template without its leading release-blocker line, whether or not it still has one. */
 async function realBody() {
-  const source = await readFile(REAL_TEMPLATE, "utf8");
-  const lines = source.split("\n");
-  assert.match(lines[0], /^<!-- release-blocker: .* -->$/);
-  return lines.slice(1).join("\n");
+  const lines = (await readFile(REAL_TEMPLATE, "utf8")).split("\n");
+  return (BLOCKER.test(lines[0]) ? lines.slice(1) : lines).join("\n");
+}
+
+async function blockedBody() {
+  return `<!-- release-blocker: waiting for an answer -->\n${await realBody()}`;
 }
 
 /** A git repo holding package.json at `version`, an annotated v0.3.0 tag and a lightweight v0.3.1. */
@@ -137,8 +142,8 @@ test("a re-run for the same tag writes byte-identical output", async () => {
   assert.ok(first.equals(await readFile(join(dir, OUTPUT))));
 });
 
-test("refuses the real template while it carries a release-blocker line", async () => {
-  const dir = await repo(await readFile(REAL_TEMPLATE, "utf8"));
+test("refuses a template that carries a release-blocker line", async () => {
+  const dir = await repo(await blockedBody());
   assertRefused(run(dir), /release-blocker/);
   assert.equal(existsSync(join(dir, OUTPUT)), false);
 });
@@ -183,6 +188,38 @@ test("refuses a slot it cannot fill", async () => {
   assert.equal(existsSync(join(dir, OUTPUT)), false);
 });
 
+test("refuses a slot that spans a line break, writing nothing", async () => {
+  const dir = await repo(`${await realBody()}\nExtra: ‹otro\nslot›\n`);
+  assertRefused(run(dir), /‹ or ›/);
+  assert.equal(existsSync(join(dir, OUTPUT)), false);
+});
+
+test("refuses a producer setting holding slot marks, writing nothing and naming no value", async () => {
+  const dir = await repo(await realBody());
+  const name = "Nombre-Secreto ‹NIF›";
+  const result = run(dir, [], { ...PRODUCER, WAITRON_PRODUCER_NAME: name });
+  assertRefused(result, /‹ or ›/);
+  assert.ok(!result.stderr.includes(name), "refusal printed the producer's name");
+  assert.equal(existsSync(join(dir, OUTPUT)), false);
+});
+
+test("--preview works from a checkout whose path holds a space", async () => {
+  const checkout = join(await mkdtemp(join(tmpdir(), "declaration ")), "check out");
+  createdDirs.push(join(checkout, ".."));
+  await mkdir(join(checkout, "scripts"), { recursive: true });
+  await mkdir(join(checkout, "declarations"));
+  await copyFile(SCRIPT, join(checkout, "scripts", "declaration.mjs"));
+  await writeFile(join(checkout, "declarations", "template.md"), await realBody());
+  await writeFile(join(checkout, "package.json"), JSON.stringify({ name: "x", version: "0.3.0" }));
+  const result = spawnSync(
+    process.execPath,
+    [join(checkout, "scripts", "declaration.mjs"), "--preview"],
+    { encoding: "utf8", env: cleanEnv(PRODUCER) },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /esta declaración responsable:\*\* 0\.3\.0\n/);
+});
+
 test("--preview prints the text with today's date, needing no tag, and writes nothing", async () => {
   const dir = await repo(await realBody(), "0.9.0");
   const result = run(dir, ["--preview"], { ...PRODUCER, GITHUB_REF_NAME: "v1.2.3" });
@@ -201,7 +238,7 @@ test("--preview prints the text with today's date, needing no tag, and writes no
 });
 
 test("--preview still refuses a release-blocker line and a missing value", async () => {
-  const blocked = await repo(await readFile(REAL_TEMPLATE, "utf8"));
+  const blocked = await repo(await blockedBody());
   assertRefused(run(blocked, ["--preview"]), /release-blocker/);
   const dir = await repo(await realBody());
   const env = { ...PRODUCER };
