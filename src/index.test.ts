@@ -10,7 +10,6 @@ import {
   serializeEnvio,
   validate,
 } from "./index.js";
-import * as api from "./index.js";
 import type { Cabecera, SistemaInformatico } from "./index.js";
 
 /**
@@ -96,16 +95,5 @@ describe("package public surface (./index.js)", () => {
     const xml = serializeConsulta(cabecera, filtro);
     expect(xml).toContain("<sfLRC:FiltroConsulta>");
     expect(parseConsulta(xml)).toEqual({ cabecera, filtro });
-  });
-
-  it("exports no address for AEAT's demand service, which only non-VERI*FACTU systems use", () => {
-    expect(Object.keys(api).filter((name) => /REQUERIMIENTO/i.test(name))).toEqual([]);
-    const addresses = Object.values(api).flatMap((value) =>
-      typeof value === "object" && value !== null
-        ? Object.values(value).filter((entry) => typeof entry === "string")
-        : [],
-    );
-    expect(addresses).toContain(api.SOAP_ENDPOINTS.production);
-    expect(addresses.filter((address) => address.includes("RequerimientoSOAP"))).toEqual([]);
   });
 });

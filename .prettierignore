@@ -12,6 +12,6 @@ website/src/content/docs/
 website/src/pages/
 website/api-intro.md
 website/README.md
+declarations/
 # Archived source bytes must keep their recorded SHA-256.
 sources/archive/
-declarations/

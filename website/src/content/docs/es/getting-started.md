@@ -192,9 +192,9 @@ const testClient = createFakeAeat({ serverNow: new Date() }).client();
 
 ## La declaración responsable de la biblioteca
 
-Esta biblioteca es un componente, no un sistema de facturación completo. Cada versión tiene su
-propia declaración responsable, en la que su productor declara que cumple las normas de
-Veri\*Factu. La encuentras en la
+Esta biblioteca es un componente, no un sistema de facturación completo. Desde la versión 0.3.0,
+cada versión tiene su propia declaración responsable, en la que su productor declara que cumple
+las normas de Veri\*Factu. La encuentras en la
 [página de la versión en GitHub](https://github.com/waitron-io/verifactu/releases) y dentro del
 paquete de npm, como `DECLARACION-RESPONSABLE.md`. Tu sistema necesita igualmente su propia
 declaración, que indica la versión de esta biblioteca que utiliza.

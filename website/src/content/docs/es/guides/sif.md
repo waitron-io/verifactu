@@ -68,4 +68,5 @@ su lugar el entorno de pruebas de la AEAT (preproducción).
 El productor del software firma una declaración de que cumple las reglas de la AEAT, llamada
 declaración responsable. La AEAT publica
 [un ejemplo](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/informacion-tecnica/ejemplo-declaracion-responsable.html).
-La biblioteca es una parte de tu SIF; la declaración cubre el sistema entero.
+La biblioteca es una parte de tu SIF; la declaración cubre el sistema entero. Desde la 0.3.0 la
+biblioteca tiene su propia declaración; la tuya indica la versión que utilizas.
