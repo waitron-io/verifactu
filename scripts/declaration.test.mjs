@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test from "node:test";
+import test, { after } from "node:test";
 
 const SCRIPT = new URL("./declaration.mjs", import.meta.url).pathname;
 const REAL_TEMPLATE = new URL("../declarations/template.md", import.meta.url).pathname;
@@ -17,6 +17,9 @@ const PRODUCER = {
   DECLARATION_PLACE: "Lugar-Secreto",
 };
 const SECRETS = Object.values(PRODUCER);
+
+const createdDirs = [];
+after(() => Promise.all(createdDirs.map((d) => rm(d, { recursive: true, force: true }))));
 
 // Typed by hand from Waitron's packages/fiscal-verifactu/src/declaration/headings.test.ts.
 const HEADINGS = [
@@ -69,6 +72,7 @@ async function realBody() {
 /** A git repo holding package.json at `version`, an annotated v0.3.0 tag and a lightweight v0.3.1. */
 async function repo(template, version = "0.3.0") {
   const dir = await mkdtemp(join(tmpdir(), "declaration-"));
+  createdDirs.push(dir);
   git(dir, ["init", "-q"]);
   await writeFile(join(dir, "package.json"), JSON.stringify({ name: "x", version }));
   await writeFile(join(dir, "template.md"), template);

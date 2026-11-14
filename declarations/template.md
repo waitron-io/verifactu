@@ -40,11 +40,11 @@ registros y consulta de los remitidos; comprobación de una cadena de registros.
 
 **1.e) Indicación de si el sistema informático a que se refiere esta declaración responsable se
 ha producido de tal manera que, a los efectos de cumplir con el Reglamento, solo pueda
-funcionar exclusivamente como «VERI*FACTU»:** S
+funcionar exclusivamente como «VERI*FACTU»:** S - Sí
 
 **1.f) Indicación de si el sistema informático a que se refiere la declaración responsable
 permite ser usado por varios obligados tributarios o por un mismo usuario para dar soporte a la
-facturación de varios obligados tributarios:** S
+facturación de varios obligados tributarios:** S - Sí
 
 **1.g) Tipos de firma utilizados para firmar los registros de facturación y de evento en el caso
 de que el sistema informático a que se refiere esta declaración responsable no sea utilizado
