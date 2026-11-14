@@ -31,6 +31,7 @@
   "files": [
     "dist",
     "schemas",
+    "DECLARACION-RESPONSABLE.md",
     "PROVENANCE.md",
     "README.md",
     "LICENSE"
