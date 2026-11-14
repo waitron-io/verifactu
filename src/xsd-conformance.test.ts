@@ -304,14 +304,6 @@ describe("generated unsigned requests against AEAT XSDs", () => {
         RemisionVoluntaria: { FechaFinVeriFactu: "31-12-2026", Incidencia: "S" as const },
       },
     },
-    {
-      mode: "under requirement",
-      cabecera: {
-        ...CABECERA,
-        Representante: { NombreRazon: "Asesoría", NIF: "11111111H" },
-        RemisionRequerimiento: { RefRequerimiento: "R".repeat(18), FinRequerimiento: "N" as const },
-      },
-    },
   ])("validates a maximal $mode submission header", ({ cabecera }) => {
     const body = soapBodyElement(
       serializeEnvio(cabecera, [{ RegistroAlta: buildAltaRecord(ALTA_INPUT) }]),
@@ -372,7 +364,7 @@ describe("generated unsigned requests against AEAT XSDs", () => {
     expect(result.stderr).toContain("Cabecera");
   });
 
-  it("proves the XSD permits both remittance blocks while the library selects one mode", () => {
+  it("proves the XSD permits a demand-service block, which the library deliberately refuses", () => {
     const body = soapBodyElement(
       serializeEnvio({ ...CABECERA, RemisionVoluntaria: { Incidencia: "N" } }, [
         { RegistroAlta: buildAltaRecord(ALTA_INPUT) },
@@ -396,7 +388,6 @@ describe("generated unsigned requests against AEAT XSDs", () => {
         {
           ...CABECERA,
           ObligadoEmision: { ...CABECERA.ObligadoEmision, NombreRazon: "😀".repeat(120) },
-          RemisionRequerimiento: { RefRequerimiento: "😀".repeat(18) },
         },
         [{ RegistroAlta: buildAltaRecord(ALTA_INPUT) }],
       ),
@@ -404,17 +395,11 @@ describe("generated unsigned requests against AEAT XSDs", () => {
     expect(schemaResult(ENVIO_XSD, body).status).toBe(0);
     const document = new DOMParser().parseFromString(body, "text/xml");
     const name = document.getElementsByTagNameNS(NS_SF, "NombreRazon").item(0);
-    const reference = document.getElementsByTagNameNS(NS_SF, "RefRequerimiento").item(0);
-    if (!name || !reference) throw new Error("Submission fixture lacks header text fields");
+    if (!name) throw new Error("Submission fixture lacks header text fields");
     name.textContent = "😀".repeat(121);
-    let invalid = schemaResult(ENVIO_XSD, new XMLSerializer().serializeToString(document));
+    const invalid = schemaResult(ENVIO_XSD, new XMLSerializer().serializeToString(document));
     expect(invalid.status).not.toBe(0);
     expect(invalid.stderr).toContain("NombreRazon");
-    name.textContent = "😀".repeat(120);
-    reference.textContent = "😀".repeat(19);
-    invalid = schemaResult(ENVIO_XSD, new XMLSerializer().serializeToString(document));
-    expect(invalid.status).not.toBe(0);
-    expect(invalid.stderr).toContain("RefRequerimiento");
   });
 
   it.each([
@@ -1693,18 +1678,6 @@ describe("filing response fields against AEAT XSDs", () => {
         "<sf:Representante>",
         "<sf:FechaFinVeriFactu>31-12-2026</sf:FechaFinVeriFactu>",
         "<sf:Incidencia>S</sf:Incidencia>",
-      ],
-    ],
-    [
-      "under-requirement",
-      {
-        ObligadoEmision: { NombreRazon: "Issuer", NIF: "89890001K" },
-        RemisionRequerimiento: { RefRequerimiento: "REQ-42", FinRequerimiento: "N" },
-      },
-      [
-        "<sf:RemisionRequerimiento>",
-        "<sf:RefRequerimiento>REQ-42</sf:RefRequerimiento>",
-        "<sf:FinRequerimiento>N</sf:FinRequerimiento>",
       ],
     ],
   ] as const)(

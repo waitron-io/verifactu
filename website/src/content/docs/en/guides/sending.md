@@ -97,7 +97,5 @@ the form AEAT accepts, and a certificate AEAT accepts for representing them.
 
 ## When AEAT asks for records
 
-If AEAT formally asks you for records (a _requerimiento_), send them with
-`RemisionRequerimiento: { RefRequerimiento }` in the header, to the `SOAP_ENDPOINTS_REQUERIMIENTO`
-or `SOAP_ENDPOINTS_REQUERIMIENTO_SELLO` addresses. Send the records exactly as you stored them, and
-set `FinRequerimiento: "S"` on the last batch. You can't look up these records afterwards.
+The library doesn't support AEAT's separate service for sending records when AEAT formally asks
+for them (a _requerimiento_). Only systems outside _VERI\*FACTU_ mode use it.

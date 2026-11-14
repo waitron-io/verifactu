@@ -2,12 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { XMLParser } from "fast-xml-parser";
 import { describe, expect, it } from "vitest";
-import {
-  SOAP_ENDPOINTS,
-  SOAP_ENDPOINTS_REQUERIMIENTO,
-  SOAP_ENDPOINTS_REQUERIMIENTO_SELLO,
-  SOAP_ENDPOINTS_SELLO,
-} from "./endpoints.js";
+import { SOAP_ENDPOINTS, SOAP_ENDPOINTS_SELLO } from "./endpoints.js";
 
 const SCHEMA_DIR = fileURLToPath(new URL("../schemas/", import.meta.url));
 const WSDL_NS =
@@ -23,6 +18,17 @@ const RESPUESTA_NS =
 const RESPUESTA_CONSULTA_NS =
   "https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/RespuestaConsultaLR.xsd";
 const XML_SIGNATURE_NS = "http://www.w3.org/2000/09/xmldsig#";
+// AEAT's demand service, used only by systems outside VERI*FACTU; the library does not support it.
+const DEMAND_SERVICE = {
+  production:
+    "https://www1.agenciatributaria.gob.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/RequerimientoSOAP",
+  preproduction: "https://prewww1.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/RequerimientoSOAP",
+};
+const DEMAND_SERVICE_SELLO = {
+  production:
+    "https://www10.agenciatributaria.gob.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/RequerimientoSOAP",
+  preproduction: "https://prewww10.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/RequerimientoSOAP",
+};
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -277,7 +283,7 @@ describe("AEAT WSDL and cross-schema contract", () => {
     ]);
   });
 
-  it("keeps all eight WSDL ports aligned with the exported client endpoints", () => {
+  it("keeps the four VERI*FACTU ports aligned with the exported client endpoints", () => {
     expect(
       children(wsdl, "wsdl:service").map((service) => [
         attribute(service, "name"),
@@ -304,28 +310,31 @@ describe("AEAT WSDL and cross-schema contract", () => {
       [
         "sfRequerimiento",
         [
-          [
-            "SistemaRequerimiento",
-            "sfWdsl:sfRequerimiento",
-            SOAP_ENDPOINTS_REQUERIMIENTO.production,
-          ],
-          [
-            "SistemaRequerimientoSello",
-            "sfWdsl:sfRequerimiento",
-            SOAP_ENDPOINTS_REQUERIMIENTO_SELLO.production,
-          ],
-          [
-            "SistemaRequerimientoPruebas",
-            "sfWdsl:sfRequerimiento",
-            SOAP_ENDPOINTS_REQUERIMIENTO.preproduction,
-          ],
+          ["SistemaRequerimiento", "sfWdsl:sfRequerimiento", DEMAND_SERVICE.production],
+          ["SistemaRequerimientoSello", "sfWdsl:sfRequerimiento", DEMAND_SERVICE_SELLO.production],
+          ["SistemaRequerimientoPruebas", "sfWdsl:sfRequerimiento", DEMAND_SERVICE.preproduction],
           [
             "SistemaRequerimientoSelloPruebas",
             "sfWdsl:sfRequerimiento",
-            SOAP_ENDPOINTS_REQUERIMIENTO_SELLO.preproduction,
+            DEMAND_SERVICE_SELLO.preproduction,
           ],
         ],
       ],
     ]);
+  });
+
+  it("leaves AEAT's demand-service ports deliberately unsupported", async () => {
+    const api: Record<string, unknown> = await import("./index.js");
+    const exported = Object.values(api).flatMap((value) =>
+      typeof value === "object" && value !== null ? Object.values(value) : [],
+    );
+    const demandPorts = children(wsdl, "wsdl:service")
+      .filter((service) => attribute(service, "name") === "sfRequerimiento")
+      .flatMap((service) => children(service, "wsdl:port"))
+      .map((port) => attribute(record(port["soap:address"], "soap:address"), "location"));
+
+    expect(demandPorts).toHaveLength(4);
+    expect(exported).toContain(SOAP_ENDPOINTS.production);
+    expect(demandPorts.filter((location) => exported.includes(location))).toEqual([]);
   });
 });

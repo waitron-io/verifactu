@@ -653,48 +653,33 @@ describe("serializeEnvio", () => {
     expect(serializeEnvio(cabecera, [{ RegistroAlta: record }])).toContain("😀".repeat(120));
   });
 
-  it("writes the under-requirement header block in XSD order", () => {
+  it.each([[{ RefRequerimiento: "REQ-123", FinRequerimiento: "N" }], [{}]])(
+    "refuses an untyped header carrying the unsupported demand-service block",
+    (block) => {
+      const cabecera = { ...CABECERA, RemisionRequerimiento: block } as unknown as Cabecera;
+      expect(() => serializeEnvio(cabecera, [{ RegistroAlta: record }])).toThrow(
+        "Cabecera.RemisionRequerimiento is not supported: this library submits only VERI*FACTU records",
+      );
+    },
+  );
+
+  it("rejects an invalid untyped Incidencia flag", () => {
     const cabecera = {
       ...CABECERA,
-      RemisionRequerimiento: { RefRequerimiento: "REQ-123", FinRequerimiento: "N" },
-    } as unknown as Cabecera;
-    expect(serializeEnvio(cabecera, [{ RegistroAlta: record }])).toContain(
-      "<sf:RemisionRequerimiento><sf:RefRequerimiento>REQ-123</sf:RefRequerimiento><sf:FinRequerimiento>N</sf:FinRequerimiento></sf:RemisionRequerimiento></sfLR:Cabecera>",
-    );
-  });
-
-  it("rejects both remittance modes on an untyped header", () => {
-    const cabecera = {
-      ...CABECERA,
-      RemisionVoluntaria: { Incidencia: "N" },
-      RemisionRequerimiento: { RefRequerimiento: "REQ-123" },
+      RemisionVoluntaria: { Incidencia: "X" },
     } as unknown as Cabecera;
     expect(() => serializeEnvio(cabecera, [{ RegistroAlta: record }])).toThrow(
-      "Cabecera must not contain both RemisionVoluntaria and RemisionRequerimiento",
+      "Cabecera.RemisionVoluntaria.Incidencia must be S or N",
     );
   });
 
-  it.each([
-    ["Incidencia", { RemisionVoluntaria: { Incidencia: "X" } }],
-    [
-      "FinRequerimiento",
-      { RemisionRequerimiento: { RefRequerimiento: "REQ-123", FinRequerimiento: "X" } },
-    ],
-  ] as const)("rejects an invalid untyped %s flag", (field, remittance) => {
-    const cabecera = { ...CABECERA, ...remittance } as unknown as Cabecera;
-    expect(() => serializeEnvio(cabecera, [{ RegistroAlta: record }])).toThrow(
-      `Cabecera.${field === "Incidencia" ? "RemisionVoluntaria" : "RemisionRequerimiento"}.${field} must be S or N`,
-    );
-  });
-
-  it("types the two header remittance modes as exclusive", () => {
-    // @ts-expect-error Both remittance blocks cannot appear on a Cabecera.
-    const both: Cabecera = {
+  it("has no demand-service block in the Cabecera type", () => {
+    const withDemand: Cabecera = {
       ObligadoEmision: CABECERA.ObligadoEmision,
-      RemisionVoluntaria: { Incidencia: "N" },
+      // @ts-expect-error The demand-service block is not part of a Cabecera.
       RemisionRequerimiento: { RefRequerimiento: "REQ-123" },
     };
-    expect(both.RemisionVoluntaria).toBeDefined();
+    expect(withDemand.ObligadoEmision).toBeDefined();
   });
 
   it.each([
@@ -721,33 +706,6 @@ describe("serializeEnvio", () => {
       );
     },
   );
-
-  it.each([
-    {},
-    { RefRequerimiento: "" },
-    { RefRequerimiento: "X".repeat(19) },
-    { RefRequerimiento: "REQ\x07" },
-  ])(
-    "rejects a missing, blank, overlong or XML-invalid requirement reference",
-    (RemisionRequerimiento) => {
-      const cabecera = { ...CABECERA, RemisionRequerimiento } as unknown as Cabecera;
-      expect(() => serializeEnvio(cabecera, [{ RegistroAlta: record }])).toThrow(
-        "Cabecera.RemisionRequerimiento.RefRequerimiento must be 1 to 18 XML characters without control characters",
-      );
-    },
-  );
-
-  it("counts requirement-reference Unicode characters as the XSD does", () => {
-    const cabecera: Cabecera = {
-      ObligadoEmision: CABECERA.ObligadoEmision,
-      RemisionRequerimiento: { RefRequerimiento: "😀".repeat(18) },
-    };
-    expect(serializeEnvio(cabecera, [{ RegistroAlta: record }])).toContain("😀".repeat(18));
-    cabecera.RemisionRequerimiento.RefRequerimiento = "😀".repeat(19);
-    expect(() => serializeEnvio(cabecera, [{ RegistroAlta: record }])).toThrow(
-      "Cabecera.RemisionRequerimiento.RefRequerimiento must be 1 to 18 XML characters",
-    );
-  });
 
   it("rejects an invalid injected clock when checking FechaFinVeriFactu", () => {
     const cabecera: Cabecera = {

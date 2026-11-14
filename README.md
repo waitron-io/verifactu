@@ -132,27 +132,21 @@ generator using `IDOtro`, `D` permits `IDType: "03"` or `"07"`, while `T` requir
 forbids `"07"` in any country. Local validation also checks NIF shape and EU VAT-number structure;
 only AEAT can confirm registration.
 
-The submission header accepts either `RemisionVoluntaria` (optional `FechaFinVeriFactu` and
-`Incidencia`) or `RemisionRequerimiento` (required `RefRequerimiento`, optional
-`FinRequerimiento`), never both. Omit both blocks for an ordinary voluntary Veri*Factu submission.
-If you are submitting non-verifiable records under an AEAT requirement, supply the requirement
-block explicitly and use `SOAP_ENDPOINTS_REQUERIMIENTO` (or
-`SOAP_ENDPOINTS_REQUERIMIENTO_SELLO` with a sello certificate) when you create the client. AEAT
-keeps that service and its records separate from voluntary Veri*Factu; consulta is available only
-for voluntary submissions. This library does not determine the operating mode for you. `serializeEnvio`
-checks header NIF form, the reference's 18-character XML limit, and the end date. The date's year
-must be the current or preceding year in Madrid; from 1 January 2027 it must be `31-12-20XX`.
-Pass `{ now }` as its third argument for a controlled local clock. AEAT alone confirms NIF and
-requirement-reference registration and uses its own clock. Each submission holds 1–1000 separate
+The library supports only VERI\*FACTU submission, where every record goes to AEAT as it is issued.
+It does not support AEAT's separate service for records sent when AEAT demands them (the
+`RemisionRequerimiento` header and the `RequerimientoSOAP` addresses), which only systems outside
+VERI\*FACTU use; `serializeEnvio` and `parseEnvio` refuse a header that carries that block.
+
+The submission header accepts an optional `RemisionVoluntaria` block (optional `FechaFinVeriFactu`
+and `Incidencia`); omit it for an ordinary submission. `serializeEnvio` checks header NIF form and
+the end date. The date's year must be the current or preceding year in Madrid; from 1 January 2027
+it must be `31-12-20XX`. Pass `{ now }` as its third argument for a controlled local clock. AEAT
+alone confirms NIF registration and uses its own clock. Each submission holds 1–1000 separate
 record wrappers, each with exactly one alta or cancellation; serialization and parsing enforce that
 shape at runtime.
 
-When you answer an AEAT requirement, send the records as your SIF preserved them. Do not change
-their business data to satisfy `assertValid`: AEAT records business-rule errors as admissible in
-this mode, except that NIF or `IDOtro` identity errors can still reject a record. Check the
-response for each record. Include `FinRequerimiento: "S"` in the header of the final batch, even
-when there is only one batch. Voluntary submissions have different correction rules; an accepted
-record with errors may still need a new corrected record, except for AEAT's published exemptions.
+An accepted record with errors may still need a new corrected record, except for AEAT's published
+exemptions.
 
 `FechaHoraHusoGenRegistro` must identify a real calendar instant with a numeric offset. When it is
 more than one minute ahead of the current time, `validate` returns the non-blocking

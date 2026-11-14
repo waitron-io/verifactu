@@ -350,10 +350,6 @@ describe("parseEnvio", () => {
       ObligadoEmision: cabecera.ObligadoEmision,
       RemisionVoluntaria: { FechaFinVeriFactu: "31-12-2026", Incidencia: "S" },
     },
-    {
-      ObligadoEmision: cabecera.ObligadoEmision,
-      RemisionRequerimiento: { RefRequerimiento: "REQ-123", FinRequerimiento: "N" },
-    },
   ];
   it.each(remittanceHeaders)("round-trips a submission header remittance block", (c) => {
     const registros: EnvioRegistro[] = [{ RegistroAlta: alta }];
@@ -380,17 +376,6 @@ describe("parseEnvio", () => {
     );
   });
 
-  it("rejects an XSD-overlong parsed requirement reference", () => {
-    const xml = serializeEnvio(remittanceHeaders[1]!, [{ RegistroAlta: alta }]).replace(
-      "REQ-123",
-      "R".repeat(19),
-    );
-
-    expect(() => parseEnvio(xml)).toThrow(
-      "Cabecera.RemisionRequerimiento.RefRequerimiento must contain at most 18 characters",
-    );
-  });
-
   it("rejects an XSD-invalid parsed voluntary-remittance date", () => {
     const xml = serializeEnvio(remittanceHeaders[0]!, [{ RegistroAlta: alta }]).replace(
       "31-12-2026",
@@ -402,37 +387,25 @@ describe("parseEnvio", () => {
     );
   });
 
-  it("rejects both remittance modes when parsing a submission", () => {
-    const xml = serializeEnvio(remittanceHeaders[0]!, [{ RegistroAlta: alta }]).replace(
-      "</sf:RemisionVoluntaria>",
-      "</sf:RemisionVoluntaria><sf:RemisionRequerimiento><sf:RefRequerimiento>REQ-123</sf:RefRequerimiento></sf:RemisionRequerimiento>",
-    );
-    expect(() => parseEnvio(xml)).toThrow(
-      "Cabecera must not contain both RemisionVoluntaria and RemisionRequerimiento",
-    );
-  });
-
-  it("rejects a requirement header without its mandatory reference", () => {
-    const xml = serializeEnvio(remittanceHeaders[1]!, [{ RegistroAlta: alta }]).replace(
-      "<sf:RefRequerimiento>REQ-123</sf:RefRequerimiento>",
-      "",
-    );
-    expect(() => parseEnvio(xml)).toThrow(
-      "Cabecera.RemisionRequerimiento.RefRequerimiento is required",
-    );
-  });
-
   it.each([
-    ["Incidencia", remittanceHeaders[0]!, "<sf:Incidencia>S</sf:Incidencia>"],
-    ["FinRequerimiento", remittanceHeaders[1]!, "<sf:FinRequerimiento>N</sf:FinRequerimiento>"],
-  ] as const)("rejects an invalid parsed %s flag", (field, header, validTag) => {
+    ["alone", cabecera],
+    ["beside a voluntary block", remittanceHeaders[0]!],
+  ] as const)("refuses an incoming demand-service header block %s", (_, header) => {
     const xml = serializeEnvio(header, [{ RegistroAlta: alta }]).replace(
-      validTag,
-      validTag.replace(/>[SN]</, ">X<"),
+      "</sfLR:Cabecera>",
+      "<sf:RemisionRequerimiento><sf:RefRequerimiento>REQ-123</sf:RefRequerimiento></sf:RemisionRequerimiento></sfLR:Cabecera>",
     );
     expect(() => parseEnvio(xml)).toThrow(
-      `Cabecera.${field === "Incidencia" ? "RemisionVoluntaria" : "RemisionRequerimiento"}.${field} must be S or N`,
+      "Cabecera.RemisionRequerimiento is not supported: this library submits only VERI*FACTU records",
     );
+  });
+
+  it("rejects an invalid parsed Incidencia flag", () => {
+    const xml = serializeEnvio(remittanceHeaders[0]!, [{ RegistroAlta: alta }]).replace(
+      "<sf:Incidencia>S</sf:Incidencia>",
+      "<sf:Incidencia>X</sf:Incidencia>",
+    );
+    expect(() => parseEnvio(xml)).toThrow("Cabecera.RemisionVoluntaria.Incidencia must be S or N");
   });
 
   it("round-trips a value carrying XML-special characters", () => {

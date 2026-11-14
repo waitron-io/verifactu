@@ -78,4 +78,3 @@ console.log(received.ResultadoConsulta); // SinDatos
 ## What a lookup can't do
 
 - It doesn't return the receipt (`CSV`) from the original send.
-- It can't find records you sent because AEAT asked for them (a _requerimiento_).

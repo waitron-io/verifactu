@@ -120,10 +120,6 @@ dice por qué. Un código HTTP 4xx suele indicar un problema de configuración, 
 la dirección. Aun así, no des por hecho que no se guardó nada: corrige el problema y luego envía los
 mismos registros.
 
-Los registros que enviaste porque la AEAT te los pidió (un requerimiento) no se pueden consultar,
-pero se aplica la misma regla: vuelve a enviarlos hasta que recibas respuesta y lee el resultado de
-cada línea.
-
 Otros errores vienen de otro sitio. Antes de enviar, el cliente lanza un `Error` normal si el lote
 incumple una regla que comprueba, como que el NIF de la cabecera no coincida con el de un registro;
 en ese caso no se envió nada. Después de enviar, lanza uno si la respuesta de la AEAT no tiene la
