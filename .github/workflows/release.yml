@@ -4,12 +4,20 @@ on:
     tags: ["v*"]
 permissions:
   contents: read
-  id-token: write # npm uses OIDC for Trusted Publishing and the explicit provenance flag below.
 jobs:
   publish:
     runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash # adds pipefail, so a failed npm pack fails its step
+    permissions:
+      contents: write # create the GitHub Release and attach the declaración responsable
+      id-token: write # npm uses OIDC for Trusted Publishing and the explicit provenance flag below.
     steps:
       - uses: actions/checkout@v7
+      # A tag-push checkout can leave the tag as a plain ref to the commit; the renderer needs the
+      # annotated tag object for its date.
+      - run: git fetch --force --depth=1 origin "+refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -17,5 +25,39 @@ jobs:
       - run: npm install -g npm@latest # Trusted Publishing needs npm >= 11.5.1
       - run: npm ci
       - run: npm run build
+      - name: Render the declaración responsable
+        env:
+          WAITRON_PRODUCER_NAME: ${{ secrets.WAITRON_PRODUCER_NAME }}
+          WAITRON_PRODUCER_TAX_ID: ${{ secrets.WAITRON_PRODUCER_TAX_ID }}
+          WAITRON_PRODUCER_ADDRESS: ${{ secrets.WAITRON_PRODUCER_ADDRESS }}
+          DECLARATION_PLACE: ${{ vars.DECLARATION_PLACE }}
+        run: node scripts/declaration.mjs
+      # npm drops a missing `files` entry silently and still exits 0.
+      - run: npm pack --dry-run --json --ignore-scripts | node scripts/declaration.mjs check-pack
       - run: node scripts/pack-smoke.mjs
+      - name: Put the declaración responsable on the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          file=DECLARACION-RESPONSABLE.md
+          view_err="$RUNNER_TEMP/release-view.err"
+          if assets=$(gh release view "$tag" --json assets --jq '.assets[].name' 2>"$view_err"); then
+            if printf '%s\n' "$assets" | grep -Fqx "$file"; then
+              published="$RUNNER_TEMP/published"
+              gh release download "$tag" --pattern "$file" --dir "$published"
+              if ! cmp "$file" "$published/$file"; then
+                echo "::error::The Release for $tag already holds a different $file; a published declaration never changes."
+                exit 1
+              fi
+            else
+              gh release upload "$tag" "$file"
+            fi
+          elif grep -Fq "release not found" "$view_err"; then
+            node scripts/declaration.mjs changelog "${tag#v}" > "$RUNNER_TEMP/notes.md"
+            gh release create "$tag" "$file" --verify-tag --title "$tag" --notes-file "$RUNNER_TEMP/notes.md"
+          else
+            cat "$view_err" >&2
+            exit 1
+          fi
       - run: npm publish --access public --provenance
