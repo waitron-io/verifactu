@@ -98,8 +98,5 @@ la forma que la AEAT acepta, y un certificado que la AEAT acepte para representa
 
 ## Cuando la AEAT te pide registros
 
-Si la AEAT te pide registros formalmente (un requerimiento), envíalos con
-`RemisionRequerimiento: { RefRequerimiento }` en la cabecera, a las direcciones
-`SOAP_ENDPOINTS_REQUERIMIENTO` o `SOAP_ENDPOINTS_REQUERIMIENTO_SELLO`. Envía los registros
-exactamente como los guardaste y pon `FinRequerimiento: "S"` en el último lote. Después no podrás
-consultar estos registros.
+La biblioteca no admite el servicio aparte de la AEAT para enviar registros cuando te los pide
+formalmente (un requerimiento). Solo lo usan los sistemas que no funcionan en modo _VERI\*FACTU_.

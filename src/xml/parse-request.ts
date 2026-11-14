@@ -12,6 +12,7 @@ import {
   isValidConsultaPeriodo,
   isValidConsultaRefExterna,
   MAX_REGISTROS_POR_ENVIO,
+  UNSUPPORTED_DEMAND_SERVICE,
 } from "./serialize.js";
 import type {
   Cabecera,
@@ -58,7 +59,7 @@ interface RawCabecera {
   Representante?: { NombreRazon: string; NIF: string };
   IndicadorRepresentante?: "S" | "N";
   RemisionVoluntaria?: { FechaFinVeriFactu?: string; Incidencia?: "S" | "N" };
-  RemisionRequerimiento?: { RefRequerimiento: string; FinRequerimiento?: "S" | "N" };
+  RemisionRequerimiento?: unknown;
 }
 type RawRegistroFactura = { RegistroAlta: RawRecord } | { RegistroAnulacion: RawRecord };
 type RawRecord = Record<string, unknown>;
@@ -106,16 +107,10 @@ function consultaPersonaOf(raw: RawConsultaPersona): RawConsultaPersona {
 
 function cabeceraOf(raw: RawCabecera): Cabecera {
   if (!raw.ObligadoEmision) throw new Error("Envio Cabecera does not contain ObligadoEmision");
-  if (raw.RemisionVoluntaria !== undefined && raw.RemisionRequerimiento !== undefined) {
-    throw new Error("Cabecera must not contain both RemisionVoluntaria and RemisionRequerimiento");
-  }
-  for (const [field, value] of [
-    ["RemisionVoluntaria.Incidencia", raw.RemisionVoluntaria?.Incidencia],
-    ["RemisionRequerimiento.FinRequerimiento", raw.RemisionRequerimiento?.FinRequerimiento],
-  ] as const) {
-    if (value !== undefined && value !== "S" && value !== "N") {
-      throw new Error(`Cabecera.${field} must be S or N`);
-    }
+  if (raw.RemisionRequerimiento !== undefined) throw new Error(UNSUPPORTED_DEMAND_SERVICE);
+  const incidencia = raw.RemisionVoluntaria?.Incidencia;
+  if (incidencia !== undefined && incidencia !== "S" && incidencia !== "N") {
+    throw new Error("Cabecera.RemisionVoluntaria.Incidencia must be S or N");
   }
   const cabecera = {
     ObligadoEmision: { NombreRazon: raw.ObligadoEmision.NombreRazon, NIF: raw.ObligadoEmision.NIF },
@@ -135,25 +130,6 @@ function cabeceraOf(raw: RawCabecera): Cabecera {
         }),
         ...(raw.RemisionVoluntaria.Incidencia !== undefined && {
           Incidencia: raw.RemisionVoluntaria.Incidencia,
-        }),
-      },
-    };
-    assertSubmissionHeaderXsd(result);
-    return result;
-  }
-  if (raw.RemisionRequerimiento !== undefined) {
-    if (
-      typeof raw.RemisionRequerimiento.RefRequerimiento !== "string" ||
-      raw.RemisionRequerimiento.RefRequerimiento.trim().length === 0
-    ) {
-      throw new Error("Cabecera.RemisionRequerimiento.RefRequerimiento is required");
-    }
-    const result: Cabecera = {
-      ...cabecera,
-      RemisionRequerimiento: {
-        RefRequerimiento: raw.RemisionRequerimiento.RefRequerimiento,
-        ...(raw.RemisionRequerimiento.FinRequerimiento !== undefined && {
-          FinRequerimiento: raw.RemisionRequerimiento.FinRequerimiento,
         }),
       },
     };

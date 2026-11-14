@@ -80,4 +80,3 @@ console.log(received.ResultadoConsulta); // SinDatos
 ## Lo que una consulta no puede hacer
 
 - No devuelve el justificante (`CSV`) del envío original.
-- No encuentra los registros que enviaste porque la AEAT te los pidió (un requerimiento).

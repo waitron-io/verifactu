@@ -68,4 +68,3 @@ certificado real contra el entorno de pruebas de la AEAT (preproducción).
 Además, no:
 
 - comprueba que cada registro enlaza con el registro anterior real
-- separa de los normales los registros enviados porque la AEAT los pidió (un requerimiento)

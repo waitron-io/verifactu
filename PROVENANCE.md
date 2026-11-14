@@ -49,3 +49,8 @@ deployment still owns durable numbering, chain and retry state, AEAT receipts, c
 documents, and any storage required by its wider accounting system. The producer that integrates
 this library into a deployed product is responsible for the declaración responsable that applies
 to that product's components and architecture.
+
+The library is a component, not a complete invoicing system. From 0.3.0, each release has its own
+declaración responsable, attached to its
+[GitHub Release page](https://github.com/waitron-io/verifactu/releases) and shipped inside the npm package as `DECLARACION-RESPONSABLE.md`. A system that uses the library
+still owes its own declaration, naming the library version it uses.

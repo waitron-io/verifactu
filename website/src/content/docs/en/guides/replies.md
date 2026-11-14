@@ -116,9 +116,6 @@ in `Client` means AEAT couldn't accept the message, and `faultReason` says why. 
 usually means a setup problem, such as the certificate or the address. Even then, don't assume
 nothing was stored: fix the problem, then send the same records.
 
-Records you sent because AEAT asked for them (a _requerimiento_) can't be looked up, but the same
-rule applies: send them again until you get a reply, and read each line's result.
-
 Other errors come from elsewhere. Before sending, the client throws a plain `Error` if the batch
 breaks a rule it checks, such as the header's tax ID not matching a record; nothing was sent. After
 sending, it throws one if AEAT's reply isn't in the expected shape. AEAT may have stored the

@@ -66,4 +66,5 @@ service (preproduction) instead.
 The maker of the software signs a statement that it meets AEAT's rules, called a _declaración
 responsable_. AEAT publishes
 [an example](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/informacion-tecnica/ejemplo-declaracion-responsable.html).
-The library is one part of your SIF; the statement covers the whole system.
+The library is one part of your SIF; the statement covers the whole system. From 0.3.0 the library
+has its own declaration; yours names the library version you use.

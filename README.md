@@ -15,6 +15,12 @@ reference.
 > numbering, durable chain/retry state, invoice-document retention, operator UI, and the applicable
 > declaración responsable. See [`PROVENANCE.md`](./PROVENANCE.md).
 
+From 0.3.0, each release has its own declaración responsable, the producer's statement that the
+software meets the Veri\*Factu rules: it is attached to the release's
+[GitHub Release page](https://github.com/waitron-io/verifactu/releases) and ships inside the npm
+package as `DECLARACION-RESPONSABLE.md`. It covers this library as a component only. A system that
+uses the library still owes its own declaration, naming the library version it uses.
+
 ## Design
 
 Pure and stateless. Every export is a function over plain data. There is no database, no
@@ -132,27 +138,21 @@ generator using `IDOtro`, `D` permits `IDType: "03"` or `"07"`, while `T` requir
 forbids `"07"` in any country. Local validation also checks NIF shape and EU VAT-number structure;
 only AEAT can confirm registration.
 
-The submission header accepts either `RemisionVoluntaria` (optional `FechaFinVeriFactu` and
-`Incidencia`) or `RemisionRequerimiento` (required `RefRequerimiento`, optional
-`FinRequerimiento`), never both. Omit both blocks for an ordinary voluntary Veri*Factu submission.
-If you are submitting non-verifiable records under an AEAT requirement, supply the requirement
-block explicitly and use `SOAP_ENDPOINTS_REQUERIMIENTO` (or
-`SOAP_ENDPOINTS_REQUERIMIENTO_SELLO` with a sello certificate) when you create the client. AEAT
-keeps that service and its records separate from voluntary Veri*Factu; consulta is available only
-for voluntary submissions. This library does not determine the operating mode for you. `serializeEnvio`
-checks header NIF form, the reference's 18-character XML limit, and the end date. The date's year
-must be the current or preceding year in Madrid; from 1 January 2027 it must be `31-12-20XX`.
-Pass `{ now }` as its third argument for a controlled local clock. AEAT alone confirms NIF and
-requirement-reference registration and uses its own clock. Each submission holds 1–1000 separate
+The library supports only VERI\*FACTU submission, where every record goes to AEAT as it is issued.
+It does not support AEAT's separate service for records sent when AEAT demands them (the
+`RemisionRequerimiento` header and the `RequerimientoSOAP` addresses), which only systems outside
+VERI\*FACTU use; `serializeEnvio` and `parseEnvio` refuse a header that carries that block.
+
+The submission header accepts an optional `RemisionVoluntaria` block (optional `FechaFinVeriFactu`
+and `Incidencia`); omit it for an ordinary submission. `serializeEnvio` checks header NIF form and
+the end date. The date's year must be the current or preceding year in Madrid; from 1 January 2027
+it must be `31-12-20XX`. Pass `{ now }` as its third argument for a controlled local clock. AEAT
+alone confirms NIF registration and uses its own clock. Each submission holds 1–1000 separate
 record wrappers, each with exactly one alta or cancellation; serialization and parsing enforce that
 shape at runtime.
 
-When you answer an AEAT requirement, send the records as your SIF preserved them. Do not change
-their business data to satisfy `assertValid`: AEAT records business-rule errors as admissible in
-this mode, except that NIF or `IDOtro` identity errors can still reject a record. Check the
-response for each record. Include `FinRequerimiento: "S"` in the header of the final batch, even
-when there is only one batch. Voluntary submissions have different correction rules; an accepted
-record with errors may still need a new corrected record, except for AEAT's published exemptions.
+An accepted record with errors may still need a new corrected record, except for AEAT's published
+exemptions.
 
 `FechaHoraHusoGenRegistro` must identify a real calendar instant with a numeric offset. When it is
 more than one minute ahead of the current time, `validate` returns the non-blocking
@@ -257,16 +257,40 @@ there was a person present for npm's two-factor prompt.
 
 Every release after that uses npm's **Trusted Publishing**: pushing a `v*` tag (for example
 `v0.1.0`) runs the release workflow, which builds, re-runs the pack-smoke check, and publishes the
-package to npm. There is no npm token and no stored secret anywhere in this repository — the
-workflow proves who it is to npm using a short-lived identity token that GitHub Actions issues for
-the run (OIDC). It passes `--provenance` so npm attaches a
-[provenance statement](https://docs.npmjs.com/generating-provenance-statements) to the release.
+package to npm. There is no npm token in this repository — the workflow proves who it is to npm
+using a short-lived identity token that GitHub Actions issues for the run (OIDC). It passes
+`--provenance` so npm attaches a [provenance statement](https://docs.npmjs.com/generating-provenance-statements) to the release.
 
 For this to work, the package's Trusted Publisher is configured on npmjs.com to trust this exact
 workflow: organisation `waitron-io`, repository `verifactu`, workflow file `release.yml`. Only a
 publish that runs from that workflow, in that repository, is accepted. Trusted Publishing also
 needs a recent npm and Node — npm 11.5.1 or later and Node 22.14 or later — which the workflow
 installs and provisions itself, so nothing extra is required of a contributor.
+
+Before npm publishes, the workflow renders the release's declaración responsable from
+[`declarations/template.md`](./declarations/template.md) with `scripts/declaration.mjs`, attaches
+it to the tag's GitHub Release (creating the Release, with the version's `CHANGELOG.md` section as
+its notes, if none exists yet) and checks that the npm package contains it. A published
+declaration never changes: if the Release already holds a different file, the release fails. If
+the tag's Release is still a draft, the release also fails, because a draft is not public: publish
+the draft Release or delete it, then re-run the job.
+
+To cut a release:
+
+1. Land a release PR that sets `package.json` and `package-lock.json` to X.Y.Z, adds
+   `## X.Y.Z — <date>` under `## Unreleased` in `CHANGELOG.md` and, for 0.3.0, removes the template's
+   `release-blocker` line.
+2. Load the four producer settings locally: `WAITRON_PRODUCER_NAME`, `WAITRON_PRODUCER_TAX_ID`,
+   `WAITRON_PRODUCER_ADDRESS` and `DECLARATION_PLACE`.
+3. On the merged commit, run `node scripts/declaration.mjs --preview` and read the text it prints.
+   The date shown is today's; the release uses the date of the tag.
+4. Only then tag that merged commit and push the annotated tag: `git tag -a vX.Y.Z` and
+   `git push origin vX.Y.Z`.
+
+The release refuses to run until the template's `release-blocker` line is removed, which waits for
+the tax adviser's answer on the declaration's wording, and until the repository has the three
+secrets `WAITRON_PRODUCER_NAME`, `WAITRON_PRODUCER_TAX_ID` and `WAITRON_PRODUCER_ADDRESS` and the
+variable `DECLARATION_PLACE`.
 
 ## Licence
 

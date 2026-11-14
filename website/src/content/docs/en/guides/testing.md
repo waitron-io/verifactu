@@ -68,4 +68,3 @@ It is still a copy. Before you go live, test with your real certificate against 
 It also doesn't:
 
 - check that each record links to the actual previous record
-- keep records sent because AEAT asked for them (a _requerimiento_) separate from ordinary ones

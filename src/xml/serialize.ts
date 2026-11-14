@@ -36,17 +36,12 @@ type CabeceraBase = {
   Representante?: { NombreRazon: string; NIF: string };
 };
 
-export type Cabecera = CabeceraBase &
-  (
-    | {
-        RemisionVoluntaria?: { FechaFinVeriFactu?: string; Incidencia?: SiNo };
-        RemisionRequerimiento?: never;
-      }
-    | {
-        RemisionRequerimiento: { RefRequerimiento: string; FinRequerimiento?: SiNo };
-        RemisionVoluntaria?: never;
-      }
-  );
+export type Cabecera = CabeceraBase & {
+  RemisionVoluntaria?: { FechaFinVeriFactu?: string; Incidencia?: SiNo };
+};
+
+export const UNSUPPORTED_DEMAND_SERVICE =
+  "Cabecera.RemisionRequerimiento is not supported: this library submits only VERI*FACTU records";
 
 export interface SerializeEnvioOptions {
   /** Local clock for AEAT's date-window precheck; AEAT's own clock remains authoritative. */
@@ -531,12 +526,6 @@ function cabeceraXml(cabecera: Cabecera): string {
         el("sf", "Incidencia", cabecera.RemisionVoluntaria.Incidencia) +
         "</sf:RemisionVoluntaria>"
       : "") +
-    (cabecera.RemisionRequerimiento
-      ? "<sf:RemisionRequerimiento>" +
-        el("sf", "RefRequerimiento", cabecera.RemisionRequerimiento.RefRequerimiento) +
-        el("sf", "FinRequerimiento", cabecera.RemisionRequerimiento.FinRequerimiento) +
-        "</sf:RemisionRequerimiento>"
-      : "") +
     "</sfLR:Cabecera>"
   );
 }
@@ -602,13 +591,6 @@ export function assertSubmissionHeaderXsd(cabecera: Cabecera): void {
     cabecera.RemisionVoluntaria?.FechaFinVeriFactu,
     true,
   );
-  if (cabecera.RemisionRequerimiento !== undefined) {
-    assertFilingText(
-      "Cabecera.RemisionRequerimiento.RefRequerimiento",
-      cabecera.RemisionRequerimiento.RefRequerimiento,
-      18,
-    );
-  }
 }
 
 function assertFilingAmount(field: string, value: unknown, optional = false): void {
@@ -1021,16 +1003,12 @@ export function serializeEnvio(
       `An envio may carry at most ${MAX_REGISTROS_POR_ENVIO} registros, received ${registros.length}`,
     );
   }
-  if (cabecera.RemisionVoluntaria !== undefined && cabecera.RemisionRequerimiento !== undefined) {
-    throw new Error("Cabecera must not contain both RemisionVoluntaria and RemisionRequerimiento");
+  if ((cabecera as { RemisionRequerimiento?: unknown }).RemisionRequerimiento !== undefined) {
+    throw new Error(UNSUPPORTED_DEMAND_SERVICE);
   }
-  for (const [field, value] of [
-    ["RemisionVoluntaria.Incidencia", cabecera.RemisionVoluntaria?.Incidencia],
-    ["RemisionRequerimiento.FinRequerimiento", cabecera.RemisionRequerimiento?.FinRequerimiento],
-  ] as const) {
-    if (value !== undefined && value !== "S" && value !== "N") {
-      throw new Error(`Cabecera.${field} must be S or N`);
-    }
+  const incidencia = cabecera.RemisionVoluntaria?.Incidencia;
+  if (incidencia !== undefined && incidencia !== "S" && incidencia !== "N") {
+    throw new Error("Cabecera.RemisionVoluntaria.Incidencia must be S or N");
   }
   for (const [field, nif] of [
     ["ObligadoEmision", cabecera.ObligadoEmision.NIF],
@@ -1041,22 +1019,6 @@ export function serializeEnvio(
       (typeof nif !== "string" || !hasValidNifControl(nif))
     ) {
       throw new Error(`Cabecera.${field}.NIF has an invalid format or control character`);
-    }
-  }
-  if (cabecera.RemisionRequerimiento !== undefined) {
-    const reference = cabecera.RemisionRequerimiento.RefRequerimiento;
-    // The XSD's maxLength counts XML characters, not JavaScript UTF-16 code units.
-    // eslint-disable-next-line no-control-regex -- XML 1.0 excludes these controls
-    const forbidden = /[\x00-\x08\x0B\x0C\x0E-\x1F]/;
-    if (
-      typeof reference !== "string" ||
-      reference.trim().length === 0 ||
-      Array.from(reference).length > 18 ||
-      forbidden.test(reference)
-    ) {
-      throw new Error(
-        "Cabecera.RemisionRequerimiento.RefRequerimiento must be 1 to 18 XML characters without control characters",
-      );
     }
   }
   const fechaFin = cabecera.RemisionVoluntaria?.FechaFinVeriFactu;

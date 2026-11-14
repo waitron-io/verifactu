@@ -706,14 +706,6 @@ function responseCabeceraXml(cabecera: Cabecera): string {
           : `<sf:Incidencia>${cabecera.RemisionVoluntaria.Incidencia}</sf:Incidencia>`) +
         "</sf:RemisionVoluntaria>"
       : "") +
-    (cabecera.RemisionRequerimiento
-      ? "<sf:RemisionRequerimiento>" +
-        `<sf:RefRequerimiento>${escapeXml(cabecera.RemisionRequerimiento.RefRequerimiento)}</sf:RefRequerimiento>` +
-        (cabecera.RemisionRequerimiento.FinRequerimiento === undefined
-          ? ""
-          : `<sf:FinRequerimiento>${cabecera.RemisionRequerimiento.FinRequerimiento}</sf:FinRequerimiento>`) +
-        "</sf:RemisionRequerimiento>"
-      : "") +
     "</sfR:Cabecera>"
   );
 }
