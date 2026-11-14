@@ -15,6 +15,12 @@ reference.
 > numbering, durable chain/retry state, invoice-document retention, operator UI, and the applicable
 > declaración responsable. See [`PROVENANCE.md`](./PROVENANCE.md).
 
+Each release has its own declaración responsable, the producer's statement that the software meets
+the Veri\*Factu rules: it is attached to the release's
+[GitHub Release page](https://github.com/waitron-io/verifactu/releases) and ships inside the npm
+package as `DECLARACION-RESPONSABLE.md`. It covers this library as a component only. A system that
+uses the library still owes its own declaration, naming the library version it uses.
+
 ## Design
 
 Pure and stateless. Every export is a function over plain data. There is no database, no
@@ -261,6 +267,25 @@ workflow: organisation `waitron-io`, repository `verifactu`, workflow file `rele
 publish that runs from that workflow, in that repository, is accepted. Trusted Publishing also
 needs a recent npm and Node — npm 11.5.1 or later and Node 22.14 or later — which the workflow
 installs and provisions itself, so nothing extra is required of a contributor.
+
+Before npm publishes, the workflow renders the release's declaración responsable from
+[`declarations/template.md`](./declarations/template.md) with `scripts/declaration.mjs`, attaches
+it to the tag's GitHub Release (creating the Release, with the version's `CHANGELOG.md` section as
+its notes, if none exists yet) and checks that the npm package contains it. A published
+declaration never changes: if the Release already holds a different file, the release fails.
+
+To cut a release:
+
+1. Load the four producer settings locally: `WAITRON_PRODUCER_NAME`, `WAITRON_PRODUCER_TAX_ID`,
+   `WAITRON_PRODUCER_ADDRESS` and `DECLARATION_PLACE`.
+2. Run `node scripts/declaration.mjs --preview` and read the text it prints. The date shown is
+   today's; the release uses the date of the tag.
+3. Only then create and push the annotated tag: `git tag -a vX.Y.Z` and `git push origin vX.Y.Z`.
+
+The release refuses to run until the template's `release-blocker` line is removed, which waits for
+the tax adviser's answer on the declaration's wording, and until the repository has the three
+secrets `WAITRON_PRODUCER_NAME`, `WAITRON_PRODUCER_TAX_ID` and `WAITRON_PRODUCER_ADDRESS` and the
+variable `DECLARATION_PLACE`.
 
 ## Licence
 

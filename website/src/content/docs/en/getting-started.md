@@ -184,3 +184,11 @@ const testClient = createFakeAeat({ serverNow: new Date() }).client();
 ```
 
 `testClient` works exactly like `client` above. See [Testing](/verifactu/en/guides/testing/).
+
+## The library's declaración responsable
+
+This library is a component, not a complete invoicing system. Each release has its own
+_declaración responsable_, its maker's statement that it meets the Veri\*Factu rules. You find it
+on the release's [GitHub Release page](https://github.com/waitron-io/verifactu/releases) and inside
+the npm package, as `DECLARACION-RESPONSABLE.md`. Your system still needs its own declaration,
+which names the version of this library it uses.

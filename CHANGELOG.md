@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Each release now carries its own declaración responsable, attached to its GitHub Release and
+  shipped in the package as `DECLARACION-RESPONSABLE.md`.
 - Breaking: remove support for AEAT's service for records sent when AEAT demands them
   (`SOAP_ENDPOINTS_REQUERIMIENTO`, `SOAP_ENDPOINTS_REQUERIMIENTO_SELLO` and the `Cabecera`
   `RemisionRequerimiento` block), because the library supports only VERI\*FACTU. `serializeEnvio`
