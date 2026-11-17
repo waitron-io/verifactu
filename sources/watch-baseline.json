@@ -1,7 +1,7 @@
 {
-  "checked": "2026-10-27",
+  "checked": "2026-11-17",
   "fingerprints": {
-    "aeat-technical-index": "62dff6d06ccde7102a1ec0602a2fbef7e7a850ab594bddcd98807622dbfe3c65",
+    "aeat-technical-index": "1961d830d944be1bd1850d6003733749b14814d0d0f6c7f24d703ba9f46d96b7",
     "aeat-faq-index": "2809aa3ee51ab90a194fae2630de1a931120cea7e0c5ee0275b3236561ba83de",
     "aeat-faq-cuestiones-generales-conceptos-definiciones": "7c2fa132e355b00496e93fdff6f4f77b0ccdf1037eafb4d7c06b3f163b6b156b",
     "aeat-faq-cuestiones-generales-ambitos-aplicacion": "3d45d0a328f73387eac44232071636274cb2aeb888da38bd50d4d609ddd10cce",
@@ -47,8 +47,8 @@
   },
   "archives": {
     "aeat-technical-index": {
-      "path": "archive/aeat-technical-index/62dff6d06ccde7102a1ec0602a2fbef7e7a850ab594bddcd98807622dbfe3c65.txt",
-      "sha256": "62dff6d06ccde7102a1ec0602a2fbef7e7a850ab594bddcd98807622dbfe3c65",
+      "path": "archive/aeat-technical-index/1961d830d944be1bd1850d6003733749b14814d0d0f6c7f24d703ba9f46d96b7.txt",
+      "sha256": "1961d830d944be1bd1850d6003733749b14814d0d0f6c7f24d703ba9f46d96b7",
       "url": "https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/informacion-tecnica.html"
     },
     "aeat-faq-index": {
@@ -252,8 +252,8 @@
       "url": "https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1.0/cont/ws/RespuestaConsultaLR.xsd"
     },
     "conformance-fixtures": {
-      "path": "archive/conformance-fixtures/7f770bd5ddd80e822728e5c2b6191ecb92815e41ed10bb856f7140de45fafd00.json.gz",
-      "sha256": "7f770bd5ddd80e822728e5c2b6191ecb92815e41ed10bb856f7140de45fafd00",
+      "path": "archive/conformance-fixtures/de88e25f8d8052fb8e6d11d61d757caf57419b4f41f1492e64758be6f119db24.json.gz",
+      "sha256": "de88e25f8d8052fb8e6d11d61d757caf57419b4f41f1492e64758be6f119db24",
       "url": "https://api.github.com/repos/borjamrd/verifactu-conformance/commits/main",
       "repository": {
         "path": "archive/conformance-fixtures/25e2e2130469f76723f8340530f7eeaf0601b74202eb068cce6e3d0db0d76ccd.tar.gz",
@@ -262,8 +262,8 @@
       }
     },
     "inoguerols-code": {
-      "path": "archive/inoguerols-code/fc22a8ac169610635f0f8ff6e5ee7ac4cfe6b49ad428d9180c13f228ad5df152.json.gz",
-      "sha256": "fc22a8ac169610635f0f8ff6e5ee7ac4cfe6b49ad428d9180c13f228ad5df152",
+      "path": "archive/inoguerols-code/6d3b71f0ebe054984edf3e8777bef9460d30648974cd41790fb4565fc4fc0cb7.json.gz",
+      "sha256": "6d3b71f0ebe054984edf3e8777bef9460d30648974cd41790fb4565fc4fc0cb7",
       "url": "https://api.github.com/repos/inoguerols/verifactu/commits/main",
       "repository": {
         "path": "archive/inoguerols-code/3a581bcb14cd2499721fd9d700330ecee012acc6b87b91d9c9cc2d93db873951.tar.gz",
