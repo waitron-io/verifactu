@@ -1,15 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
-import { execFile } from "node:child_process";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 import { parse } from "parse5";
 
 const root = new URL("../", import.meta.url);
 const baselineUrl = new URL("sources/watch-baseline.json", root);
-const legacyCaFile = fileURLToPath(new URL("sources/fnmt-ac-componentes-informaticos.pem", root));
 const aeat = "https://sede.agenciatributaria.gob.es";
 const faq = `${aeat}/Sede/iva/sistemas-informaticos-facturacion-verifactu/preguntas-frecuentes`;
 const docs = `${aeat}/static_files/AEAT_Desarrolladores/EEDD/IVA/VERI-FACTU`;
@@ -21,7 +18,6 @@ const preSchema =
   "https://prewww2.aeat.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1.0/cont/ws";
 const productionSchema =
   "https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1.0/cont/ws";
-const execFileAsync = promisify(execFile);
 
 const annexArtifacts = [
   "SistemaFacturacion.wsdl",
@@ -154,30 +150,13 @@ export function meaningfulHtml(html) {
   return `${text}\n${links.join("\n")}`;
 }
 
-// www.agenciatributaria.es chains through an FNMT intermediate signed with SHA-1, which
-// OpenSSL 3 and Node's fetch refused. Curl accepted the chain once that intermediate was
-// passed with --cacert; sources/README.md has what was measured.
-export function legacyCurlArgs(url) {
-  return ["-fsSL", "--retry", "2", "--cacert", legacyCaFile, url];
-}
-
 async function readSource(source, fetcher) {
-  let content;
-  if (fetcher === fetch && source.url.startsWith(docsLegacy)) {
-    const { stdout } = await execFileAsync("curl", legacyCurlArgs(source.url), {
-      encoding: "buffer",
-      maxBuffer: 8 * 1024 * 1024,
-      timeout: 30_000,
-    });
-    content = stdout;
-  } else {
-    const response = await fetcher(source.url, {
-      headers: { "User-Agent": "waitron-verifactu-source-watch", Accept: "*/*" },
-      signal: AbortSignal.timeout(30_000),
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    content = Buffer.from(await response.arrayBuffer());
-  }
+  const response = await fetcher(source.url, {
+    headers: { "User-Agent": "waitron-verifactu-source-watch", Accept: "*/*" },
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  let content = Buffer.from(await response.arrayBuffer());
   if (source.kind === "github-head") {
     const { sha } = JSON.parse(content.toString("utf8"));
     if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error("GitHub did not return a commit SHA");
