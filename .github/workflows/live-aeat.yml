@@ -34,6 +34,7 @@ on:
           - four-behaviours
           - double-correction
           - final-cent-correction
+          - advance-rest
         default: consult
         required: true
       excluded_regime:

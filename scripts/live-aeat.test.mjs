@@ -5913,3 +5913,370 @@ for (const refuseAt of [0, 3]) {
     }
   });
 }
+
+const ADVANCE_REST_STAGES = [
+  "case1Advance",
+  "case1Rest",
+  "case2Advance",
+  "case2Rest",
+  "case3ZeroRest",
+  "case4Rest",
+  "case4Control",
+  "case5Control",
+];
+
+async function advanceRestProbe(fault = {}) {
+  assert.equal(typeof live.submitAdvanceRestProbe, "function");
+  let clock = decimalOptions.now.getTime();
+  const fake = createFakeAeat({ serverNow: new Date(clock), tiempoEsperaInicial: 13 });
+  let exchange;
+  const sent = [];
+  const waits = [];
+  const reports = [];
+  const soap = createClient({
+    endpoint: "https://fake.aeat.test/soap",
+    fetch: async (url, init) => {
+      exchange = { request: init.body };
+      const response = await fake.fetch(url, init);
+      exchange.reply = await response.clone().text();
+      return response;
+    },
+  });
+  const evidence = await live.submitAdvanceRestProbe(
+    {
+      async submit(header, records) {
+        sent.push(structuredClone(records[0].RegistroAlta));
+        if (fault.transportAt === sent.length) {
+          exchange = { ...exchange, request: serializeEnvio(header, records) };
+          throw new Error("connection closed");
+        }
+        const response = await soap.submit(header, records);
+        response.TiempoEsperaEnvio = sent.length + 10;
+        return fault.submission?.(response, sent.length) ?? response;
+      },
+    },
+    successorHeader,
+    decimalOptions,
+    {
+      now: () => new Date(clock),
+      waitForSubmission: async (seconds) => {
+        waits.push(seconds);
+        clock += seconds * 1000;
+        fake.setServerNow(new Date(clock));
+      },
+      rawExchange: () => (exchange ? structuredClone(exchange) : undefined),
+      clearRawExchange: () => {
+        exchange = undefined;
+      },
+      report: (stage, entry) => reports.push([stage, structuredClone(entry)]),
+    },
+  );
+  return { evidence, sent, waits, reports };
+}
+
+test("advance rest files every case's record in one chain with the plan's figures", async () => {
+  const { evidence, sent, waits, reports } = await advanceRestProbe();
+  assert.equal(evidence.incomplete, false);
+  assert.deepEqual(
+    reports.map(([stage]) => stage),
+    ADVANCE_REST_STAGES,
+  );
+  assert.deepEqual(waits, [11, 12, 13, 14, 15, 16, 17]);
+  assert.deepEqual(
+    sent.map((record) => [
+      record.TipoFactura,
+      record.Desglose.map((line) => [
+        line.TipoImpositivo,
+        line.BaseImponibleOimporteNoSujeto,
+        line.CuotaRepercutida,
+      ]),
+      record.CuotaTotal,
+      record.ImporteTotal,
+    ]),
+    [
+      ["F2", [["10.00", "45.45", "4.55"]], "4.55", "50.00"],
+      [
+        "F2",
+        [
+          ["10.00", "-27.27", "-2.73"],
+          ["21.00", "66.12", "13.88"],
+        ],
+        "11.15",
+        "50.00",
+      ],
+      ["F1", [["10.00", "45.45", "4.55"]], "4.55", "50.00"],
+      [
+        "F1",
+        [
+          ["10.00", "-27.27", "-2.73"],
+          ["21.00", "66.12", "13.88"],
+        ],
+        "11.15",
+        "50.00",
+      ],
+      [
+        "F2",
+        [
+          ["10.00", "-27.27", "-2.73"],
+          ["21.00", "24.79", "5.21"],
+        ],
+        "2.48",
+        "0.00",
+      ],
+      ["F2", [["10.00", "3.92", "0.43"]], "0.43", "4.35"],
+      ["F2", [["10.00", "6.65", "0.70"]], "0.70", "7.35"],
+      [
+        "F2",
+        [
+          ["10.00", "18.18", "1.82"],
+          ["21.00", "66.12", "13.88"],
+        ],
+        "15.70",
+        "100.00",
+      ],
+    ],
+  );
+  assert.equal(sent[0].IDFactura.NumSerieFactura, "CI-F2/20260927/12345-REST-1A");
+  assert.equal(sent[3].IDFactura.NumSerieFactura, "CI-F1/20260927/12345-REST-2R");
+  assert.equal(sent[7].IDFactura.NumSerieFactura, "CI-F2/20260927/12345-REST-5C");
+  assert.equal(new Set(sent.map((record) => record.IDFactura.NumSerieFactura)).size, 8);
+  assert.deepEqual(sent[0].Encadenamiento, { PrimerRegistro: "S" });
+  for (const [i, record] of sent.entries()) {
+    assert.deepEqual(validate(record), [], ADVANCE_REST_STAGES[i]);
+    if (record.TipoFactura === "F1") {
+      assert.deepEqual(record.Destinatarios, {
+        IDDestinatario: [
+          { NombreRazon: decimalOptions.recipientName, NIF: decimalOptions.recipientNif },
+        ],
+      });
+    } else {
+      assert.equal(record.Destinatarios, undefined);
+    }
+    assert.equal(record.TipoRectificativa, undefined);
+    assert.equal(record.FacturasRectificadas, undefined);
+    assert.deepEqual(record.SistemaInformatico, sent[0].SistemaInformatico);
+    for (const line of record.Desglose) {
+      assert.equal(line.ClaveRegimen, "01");
+      assert.equal(line.CalificacionOperacion, "S1");
+    }
+    if (i > 0) {
+      assert.deepEqual(record.Encadenamiento, {
+        RegistroAnterior: { ...sent[i - 1].IDFactura, Huella: sent[i - 1].Huella },
+      });
+    }
+    const entry = evidence[ADVANCE_REST_STAGES[i]];
+    assert.equal(entry.matchesExpectation, true);
+    assert.equal(entry.record.Huella, record.Huella);
+    assert.match(entry.exchange.request, /RegFactuSistemaFacturacion/);
+    assert.match(entry.exchange.reply, /RespuestaRegFactuSistemaFacturacion/);
+  }
+});
+
+test("advance rest summarises each record's case and AEAT's verdict in one line", () => {
+  assert.equal(typeof live.advanceRestSummary, "function");
+  assert.deepEqual(
+    live.advanceRestSummary("case3ZeroRest", {
+      response: {
+        EstadoEnvio: "Incorrecto",
+        RespuestaLinea: [
+          {
+            EstadoRegistro: "Incorrecto",
+            CodigoErrorRegistro: 1100,
+            DescripcionErrorRegistro: "controlled refusal",
+          },
+        ],
+      },
+    }),
+    {
+      case: 3,
+      record: "the €0.00 rest with lines of opposite sign (F2)",
+      EstadoEnvio: "Incorrecto",
+      EstadoRegistro: "Incorrecto",
+      CodigoErrorRegistro: 1100,
+      DescripcionErrorRegistro: "controlled refusal",
+    },
+  );
+  assert.deepEqual(live.advanceRestSummary("case5Control", { error: "connection closed" }), {
+    case: 5,
+    record: "control with positive lines only (F2)",
+    error: "connection closed",
+  });
+});
+
+test("advance rest keeps going past a refused record and chains to the last accepted one", async () => {
+  const { evidence, sent } = await advanceRestProbe({
+    submission(response, n) {
+      if (n === 2) {
+        response.EstadoEnvio = "Incorrecto";
+        response.RespuestaLinea[0].EstadoRegistro = "Incorrecto";
+        response.RespuestaLinea[0].CodigoErrorRegistro = 1100;
+        response.RespuestaLinea[0].DescripcionErrorRegistro = "controlled refusal";
+      }
+      return response;
+    },
+  });
+  assert.equal(sent.length, 8);
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedAfter, undefined);
+  assert.equal(evidence.case1Rest.matchesExpectation, false);
+  assert.equal(
+    evidence.case1Rest.response.RespuestaLinea[0].DescripcionErrorRegistro,
+    "controlled refusal",
+  );
+  assert.deepEqual(sent[2].Encadenamiento, {
+    RegistroAnterior: { ...sent[0].IDFactura, Huella: sent[0].Huella },
+  });
+  assert.equal(evidence.case5Control.matchesExpectation, true);
+});
+
+test("advance rest chains past a record accepted with errors, which AEAT keeps", async () => {
+  const { evidence, sent } = await advanceRestProbe({
+    submission(response, n) {
+      if (n === 5) {
+        response.EstadoEnvio = "ParcialmenteCorrecto";
+        response.RespuestaLinea[0].EstadoRegistro = "AceptadoConErrores";
+      }
+      return response;
+    },
+  });
+  assert.equal(sent.length, 8);
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.case3ZeroRest.matchesExpectation, false);
+  assert.deepEqual(sent[5].Encadenamiento, {
+    RegistroAnterior: { ...sent[4].IDFactura, Huella: sent[4].Huella },
+  });
+});
+
+for (const [name, at, mutate] of [
+  ["an empty reply line list", 3, (r) => (r.RespuestaLinea = [])],
+  [
+    "a reply naming another invoice",
+    4,
+    (r) => (r.RespuestaLinea[0].IDFactura.NumSerieFactura = "other"),
+  ],
+]) {
+  test(`advance rest stops after ${name}, since the chain's state is unknown`, async () => {
+    const { evidence, sent } = await advanceRestProbe({
+      submission(response, n) {
+        if (n === at) mutate(response);
+        return response;
+      },
+    });
+    assert.equal(sent.length, at);
+    assert.equal(evidence.incomplete, true);
+    assert.equal(evidence.stoppedAfter, ADVANCE_REST_STAGES[at - 1]);
+    assert.equal(evidence[ADVANCE_REST_STAGES[at]], undefined);
+  });
+}
+
+test("advance rest stops at a transport error and keeps the request", async () => {
+  const { evidence, sent } = await advanceRestProbe({ transportAt: 2 });
+  assert.equal(sent.length, 2);
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedAfter, "case1Rest");
+  assert.match(evidence.case1Rest.error, /connection closed/);
+  assert.ok(evidence.case1Rest.exchange.request);
+  assert.equal(evidence.case2Advance, undefined);
+});
+
+test("advance-rest is a reachable live CLI mode listed in the workflow", () => {
+  const run = spawnSync(process.execPath, ["scripts/live-aeat.mjs", "advance-rest"], {
+    encoding: "utf8",
+    timeout: 5000,
+    env: { PATH: process.env.PATH },
+  });
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /Set AEAT_TEST_NIF/);
+  assert.doesNotMatch(run.stderr, /Unknown AEAT preproduction mode/);
+  const workflow = readFileSync(".github/workflows/live-aeat.yml", "utf8");
+  assert.match(workflow, /^ {10}- advance-rest$/m);
+});
+
+function advanceRestCli(refuseAt) {
+  const source = `
+    import https from "node:https";
+    import { syncBuiltinESMExports } from "node:module";
+    import { EventEmitter } from "node:events";
+    import { pathToFileURL } from "node:url";
+    import { createFakeAeat } from "./dist/testing/fake-aeat.js";
+    import { parseEnvio } from "./dist/index.js";
+    const fake = createFakeAeat({ serverNow: new Date(), tiempoEsperaInicial: 0 });
+    let submissions = 0;
+    globalThis.fetch = () => { throw new Error("unexpected external request"); };
+    https.request = (url, options, callback) => {
+      if (!url.startsWith("https://prewww") || options.method !== "POST") throw new Error("unexpected endpoint");
+      const req = new EventEmitter();
+      req.end = async (body) => {
+        try {
+          fake.setServerNow(new Date());
+          if (++submissions === ${refuseAt}) {
+            const id = parseEnvio(body).registros[0].RegistroAlta.IDFactura;
+            fake.reject(id.IDEmisorFactura + "|" + id.NumSerieFactura + "|" + id.FechaExpedicionFactura, 1100, "controlled refusal");
+          }
+          const result = await fake.fetch(url, { method: options.method, headers: options.headers, body });
+          const response = new EventEmitter();
+          response.statusCode = result.status;
+          callback(response);
+          response.emit("data", Buffer.from(await result.text()));
+          response.emit("end");
+        } catch (error) { req.emit("error", error); }
+      };
+      return req;
+    };
+    syncBuiltinESMExports();
+    process.argv = [process.execPath, process.cwd() + "/scripts/live-aeat.mjs", "advance-rest"];
+    await import(pathToFileURL(process.argv[1]));
+  `;
+  return spawnSync(process.execPath, ["--input-type=module", "--eval", source], {
+    encoding: "utf8",
+    timeout: 10000,
+    env: {
+      PATH: process.env.PATH,
+      AEAT_TEST_P12_BASE64: Buffer.from("invalid synthetic certificate").toString("base64"),
+      AEAT_TEST_P12_PASSWORD: "synthetic-password-never-logged",
+      AEAT_TEST_NIF: "89890001K",
+      AEAT_TEST_NAME: "Issuer & Partners <A>",
+      AEAT_TEST_SYSTEM_NIF: "B99999997",
+      AEAT_TEST_SYSTEM_NAME: "Software & Systems <B>",
+      AEAT_TEST_RECIPIENT_NIF: "11111111H",
+      AEAT_TEST_RECIPIENT_NAME: "Guest & Friends <C>",
+      GITHUB_RUN_ID: "7654321",
+    },
+  });
+}
+
+for (const refuseAt of [0, 2]) {
+  test(`advance rest CLI exits ${refuseAt ? 1 : 0} and prints each case's verdict`, () => {
+    const run = advanceRestCli(refuseAt);
+    assert.equal(run.status, refuseAt ? 1 : 0, run.stderr + run.stdout);
+    const lines = run.stdout.trim().split("\n");
+    assert.equal(lines.length, 8 * 2 + 1, run.stdout);
+    for (const [i, stage] of ADVANCE_REST_STAGES.entries()) {
+      const summary = JSON.parse(lines[i * 2].replace(`AEAT advance-rest ${stage} result: `, ""));
+      assert.equal(summary.case, Number(stage[4]));
+      assert.equal(summary.EstadoRegistro, i + 1 === refuseAt ? "Incorrecto" : "Correcto");
+      if (i + 1 === refuseAt) assert.equal(summary.DescripcionErrorRegistro, "controlled refusal");
+    }
+    const evidence = JSON.parse(lines.at(-1).replace("AEAT advance-rest complete: ", ""));
+    assert.equal(evidence.incomplete, Boolean(refuseAt));
+    for (const stage of ADVANCE_REST_STAGES) {
+      assert.match(evidence[stage].exchange.request, /\[identity\]/);
+      assert.ok(evidence[stage].exchange.reply);
+    }
+    for (const identity of [
+      "89890001K",
+      "B99999997",
+      "11111111H",
+      "Issuer",
+      "Partners",
+      "Software &",
+      "Systems",
+      "Guest",
+      "Friends",
+      "synthetic-password-never-logged",
+    ]) {
+      assert.equal(run.stdout.includes(identity), false, identity);
+      assert.equal(run.stderr.includes(identity), false, identity);
+    }
+  });
+}

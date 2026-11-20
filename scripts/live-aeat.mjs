@@ -608,6 +608,192 @@ export async function submitFinalCentCorrectionProbe(
   return evidence;
 }
 
+const ADVANCE_REST_PLAN = [
+  ["case1Advance", 1, "1A", "F2", "advance", [["10.00", "45.45", "4.55"]], "4.55", "50.00"],
+  [
+    "case1Rest",
+    1,
+    "1R",
+    "F2",
+    "rest after the advance",
+    [
+      ["10.00", "-27.27", "-2.73"],
+      ["21.00", "66.12", "13.88"],
+    ],
+    "11.15",
+    "50.00",
+  ],
+  ["case2Advance", 2, "2A", "F1", "advance", [["10.00", "45.45", "4.55"]], "4.55", "50.00"],
+  [
+    "case2Rest",
+    2,
+    "2R",
+    "F1",
+    "rest after the advance",
+    [
+      ["10.00", "-27.27", "-2.73"],
+      ["21.00", "66.12", "13.88"],
+    ],
+    "11.15",
+    "50.00",
+  ],
+  [
+    "case3ZeroRest",
+    3,
+    "3R",
+    "F2",
+    "the €0.00 rest with lines of opposite sign",
+    [
+      ["10.00", "-27.27", "-2.73"],
+      ["21.00", "24.79", "5.21"],
+    ],
+    "2.48",
+    "0.00",
+  ],
+  [
+    "case4Rest",
+    4,
+    "4R",
+    "F2",
+    "rest, VAT not base × rate",
+    [["10.00", "3.92", "0.43"]],
+    "0.43",
+    "4.35",
+  ],
+  [
+    "case4Control",
+    4,
+    "4C",
+    "F2",
+    "control, the meal's own record",
+    [["10.00", "6.65", "0.70"]],
+    "0.70",
+    "7.35",
+  ],
+  [
+    "case5Control",
+    5,
+    "5C",
+    "F2",
+    "control with positive lines only",
+    [
+      ["10.00", "18.18", "1.82"],
+      ["21.00", "66.12", "13.88"],
+    ],
+    "15.70",
+    "100.00",
+  ],
+];
+
+export function advanceRestSummary(stage, entry) {
+  const [, number, , tipo, description] = ADVANCE_REST_PLAN.find(([name]) => name === stage);
+  const line = entry.response?.RespuestaLinea?.[0];
+  return {
+    case: number,
+    record: `${description} (${tipo})`,
+    ...(entry.response ? { EstadoEnvio: entry.response.EstadoEnvio } : {}),
+    ...(line
+      ? {
+          EstadoRegistro: line.EstadoRegistro,
+          ...(line.CodigoErrorRegistro === undefined
+            ? {}
+            : { CodigoErrorRegistro: line.CodigoErrorRegistro }),
+          ...(line.DescripcionErrorRegistro === undefined
+            ? {}
+            : { DescripcionErrorRegistro: line.DescripcionErrorRegistro }),
+        }
+      : {}),
+    ...(entry.error ? { error: entry.error } : {}),
+  };
+}
+
+// A refused record is not in AEAT's chain, so the next one links to the last
+// record AEAT kept; a reply that does not name exactly this record leaves the
+// chain's state unknown, so the run stops there.
+export async function submitAdvanceRestProbe(
+  client,
+  cabecera,
+  options,
+  {
+    report = () => {},
+    waitForSubmission = waitForNextSubmission,
+    now = () => new Date(),
+    rawExchange = () => undefined,
+    clearRawExchange = () => {},
+  } = {},
+) {
+  const evidence = { incomplete: false };
+  let previousResponse;
+  let previousRecord;
+  for (const [stage, , label, tipo, , lines, cuota, total] of ADVANCE_REST_PLAN) {
+    const entry = {};
+    let attempted = false;
+    let chainKnown = false;
+    try {
+      if (previousResponse) await waitForSubmission(previousResponse.TiempoEsperaEnvio);
+      const built = buildTestRecord({ ...options, now: now(), runId: `${options.runId}-REST` });
+      const body = { ...built };
+      if (tipo !== "F1") delete body.Destinatarios;
+      const record = {
+        ...body,
+        IDFactura: {
+          ...built.IDFactura,
+          NumSerieFactura: `${built.IDFactura.NumSerieFactura.replace("CI/", `CI-${tipo}/`)}-${label}`,
+        },
+        RefExterna: `${built.RefExterna}-${label}`,
+        DescripcionOperacion: `Advance rest probe: ${stage}`,
+        TipoFactura: tipo,
+        Desglose: lines.map(([rate, base, vat]) => ({
+          ...built.Desglose[0],
+          TipoImpositivo: rate,
+          BaseImponibleOimporteNoSujeto: base,
+          CuotaRepercutida: vat,
+        })),
+        CuotaTotal: cuota,
+        ImporteTotal: total,
+        ...(previousRecord
+          ? {
+              Encadenamiento: {
+                RegistroAnterior: { ...previousRecord.IDFactura, Huella: previousRecord.Huella },
+              },
+            }
+          : {}),
+      };
+      entry.record = { ...record, Huella: computeHuella(record) };
+      assertValid(entry.record);
+      clearRawExchange();
+      attempted = true;
+      entry.response = await client.submit(cabecera, [{ RegistroAlta: entry.record }]);
+      entry.exchange = rawExchange();
+      const replyLines = entry.response.RespuestaLinea ?? [];
+      chainKnown =
+        Boolean(entry.exchange?.request && entry.exchange?.reply) &&
+        replyLines.length === 1 &&
+        isDeepStrictEqual(replyLines[0].IDFactura, entry.record.IDFactura);
+      entry.matchesExpectation =
+        chainKnown &&
+        entry.response.EstadoEnvio === "Correcto" &&
+        replyLines[0].EstadoRegistro === "Correcto";
+      if (chainKnown && replyLines[0].EstadoRegistro !== "Incorrecto") {
+        previousRecord = entry.record;
+      }
+    } catch (error) {
+      entry.error = error instanceof Error ? error.message : String(error);
+      if (attempted) entry.exchange = rawExchange();
+      entry.matchesExpectation = false;
+    }
+    evidence[stage] = entry;
+    report(stage, entry);
+    if (!entry.matchesExpectation) evidence.incomplete = true;
+    if (!chainKnown) {
+      evidence.stoppedAfter = stage;
+      break;
+    }
+    previousResponse = entry.response;
+  }
+  return evidence;
+}
+
 export async function submitFourBehaviourProbe(
   client,
   cabecera,
@@ -2741,6 +2927,7 @@ async function main() {
       "four-behaviours",
       "double-correction",
       "final-cent-correction",
+      "advance-rest",
     ].includes(mode)
   ) {
     throw new Error("Unknown AEAT preproduction mode");
@@ -2832,6 +3019,46 @@ async function main() {
     });
     process.stdout.write(
       `AEAT handover-tail complete: ${outageFlagEvidenceJson(evidence, identities)}\n`,
+    );
+    if (evidence.incomplete) process.exitCode = 1;
+    return;
+  }
+
+  if (mode === "advance-rest") {
+    const probeOptions = {
+      nif,
+      name,
+      systemNif: required("AEAT_TEST_SYSTEM_NIF"),
+      systemName: required("AEAT_TEST_SYSTEM_NAME"),
+      recipientNif: recipient.NIF,
+      recipientName: recipient.NombreRazon,
+      runId,
+    };
+    const identities = [
+      nif,
+      name,
+      probeOptions.systemNif,
+      probeOptions.systemName,
+      recipient.NIF,
+      recipient.NombreRazon,
+    ];
+    const evidence = await submitAdvanceRestProbe(client, cabecera, probeOptions, {
+      rawExchange: () => ({ request: lastRawRequest, reply: lastRawReply }),
+      clearRawExchange: () => {
+        lastRawRequest = undefined;
+        lastRawReply = undefined;
+      },
+      report: (stage, entry) => {
+        process.stdout.write(
+          `AEAT advance-rest ${stage} result: ${outageFlagEvidenceJson(advanceRestSummary(stage, entry), identities)}\n`,
+        );
+        process.stdout.write(
+          `AEAT advance-rest ${stage}: ${outageFlagEvidenceJson(entry, identities)}\n`,
+        );
+      },
+    });
+    process.stdout.write(
+      `AEAT advance-rest complete: ${outageFlagEvidenceJson(evidence, identities)}\n`,
     );
     if (evidence.incomplete) process.exitCode = 1;
     return;
