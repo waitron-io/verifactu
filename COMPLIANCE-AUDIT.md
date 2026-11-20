@@ -1748,7 +1748,7 @@ the builder's two-decimal spelling, so only the two hash-input totals vary. The 
 recomputed from those exact total literals after the ordinary builder has run; the XML
 serializer receives the same record. Local validation intentionally flags the two totals as
 `AMOUNT_FORMAT`, while the pinned filing XSD accepts their one-decimal form. The invoice serial and external reference use the
-distinct `CI-DECIMAL` prefix, date and GitHub run ID. The monthly `submit` mode keeps its `CI`
+distinct `CI-DECIMAL` prefix, date and GitHub run ID (with `-<attempt>` added on a re-run attempt). The monthly `submit` mode keeps its `CI`
 prefix, first-record chain and two-decimal builder output. The probe therefore cannot overwrite
 or become the predecessor of the scheduled test record. Its issuer consulta searches by the
 exact probe serial even if AEAT rejects the alta.

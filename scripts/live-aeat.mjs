@@ -286,15 +286,30 @@ export function buildTestRecord(options) {
   });
 }
 
+// GitHub keeps GITHUB_RUN_ID across re-run attempts; a re-run must not resend
+// the first attempt's invoice numbers.
+export function liveRunId(env, now) {
+  if (env.GITHUB_RUN_ID === undefined) return String(now.getTime());
+  const attempt = Number(env.GITHUB_RUN_ATTEMPT);
+  return Number.isInteger(attempt) && attempt > 1
+    ? `${env.GITHUB_RUN_ID}-${attempt}`
+    : env.GITHUB_RUN_ID;
+}
+
 export function outageFlagEvidenceJson(evidence, identities) {
   const named = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" };
-  const patterns = [...new Set(identities.filter(Boolean))]
+  const whitespace = "(?:\\s|&#0*(?:9|10|13|32|160);|&#x0*(?:9|a|d|20|a0);)+";
+  const patterns = [
+    ...new Set(identities.filter(Boolean).map((identity) => identity.trim().replace(/\s+/gu, " "))),
+  ]
+    .filter(Boolean)
     .sort((a, b) => b.length - a.length)
     .map(
       (identity) =>
         new RegExp(
           [...identity]
             .map((character) => {
+              if (character === " ") return whitespace;
               const code = character.codePointAt(0);
               const literal = character.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
               return `(?:${literal}|&#0*${code};|&#x0*${code.toString(16)};${named[character] ? "|" + named[character] : ""})`;
@@ -603,6 +618,209 @@ export async function submitFinalCentCorrectionProbe(
       break;
     }
     previousRecord = entry.record;
+    previousResponse = entry.response;
+  }
+  return evidence;
+}
+
+const ADVANCE_REST_PLAN = [
+  ["case1Advance", 1, "1A", "F2", "advance", [["10.00", "45.45", "4.55"]], "4.55", "50.00"],
+  [
+    "case1Rest",
+    1,
+    "1R",
+    "F2",
+    "rest after the advance",
+    [
+      ["10.00", "-27.27", "-2.73"],
+      ["21.00", "66.12", "13.88"],
+    ],
+    "11.15",
+    "50.00",
+  ],
+  ["case2Advance", 2, "2A", "F1", "advance", [["10.00", "45.45", "4.55"]], "4.55", "50.00"],
+  [
+    "case2Rest",
+    2,
+    "2R",
+    "F1",
+    "rest after the advance",
+    [
+      ["10.00", "-27.27", "-2.73"],
+      ["21.00", "66.12", "13.88"],
+    ],
+    "11.15",
+    "50.00",
+  ],
+  [
+    "case3ZeroRest",
+    3,
+    "3R",
+    "F2",
+    "the €0.00 rest with lines of opposite sign",
+    [
+      ["10.00", "-27.27", "-2.73"],
+      ["21.00", "24.79", "5.21"],
+    ],
+    "2.48",
+    "0.00",
+  ],
+  [
+    "case4Rest",
+    4,
+    "4R",
+    "F2",
+    "rest, VAT not base × rate",
+    [["10.00", "3.92", "0.43"]],
+    "0.43",
+    "4.35",
+  ],
+  [
+    "case4Control",
+    4,
+    "4C",
+    "F2",
+    "control, the meal's own record",
+    [["10.00", "6.65", "0.70"]],
+    "0.70",
+    "7.35",
+  ],
+  [
+    "case5Control",
+    5,
+    "5C",
+    "F2",
+    "control with positive lines only",
+    [
+      ["10.00", "18.18", "1.82"],
+      ["21.00", "66.12", "13.88"],
+    ],
+    "15.70",
+    "100.00",
+  ],
+];
+
+const ADVANCE_REST_STATES = ["Correcto", "AceptadoConErrores", "Incorrecto"];
+
+function advanceRestUnverified(entry) {
+  if (!entry.exchange?.request || !entry.exchange?.reply) {
+    return "the raw request or reply was not captured";
+  }
+  const lines = entry.response.RespuestaLinea ?? [];
+  if (lines.length !== 1) return `AEAT's reply has ${lines.length} lines, not 1`;
+  const [line] = lines;
+  if (!isDeepStrictEqual(line.IDFactura, entry.record.IDFactura)) {
+    return "AEAT's reply names another invoice";
+  }
+  if (line.Operacion?.TipoOperacion !== "Alta") return "AEAT's reply line is not for an Alta";
+  if (line.RefExterna !== undefined && line.RefExterna !== entry.record.RefExterna) {
+    return "AEAT's reply line carries another RefExterna";
+  }
+  if (!ADVANCE_REST_STATES.includes(line.EstadoRegistro)) {
+    return "AEAT's reply line gives no recognised EstadoRegistro";
+  }
+  return undefined;
+}
+
+export function advanceRestSummary(stage, entry) {
+  const [, number, , tipo, description] = ADVANCE_REST_PLAN.find(([name]) => name === stage);
+  const reason = entry.unverified ?? (entry.response ? undefined : "no answer from AEAT was read");
+  const line = entry.response?.RespuestaLinea?.[0];
+  return {
+    case: number,
+    record: `${description} (${tipo})`,
+    ...(reason === undefined
+      ? {
+          EstadoEnvio: entry.response.EstadoEnvio,
+          EstadoRegistro: line.EstadoRegistro,
+          ...(line.CodigoErrorRegistro === undefined
+            ? {}
+            : { CodigoErrorRegistro: line.CodigoErrorRegistro }),
+          ...(line.DescripcionErrorRegistro === undefined
+            ? {}
+            : { DescripcionErrorRegistro: line.DescripcionErrorRegistro }),
+        }
+      : { verdict: "unverified", reason }),
+    ...(entry.error ? { error: entry.error } : {}),
+  };
+}
+
+// A refused record is not in AEAT's chain, so the next one links to the last
+// record AEAT kept.
+export async function submitAdvanceRestProbe(
+  client,
+  cabecera,
+  options,
+  {
+    report = () => {},
+    waitForSubmission = waitForNextSubmission,
+    now = () => new Date(),
+    rawExchange = () => undefined,
+    clearRawExchange = () => {},
+  } = {},
+) {
+  const evidence = { incomplete: false };
+  let previousResponse;
+  let previousRecord;
+  for (const [stage, , label, tipo, , lines, cuota, total] of ADVANCE_REST_PLAN) {
+    const entry = {};
+    let attempted = false;
+    let answerUsable = false;
+    try {
+      if (previousResponse) await waitForSubmission(previousResponse.TiempoEsperaEnvio);
+      const built = buildTestRecord({ ...options, now: now(), runId: `${options.runId}-REST` });
+      const body = { ...built };
+      if (tipo !== "F1") delete body.Destinatarios;
+      const record = {
+        ...body,
+        IDFactura: {
+          ...built.IDFactura,
+          NumSerieFactura: `${built.IDFactura.NumSerieFactura.replace("CI/", `CI-${tipo}/`)}-${label}`,
+        },
+        RefExterna: `${built.RefExterna}-${label}`,
+        DescripcionOperacion: `Advance rest probe: ${stage}`,
+        TipoFactura: tipo,
+        Desglose: lines.map(([rate, base, vat]) => ({
+          ...built.Desglose[0],
+          TipoImpositivo: rate,
+          BaseImponibleOimporteNoSujeto: base,
+          CuotaRepercutida: vat,
+        })),
+        CuotaTotal: cuota,
+        ImporteTotal: total,
+        ...(previousRecord
+          ? {
+              Encadenamiento: {
+                RegistroAnterior: { ...previousRecord.IDFactura, Huella: previousRecord.Huella },
+              },
+            }
+          : {}),
+      };
+      entry.record = { ...record, Huella: computeHuella(record) };
+      assertValid(entry.record);
+      clearRawExchange();
+      attempted = true;
+      entry.response = await client.submit(cabecera, [{ RegistroAlta: entry.record }]);
+      entry.exchange = rawExchange();
+      const unverified = advanceRestUnverified(entry);
+      if (unverified !== undefined) entry.unverified = unverified;
+      answerUsable = unverified === undefined;
+      const state = answerUsable ? entry.response.RespuestaLinea[0].EstadoRegistro : undefined;
+      entry.matchesExpectation =
+        answerUsable && entry.response.EstadoEnvio === "Correcto" && state === "Correcto";
+      if (state === "Correcto" || state === "AceptadoConErrores") previousRecord = entry.record;
+    } catch (error) {
+      entry.error = error instanceof Error ? error.message : String(error);
+      if (attempted) entry.exchange = rawExchange();
+      entry.matchesExpectation = false;
+    }
+    evidence[stage] = entry;
+    report(stage, entry);
+    if (!answerUsable) {
+      evidence.incomplete = true;
+      evidence.stoppedAfter = stage;
+      break;
+    }
     previousResponse = entry.response;
   }
   return evidence;
@@ -2508,8 +2726,10 @@ export async function consultStoredMixedRegimeProbe(client, options) {
 
 export async function consultUnicodeDateProbe(client, header, { runId, issueDate }) {
   const date = /^(\d{2})-(\d{2})-(\d{4})$/.exec(issueDate);
-  if (!date || !/^\d+$/.test(runId)) {
-    throw new Error("Unicode-date probe needs an ASCII DD-MM-YYYY issue date and numeric run ID");
+  if (!date || !/^\d+(?:-\d+)?$/.test(runId)) {
+    throw new Error(
+      "Unicode-date probe needs an ASCII DD-MM-YYYY issue date and a numeric run ID, optionally followed by -<attempt>",
+    );
   }
   const [, day, month, year] = date;
   const serial = `CI-DECIMAL/${year}${month}${day}/${runId}`;
@@ -2741,6 +2961,7 @@ async function main() {
       "four-behaviours",
       "double-correction",
       "final-cent-correction",
+      "advance-rest",
     ].includes(mode)
   ) {
     throw new Error("Unknown AEAT preproduction mode");
@@ -2797,7 +3018,7 @@ async function main() {
     NIF: required("AEAT_TEST_RECIPIENT_NIF"),
   };
   const cabecera = submissionHeader(obligadoEmision);
-  const runId = process.env.GITHUB_RUN_ID ?? String(now.getTime());
+  const runId = liveRunId(process.env, now);
 
   if (mode === "handover-tail") {
     const probeOptions = {
@@ -2834,6 +3055,54 @@ async function main() {
       `AEAT handover-tail complete: ${outageFlagEvidenceJson(evidence, identities)}\n`,
     );
     if (evidence.incomplete) process.exitCode = 1;
+    return;
+  }
+
+  if (mode === "advance-rest") {
+    process.stdout.write(
+      "AEAT advance-rest expectation: every rest record (cases 1-4) Correcto means the feature may land; any rest record Incorrecto while the positive-lines control (case 5) is Correcto means stop for the owner; case 4's control Incorrecto means stop at once, whatever the rest records show; any other result exits 1 for the owner to read. Test service only; results do not establish production behaviour.\n",
+    );
+    const probeOptions = {
+      nif,
+      name,
+      systemNif: required("AEAT_TEST_SYSTEM_NIF"),
+      systemName: required("AEAT_TEST_SYSTEM_NAME"),
+      recipientNif: recipient.NIF,
+      recipientName: recipient.NombreRazon,
+      runId,
+    };
+    const identities = [
+      nif,
+      name,
+      probeOptions.systemNif,
+      probeOptions.systemName,
+      recipient.NIF,
+      recipient.NombreRazon,
+    ];
+    const evidence = await submitAdvanceRestProbe(client, cabecera, probeOptions, {
+      rawExchange: () => ({ request: lastRawRequest, reply: lastRawReply }),
+      clearRawExchange: () => {
+        lastRawRequest = undefined;
+        lastRawReply = undefined;
+      },
+      report: (stage, entry) => {
+        process.stdout.write(
+          `AEAT advance-rest ${stage} result: ${outageFlagEvidenceJson(advanceRestSummary(stage, entry), identities)}\n`,
+        );
+        process.stdout.write(
+          `AEAT advance-rest ${stage}: ${outageFlagEvidenceJson(entry, identities)}\n`,
+        );
+      },
+    });
+    process.stdout.write(
+      `AEAT advance-rest complete: ${outageFlagEvidenceJson(evidence, identities)}\n`,
+    );
+    if (
+      evidence.incomplete ||
+      Object.values(evidence).some((entry) => entry && entry.matchesExpectation === false)
+    ) {
+      process.exitCode = 1;
+    }
     return;
   }
 
