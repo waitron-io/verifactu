@@ -5950,21 +5950,28 @@ async function advanceRestProbe(fault = {}) {
           exchange = { ...exchange, request: serializeEnvio(header, records) };
           throw new Error("connection closed");
         }
+        if (fault.preTransportAt === sent.length) throw new Error("failed before transport");
         const response = await soap.submit(header, records);
         response.TiempoEsperaEnvio = sent.length + 10;
         return fault.submission?.(response, sent.length) ?? response;
       },
     },
     successorHeader,
-    decimalOptions,
+    { ...decimalOptions, ...fault.options },
     {
       now: () => new Date(clock),
       waitForSubmission: async (seconds) => {
         waits.push(seconds);
+        if (fault.waitBefore === sent.length + 1) throw new Error("wait interrupted");
         clock += seconds * 1000;
         fake.setServerNow(new Date(clock));
       },
-      rawExchange: () => (exchange ? structuredClone(exchange) : undefined),
+      rawExchange: () => {
+        if (fault.noExchange || !exchange) return undefined;
+        const copy = structuredClone(exchange);
+        if (fault.dropExchange) delete copy[fault.dropExchange];
+        return copy;
+      },
       clearRawExchange: () => {
         exchange = undefined;
       },
@@ -6066,6 +6073,8 @@ test("advance rest files every case's record in one chain with the plan's figure
     }
     const entry = evidence[ADVANCE_REST_STAGES[i]];
     assert.equal(entry.matchesExpectation, true);
+    assert.equal(entry.unverified, undefined);
+    assert.equal(entry.response.RespuestaLinea[0].RefExterna, record.RefExterna);
     assert.equal(entry.record.Huella, record.Huella);
     assert.match(entry.exchange.request, /RegFactuSistemaFacturacion/);
     assert.match(entry.exchange.reply, /RespuestaRegFactuSistemaFacturacion/);
@@ -6099,8 +6108,22 @@ test("advance rest summarises each record's case and AEAT's verdict in one line"
   assert.deepEqual(live.advanceRestSummary("case5Control", { error: "connection closed" }), {
     case: 5,
     record: "control with positive lines only (F2)",
+    verdict: "unverified",
+    reason: "no answer from AEAT was read",
     error: "connection closed",
   });
+  assert.deepEqual(
+    live.advanceRestSummary("case1Rest", {
+      response: { EstadoEnvio: "Correcto", RespuestaLinea: [{ EstadoRegistro: "Correcto" }] },
+      unverified: "AEAT's reply names another invoice",
+    }),
+    {
+      case: 1,
+      record: "rest after the advance (F2)",
+      verdict: "unverified",
+      reason: "AEAT's reply names another invoice",
+    },
+  );
 });
 
 test("advance rest keeps going past a refused record and chains to the last accepted one", async () => {
@@ -6116,17 +6139,40 @@ test("advance rest keeps going past a refused record and chains to the last acce
     },
   });
   assert.equal(sent.length, 8);
-  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.incomplete, false);
   assert.equal(evidence.stoppedAfter, undefined);
   assert.equal(evidence.case1Rest.matchesExpectation, false);
   assert.equal(
     evidence.case1Rest.response.RespuestaLinea[0].DescripcionErrorRegistro,
     "controlled refusal",
   );
+  assert.equal(
+    live.advanceRestSummary("case1Rest", evidence.case1Rest).EstadoRegistro,
+    "Incorrecto",
+  );
   assert.deepEqual(sent[2].Encadenamiento, {
     RegistroAnterior: { ...sent[0].IDFactura, Huella: sent[0].Huella },
   });
   assert.equal(evidence.case5Control.matchesExpectation, true);
+});
+
+test("advance rest sends the record after a refused first record as a first record", async () => {
+  const { evidence, sent } = await advanceRestProbe({
+    submission(response, n) {
+      if (n === 1) {
+        response.EstadoEnvio = "Incorrecto";
+        response.RespuestaLinea[0].EstadoRegistro = "Incorrecto";
+      }
+      return response;
+    },
+  });
+  assert.equal(sent.length, 8);
+  assert.equal(evidence.incomplete, false);
+  assert.equal(evidence.case1Advance.matchesExpectation, false);
+  assert.deepEqual(sent[1].Encadenamiento, { PrimerRegistro: "S" });
+  assert.deepEqual(sent[2].Encadenamiento, {
+    RegistroAnterior: { ...sent[1].IDFactura, Huella: sent[1].Huella },
+  });
 });
 
 test("advance rest chains past a record accepted with errors, which AEAT keeps", async () => {
@@ -6140,34 +6186,110 @@ test("advance rest chains past a record accepted with errors, which AEAT keeps",
     },
   });
   assert.equal(sent.length, 8);
-  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.incomplete, false);
   assert.equal(evidence.case3ZeroRest.matchesExpectation, false);
   assert.deepEqual(sent[5].Encadenamiento, {
     RegistroAnterior: { ...sent[4].IDFactura, Huella: sent[4].Huella },
   });
 });
 
-for (const [name, at, mutate] of [
-  ["an empty reply line list", 3, (r) => (r.RespuestaLinea = [])],
+test("advance rest does not count a Correcto line under a partly correct envelope as success", async () => {
+  const { evidence, sent } = await advanceRestProbe({
+    submission(response, n) {
+      if (n === 4) response.EstadoEnvio = "ParcialmenteCorrecto";
+      return response;
+    },
+  });
+  assert.equal(sent.length, 8);
+  assert.equal(evidence.incomplete, false);
+  assert.equal(evidence.case2Rest.matchesExpectation, false);
+  assert.equal(evidence.case2Advance.matchesExpectation, true);
+  assert.deepEqual(sent[4].Encadenamiento, {
+    RegistroAnterior: { ...sent[3].IDFactura, Huella: sent[3].Huella },
+  });
+});
+
+for (const [name, at, fault, reason] of [
+  ["an empty reply line list", 3, { mutate: (r) => (r.RespuestaLinea = []) }, /0 lines, not 1/],
+  [
+    "an extra reply line",
+    2,
+    { mutate: (r) => r.RespuestaLinea.push(structuredClone(r.RespuestaLinea[0])) },
+    /2 lines, not 1/,
+  ],
   [
     "a reply naming another invoice",
     4,
-    (r) => (r.RespuestaLinea[0].IDFactura.NumSerieFactura = "other"),
+    { mutate: (r) => (r.RespuestaLinea[0].IDFactura.NumSerieFactura = "other") },
+    /another invoice/,
   ],
+  [
+    "a reply line for a cancellation",
+    5,
+    { mutate: (r) => (r.RespuestaLinea[0].Operacion = { TipoOperacion: "Anulacion" }) },
+    /not for an Alta/,
+  ],
+  [
+    "a reply line with no operation",
+    5,
+    { mutate: (r) => delete r.RespuestaLinea[0].Operacion },
+    /not for an Alta/,
+  ],
+  [
+    "a reply line carrying another external reference",
+    6,
+    { mutate: (r) => (r.RespuestaLinea[0].RefExterna = "other") },
+    /another RefExterna/,
+  ],
+  [
+    "a reply line with no record state",
+    7,
+    { mutate: (r) => (r.RespuestaLinea[0].EstadoRegistro = undefined) },
+    /no recognised EstadoRegistro/,
+  ],
+  [
+    "a reply line with an unknown record state",
+    8,
+    { mutate: (r) => (r.RespuestaLinea[0].EstadoRegistro = "Pendiente") },
+    /no recognised EstadoRegistro/,
+  ],
+  ["no raw exchange", 1, { noExchange: true }, /raw request or reply was not captured/],
+  ["no raw request", 1, { dropExchange: "request" }, /raw request or reply was not captured/],
+  ["no raw reply", 1, { dropExchange: "reply" }, /raw request or reply was not captured/],
 ]) {
-  test(`advance rest stops after ${name}, since the chain's state is unknown`, async () => {
+  test(`advance rest stops after ${name} and prints no verdict for it`, async () => {
     const { evidence, sent } = await advanceRestProbe({
+      ...fault,
       submission(response, n) {
-        if (n === at) mutate(response);
+        if (n === at) fault.mutate?.(response);
         return response;
       },
     });
+    const stage = ADVANCE_REST_STAGES[at - 1];
     assert.equal(sent.length, at);
     assert.equal(evidence.incomplete, true);
-    assert.equal(evidence.stoppedAfter, ADVANCE_REST_STAGES[at - 1]);
+    assert.equal(evidence.stoppedAfter, stage);
+    assert.equal(evidence[stage].matchesExpectation, false);
+    assert.equal(evidence[stage].error, undefined);
     assert.equal(evidence[ADVANCE_REST_STAGES[at]], undefined);
+    if (at > 1) assert.equal(evidence[ADVANCE_REST_STAGES[at - 2]].matchesExpectation, true);
+    const summary = live.advanceRestSummary(stage, evidence[stage]);
+    assert.equal(summary.verdict, "unverified");
+    assert.match(summary.reason, reason);
+    assert.equal("EstadoRegistro" in summary, false);
+    assert.equal("EstadoEnvio" in summary, false);
   });
 }
+
+test("advance rest never sends a record that fails validation", async () => {
+  const { evidence, sent } = await advanceRestProbe({ options: { recipientNif: "11111111X" } });
+  assert.equal(sent.length, 2);
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedAfter, "case2Advance");
+  assert.match(evidence.case2Advance.error, /NIF/);
+  assert.equal(evidence.case2Advance.response, undefined);
+  assert.equal(evidence.case2Advance.exchange, undefined);
+});
 
 test("advance rest stops at a transport error and keeps the request", async () => {
   const { evidence, sent } = await advanceRestProbe({ transportAt: 2 });
@@ -6177,6 +6299,30 @@ test("advance rest stops at a transport error and keeps the request", async () =
   assert.match(evidence.case1Rest.error, /connection closed/);
   assert.ok(evidence.case1Rest.exchange.request);
   assert.equal(evidence.case2Advance, undefined);
+});
+
+test("advance rest stops at an interrupted wait without sending or keeping stale evidence", async () => {
+  const { evidence, sent, waits } = await advanceRestProbe({ waitBefore: 4 });
+  assert.equal(sent.length, 3);
+  assert.deepEqual(waits, [11, 12, 13]);
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedAfter, "case2Rest");
+  assert.match(evidence.case2Rest.error, /wait interrupted/);
+  assert.equal(evidence.case2Rest.response, undefined);
+  assert.equal(evidence.case2Rest.exchange, undefined);
+  assert.equal(evidence.case2Advance.matchesExpectation, true);
+  assert.equal(evidence.case3ZeroRest, undefined);
+});
+
+test("advance rest keeps no earlier exchange when submission fails before transport", async () => {
+  const { evidence, sent } = await advanceRestProbe({ preTransportAt: 3 });
+  assert.equal(sent.length, 3);
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedAfter, "case2Advance");
+  assert.match(evidence.case2Advance.error, /failed before transport/);
+  assert.equal(evidence.case2Advance.exchange, undefined);
+  assert.equal(evidence.case1Rest.matchesExpectation, true);
+  assert.equal(evidence.case2Rest, undefined);
 });
 
 test("advance-rest is a reachable live CLI mode listed in the workflow", () => {
@@ -6192,7 +6338,7 @@ test("advance-rest is a reachable live CLI mode listed in the workflow", () => {
   assert.match(workflow, /^ {10}- advance-rest$/m);
 });
 
-function advanceRestCli(refuseAt) {
+function advanceRestCli(refuseAt, attempt) {
   const source = `
     import https from "node:https";
     import { syncBuiltinESMExports } from "node:module";
@@ -6241,24 +6387,38 @@ function advanceRestCli(refuseAt) {
       AEAT_TEST_RECIPIENT_NIF: "11111111H",
       AEAT_TEST_RECIPIENT_NAME: "Guest & Friends <C>",
       GITHUB_RUN_ID: "7654321",
+      GITHUB_RUN_ATTEMPT: attempt,
     },
   });
 }
 
-for (const refuseAt of [0, 2]) {
+for (const [refuseAt, attempt, runId] of [
+  [0, "1", "7654321"],
+  [2, "3", "7654321-3"],
+]) {
   test(`advance rest CLI exits ${refuseAt ? 1 : 0} and prints each case's verdict`, () => {
-    const run = advanceRestCli(refuseAt);
+    const run = advanceRestCli(refuseAt, attempt);
     assert.equal(run.status, refuseAt ? 1 : 0, run.stderr + run.stdout);
     const lines = run.stdout.trim().split("\n");
-    assert.equal(lines.length, 8 * 2 + 1, run.stdout);
+    assert.equal(lines.length, 1 + 8 * 2 + 1, run.stdout);
+    assert.match(
+      lines[0],
+      /^AEAT advance-rest expectation: every rest record \(cases 1-4\) Correcto means the feature may land; any rest record Incorrecto while the positive-lines control \(case 5\) is Correcto means stop for the owner; case 4's control Incorrecto means stop at once, whatever the rest records show; any other result exits 1 for the owner to read\./,
+    );
     for (const [i, stage] of ADVANCE_REST_STAGES.entries()) {
-      const summary = JSON.parse(lines[i * 2].replace(`AEAT advance-rest ${stage} result: `, ""));
+      const summary = JSON.parse(
+        lines[1 + i * 2].replace(`AEAT advance-rest ${stage} result: `, ""),
+      );
       assert.equal(summary.case, Number(stage[4]));
       assert.equal(summary.EstadoRegistro, i + 1 === refuseAt ? "Incorrecto" : "Correcto");
       if (i + 1 === refuseAt) assert.equal(summary.DescripcionErrorRegistro, "controlled refusal");
     }
     const evidence = JSON.parse(lines.at(-1).replace("AEAT advance-rest complete: ", ""));
-    assert.equal(evidence.incomplete, Boolean(refuseAt));
+    assert.equal(evidence.incomplete, false);
+    assert.match(
+      evidence.case1Advance.record.IDFactura.NumSerieFactura,
+      new RegExp(`/${runId}-REST-1A$`),
+    );
     for (const stage of ADVANCE_REST_STAGES) {
       assert.match(evidence[stage].exchange.request, /\[identity\]/);
       assert.ok(evidence[stage].exchange.reply);
@@ -6280,3 +6440,63 @@ for (const refuseAt of [0, 2]) {
     }
   });
 }
+
+test("a re-run attempt gets its own run id so it never repeats the first attempt's invoices", () => {
+  assert.equal(typeof live.liveRunId, "function");
+  const now = new Date("2026-09-27T12:00:00Z");
+  assert.equal(live.liveRunId({ GITHUB_RUN_ID: "35864290069" }, now), "35864290069");
+  assert.equal(
+    live.liveRunId({ GITHUB_RUN_ID: "35864290069", GITHUB_RUN_ATTEMPT: "1" }, now),
+    "35864290069",
+  );
+  assert.equal(
+    live.liveRunId({ GITHUB_RUN_ID: "35864290069", GITHUB_RUN_ATTEMPT: "2" }, now),
+    "35864290069-2",
+  );
+  assert.equal(live.liveRunId({}, now), String(now.getTime()));
+});
+
+test("evidence redacts a configured name whatever whitespace separates its words", () => {
+  const value = live.outageFlagEvidenceJson(
+    {
+      doubled: "Issuer  & Partners <A>",
+      tab: "<n>Issuer\t&amp; Partners &lt;A&gt;</n>",
+      entity: "<n>Issuer&#32;&amp;&#x20;Partners&#160;&lt;A&gt;</n>",
+      nbsp: "Issuer & Partners <A>",
+      configuredDoubled: "Software & Systems",
+      configuredPadded: "<n>Padded &amp; Name</n>",
+      unrelated: "IssuerPartners & Co",
+    },
+    ["Issuer & Partners <A>", "Software  &   Systems", " Padded & Name "],
+  );
+  assert.deepEqual(JSON.parse(value), {
+    doubled: "[identity]",
+    tab: "<n>[identity]</n>",
+    entity: "<n>[identity]</n>",
+    nbsp: "[identity]",
+    configuredDoubled: "[identity]",
+    configuredPadded: "<n>[identity]</n>",
+    unrelated: "IssuerPartners & Co",
+  });
+});
+
+test("Unicode-date probe accepts a re-run attempt's run id and still refuses other text", async () => {
+  const client = {
+    consultar: async () => ({
+      ResultadoConsulta: "SinDatos",
+      IndicadorPaginacion: "N",
+      registros: [],
+    }),
+  };
+  await assert.rejects(
+    consultUnicodeDateProbe(client, {}, { runId: "36337265120-2", issueDate: "27-09-2026" }),
+    /did not return the known decimal-variant record/,
+  );
+  for (const runId of ["CI-1", "36337265120-", "36337265120-2-3"]) {
+    await assert.rejects(
+      consultUnicodeDateProbe(client, {}, { runId, issueDate: "27-09-2026" }),
+      /numeric run ID/,
+      runId,
+    );
+  }
+});
