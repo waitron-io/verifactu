@@ -9,6 +9,7 @@ import {
   buildQrPayload,
   computeHuella,
   createClient,
+  formatDate,
   formatDateTime,
   SOAP_ENDPOINTS,
   SOAP_ENDPOINTS_SELLO,
@@ -822,6 +823,317 @@ export async function submitAdvanceRestProbe(
       break;
     }
     previousResponse = entry.response;
+  }
+  return evidence;
+}
+
+const R5S_KINDS = {
+  futureReceipt: ["Receipt", "F", "receipt dated tomorrow (F2)", "Incorrecto", 1112],
+  todayReceipt: ["Receipt", "F", "receipt dated today (F2)", "Correcto"],
+  refund: ["Refund", "I", "refund of 5.00 by difference (R5 I)", "Correcto"],
+  dateFix: ["DateFix", "S", "date fix replacing the receipt (R5 S)", "Correcto"],
+  dateFixRefund: [
+    "Refund",
+    "I",
+    "refund of 5.00 by difference naming the date fix (R5 I)",
+    "Correcto",
+  ],
+};
+
+const R5S_PLAN = [
+  [1, [["futureReceipt", "refund", "dateFix"]]],
+  [2, [["futureReceipt"], ["refund"], ["dateFix"]]],
+  [3, [["futureReceipt"], ["dateFix"]]],
+  [4, [["todayReceipt"], ["refund"]]],
+  [5, [["futureReceipt"], ["dateFix"], ["dateFixRefund"]]],
+];
+
+const R5S_STAGES = new Map(
+  R5S_PLAN.flatMap(([number, requests]) =>
+    requests.flat().map((kind) => [`case${number}${R5S_KINDS[kind][0]}`, [number, kind]]),
+  ),
+);
+
+// The next Madrid day at the same wall-clock time where that time exists, so
+// the generation time and the issue date name one day across a clock change.
+function sameMadridTimeTomorrow(now) {
+  const later = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const shift = madridClock(now).offsetMinutes - madridClock(later).offsetMinutes;
+  return new Date(later.getTime() + shift * 60_000);
+}
+
+// Each case chains every record to the one before it, a refused one included,
+// because the issuing system keeps its chain locally and files every record it
+// wrote.
+export function buildReplacementAfterCreditProbeRecords(options, stages, now, chain = []) {
+  const base = buildTestRecord({ ...options, now });
+  const built = [...chain];
+  for (const stage of stages) {
+    const [number, kind] = R5S_STAGES.get(stage);
+    const [, label] = R5S_KINDS[kind];
+    const generatedAt = kind === "futureReceipt" ? sameMadridTimeTomorrow(now) : now;
+    const { offsetMinutes } = madridClock(generatedAt);
+    const corrected =
+      kind === "dateFixRefund"
+        ? built.find((record) => record.TipoRectificativa === "S")
+        : built[0];
+    const previous = built.at(-1);
+    const [amount, vat, total] =
+      kind === "refund" || kind === "dateFixRefund"
+        ? ["-4.55", "-0.45", "-5.00"]
+        : ["45.45", "4.55", "50.00"];
+    const body = {
+      ...base,
+      IDFactura: {
+        ...base.IDFactura,
+        NumSerieFactura: `${base.IDFactura.NumSerieFactura.replace("CI/", "CI-R5S/")}-${number}${label}`,
+        FechaExpedicionFactura: formatDate(generatedAt, offsetMinutes),
+      },
+      RefExterna: `CI-R5S-${options.runId}-${number}${label}`,
+      TipoFactura: corrected ? "R5" : "F2",
+      ...(corrected
+        ? {
+            TipoRectificativa: label,
+            FacturasRectificadas: { IDFacturaRectificada: [corrected.IDFactura] },
+          }
+        : {}),
+      ...(kind === "dateFix"
+        ? { ImporteRectificacion: { BaseRectificada: "0.00", CuotaRectificada: "0.00" } }
+        : {}),
+      DescripcionOperacion: `Replacement after credit probe: case ${number} ${kind}`,
+      Desglose: [
+        {
+          ...base.Desglose[0],
+          TipoImpositivo: "10.00",
+          BaseImponibleOimporteNoSujeto: amount,
+          CuotaRepercutida: vat,
+        },
+      ],
+      CuotaTotal: vat,
+      ImporteTotal: total,
+      Encadenamiento: previous
+        ? { RegistroAnterior: { ...previous.IDFactura, Huella: previous.Huella } }
+        : { PrimerRegistro: "S" },
+      FechaHoraHusoGenRegistro: formatDateTime(generatedAt, offsetMinutes),
+      SistemaInformatico: {
+        ...base.SistemaInformatico,
+        NumeroInstalacion: `CI-R5S-${options.runId}-${number}`,
+      },
+    };
+    delete body.Destinatarios;
+    const record = { ...body, Huella: computeHuella(body) };
+    assertValid(record, { now: generatedAt });
+    built.push(record);
+  }
+  return built.slice(chain.length);
+}
+
+function envelopeStateOf(lines) {
+  if (lines.every((line) => line.EstadoRegistro === "Correcto")) return "Correcto";
+  if (lines.every((line) => line.EstadoRegistro === "Incorrecto")) return "Incorrecto";
+  return "ParcialmenteCorrecto";
+}
+
+function replacementAfterCreditLines(request, records) {
+  if (!request.exchange?.request || !request.exchange?.reply) {
+    return { unverified: "the raw request or reply was not captured" };
+  }
+  const lines = request.response.RespuestaLinea ?? [];
+  if (lines.length !== records.length) {
+    return { unverified: `AEAT's reply has ${lines.length} lines, not ${records.length}` };
+  }
+  const matched = [];
+  for (const record of records) {
+    const named = lines.filter((line) => isDeepStrictEqual(line.IDFactura, record.IDFactura));
+    if (named.length !== 1) {
+      return { unverified: "AEAT's reply does not name each invoice sent exactly once" };
+    }
+    const [line] = named;
+    if (line.Operacion?.TipoOperacion !== "Alta") {
+      return { unverified: "AEAT's reply line is not for an Alta" };
+    }
+    if (line.RefExterna !== undefined && line.RefExterna !== record.RefExterna) {
+      return { unverified: "AEAT's reply line carries another RefExterna" };
+    }
+    if (!ADVANCE_REST_STATES.includes(line.EstadoRegistro)) {
+      return { unverified: "AEAT's reply line gives no recognised EstadoRegistro" };
+    }
+    matched.push(line);
+  }
+  if (request.response.EstadoEnvio !== envelopeStateOf(matched)) {
+    return {
+      unverified: `AEAT's EstadoEnvio ${request.response.EstadoEnvio ?? "(none)"} disagrees with its lines`,
+    };
+  }
+  return { lines: matched };
+}
+
+function replacementAfterCreditExpected(stage) {
+  const [, , , state, code] = R5S_KINDS[R5S_STAGES.get(stage)[1]];
+  return { state, code, text: code === undefined ? state : `${state} ${code}` };
+}
+
+export function replacementAfterCreditSummary(stage, entry) {
+  const [number, kind] = R5S_STAGES.get(stage);
+  const reason = entry.unverified ?? (entry.line ? undefined : "no answer from AEAT was read");
+  const { line } = entry;
+  return {
+    case: number,
+    record: R5S_KINDS[kind][2],
+    expected: replacementAfterCreditExpected(stage).text,
+    ...(reason === undefined
+      ? {
+          ...(entry.EstadoEnvio === undefined ? {} : { EstadoEnvio: entry.EstadoEnvio }),
+          EstadoRegistro: line.EstadoRegistro,
+          ...(line.CodigoErrorRegistro === undefined
+            ? {}
+            : { CodigoErrorRegistro: line.CodigoErrorRegistro }),
+          ...(line.DescripcionErrorRegistro === undefined
+            ? {}
+            : { DescripcionErrorRegistro: line.DescripcionErrorRegistro }),
+        }
+      : { verdict: "unverified", reason }),
+    ...(entry.error ? { error: entry.error } : {}),
+  };
+}
+
+export function replacementAfterCreditPassed(evidence) {
+  return (
+    !evidence.incomplete &&
+    [...R5S_STAGES.keys()].every(
+      (stage) =>
+        evidence[stage]?.matchesExpectation === true &&
+        evidence.consulta?.[stage]?.matchesExpectation === true,
+    )
+  );
+}
+
+async function replacementAfterCreditLookup(client, header, record, submittedState) {
+  const [, month, year] = record.IDFactura.FechaExpedicionFactura.split("-");
+  const entry = { filter: minimalIssuerConsultaFilter(record, year, month) };
+  try {
+    const result = await client.consultar(header, entry.filter);
+    assertConsultation(result);
+    entry.ResultadoConsulta = result.ResultadoConsulta;
+    entry.RegistrosEncontrados = result.registros.length;
+    let found;
+    if (result.ResultadoConsulta === "ConDatos") {
+      [found] = result.registros;
+      if (
+        result.registros.length !== 1 ||
+        result.IndicadorPaginacion !== "N" ||
+        !isDeepStrictEqual(found.IDFactura, record.IDFactura)
+      ) {
+        entry.unanswered =
+          "AEAT's lookup does not return exactly one row for the invoice asked about";
+        entry.found = result.registros.map((row) => row.IDFactura);
+        entry.matchesExpectation = false;
+        return entry;
+      }
+      entry.EstadoRegistro = found.EstadoRegistro;
+      if (found.CodigoErrorRegistro !== undefined) {
+        entry.CodigoErrorRegistro = found.CodigoErrorRegistro;
+        entry.DescripcionErrorRegistro = found.DescripcionErrorRegistro;
+      }
+      entry.Huella = found.DatosRegistroFacturacion?.Huella;
+    }
+    entry.matchesExpectation =
+      submittedState === "Correcto"
+        ? found?.EstadoRegistro === "Correcto" && entry.Huella === record.Huella
+        : submittedState !== "Incorrecto" || found === undefined;
+  } catch (error) {
+    entry.error = error instanceof Error ? error.message : String(error);
+    entry.matchesExpectation = false;
+  }
+  return entry;
+}
+
+export async function submitReplacementAfterCreditProbe(
+  client,
+  cabecera,
+  options,
+  {
+    report = () => {},
+    reportConsulta = () => {},
+    waitForSubmission = waitForNextSubmission,
+    now = () => new Date(),
+    rawExchange = () => undefined,
+    clearRawExchange = () => {},
+  } = {},
+) {
+  const evidence = { incomplete: false, requests: [] };
+  const sent = [];
+  let previousResponse;
+  submitting: for (const [number, requests] of R5S_PLAN) {
+    const chain = [];
+    for (const kinds of requests) {
+      const stages = kinds.map((kind) => `case${number}${R5S_KINDS[kind][0]}`);
+      const request = { stages };
+      const entries = stages.map(() => ({}));
+      let attempted = false;
+      let checked = {};
+      try {
+        if (previousResponse) await waitForSubmission(previousResponse.TiempoEsperaEnvio);
+        const batch = buildReplacementAfterCreditProbeRecords(options, stages, now(), chain);
+        chain.push(...batch);
+        for (const [i, record] of batch.entries()) entries[i].record = record;
+        clearRawExchange();
+        attempted = true;
+        sent.push(...stages);
+        request.response = await client.submit(
+          cabecera,
+          batch.map((record) => ({ RegistroAlta: record })),
+        );
+        request.exchange = rawExchange();
+        checked = replacementAfterCreditLines(request, batch);
+        if (checked.unverified !== undefined) request.unverified = checked.unverified;
+      } catch (error) {
+        request.error = error instanceof Error ? error.message : String(error);
+        if (attempted) request.exchange = rawExchange();
+      }
+      for (const [i, stage] of stages.entries()) {
+        const entry = entries[i];
+        if (checked.lines) {
+          const line = checked.lines[i];
+          const expected = replacementAfterCreditExpected(stage);
+          entry.EstadoEnvio = request.response.EstadoEnvio;
+          entry.line = line;
+          entry.matchesExpectation =
+            line.EstadoRegistro === expected.state &&
+            (expected.code === undefined || Number(line.CodigoErrorRegistro) === expected.code);
+        } else {
+          if (request.unverified !== undefined) entry.unverified = request.unverified;
+          if (request.error !== undefined) entry.error = request.error;
+          entry.matchesExpectation = false;
+        }
+        evidence[stage] = entry;
+      }
+      evidence.requests.push(request);
+      report(
+        request,
+        stages.map((stage, i) => [stage, entries[i]]),
+      );
+      if (!checked.lines) {
+        evidence.incomplete = true;
+        evidence.stoppedAfter = stages.at(-1);
+        break submitting;
+      }
+      previousResponse = request.response;
+    }
+  }
+  evidence.consulta = {};
+  const consultaCabecera = issuerConsultaHeader(cabecera.ObligadoEmision);
+  for (const stage of sent) {
+    const { record, line } = evidence[stage];
+    const entry = await replacementAfterCreditLookup(
+      client,
+      consultaCabecera,
+      record,
+      line?.EstadoRegistro,
+    );
+    if (entry.error !== undefined || entry.unanswered !== undefined) evidence.incomplete = true;
+    evidence.consulta[stage] = entry;
+    reportConsulta(stage, entry);
   }
   return evidence;
 }
@@ -2962,6 +3274,7 @@ async function main() {
       "double-correction",
       "final-cent-correction",
       "advance-rest",
+      "replacement-after-credit",
     ].includes(mode)
   ) {
     throw new Error("Unknown AEAT preproduction mode");
@@ -3055,6 +3368,56 @@ async function main() {
       `AEAT handover-tail complete: ${outageFlagEvidenceJson(evidence, identities)}\n`,
     );
     if (evidence.incomplete) process.exitCode = 1;
+    return;
+  }
+
+  if (mode === "replacement-after-credit") {
+    process.stdout.write(
+      "AEAT replacement-after-credit expectation: each receipt dated tomorrow (cases 1-3 and 5) Incorrecto with 1112; every R5 Correcto, case 5's refund naming the date fix included; case 4's receipt dated today Correcto. Exit 0 only when every record matches and every lookup answers: each record answered Correcto found once, Correcto, with the hash sent, and each refused record not found; any other result exits 1 for the owner to read. An R5 Incorrecto while case 4 is Correcto is the finding Waitron needs: read its CodigoErrorRegistro. Each case chains every record to the one before it, a refused one included. Test service only; results do not establish production behaviour.\n",
+    );
+    const probeOptions = {
+      nif,
+      name,
+      systemNif: required("AEAT_TEST_SYSTEM_NIF"),
+      systemName: required("AEAT_TEST_SYSTEM_NAME"),
+      recipientNif: recipient.NIF,
+      recipientName: recipient.NombreRazon,
+      runId,
+    };
+    const identities = [
+      nif,
+      name,
+      probeOptions.systemNif,
+      probeOptions.systemName,
+      recipient.NIF,
+      recipient.NombreRazon,
+    ];
+    const evidence = await submitReplacementAfterCreditProbe(client, cabecera, probeOptions, {
+      rawExchange: () => ({ request: lastRawRequest, reply: lastRawReply }),
+      clearRawExchange: () => {
+        lastRawRequest = undefined;
+        lastRawReply = undefined;
+      },
+      report: (request, entries) => {
+        for (const [stage, entry] of entries) {
+          process.stdout.write(
+            `AEAT replacement-after-credit ${stage} result: ${outageFlagEvidenceJson(replacementAfterCreditSummary(stage, entry), identities)}\n`,
+          );
+        }
+        process.stdout.write(
+          `AEAT replacement-after-credit ${request.stages.join("+")}: ${outageFlagEvidenceJson(request, identities)}\n`,
+        );
+      },
+      reportConsulta: (stage, entry) => {
+        process.stdout.write(
+          `AEAT replacement-after-credit ${stage} consulta: ${outageFlagEvidenceJson(entry, identities)}\n`,
+        );
+      },
+    });
+    process.stdout.write(
+      `AEAT replacement-after-credit complete: ${outageFlagEvidenceJson(evidence, identities)}\n`,
+    );
+    if (!replacementAfterCreditPassed(evidence)) process.exitCode = 1;
     return;
   }
 
