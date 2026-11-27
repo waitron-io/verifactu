@@ -63,6 +63,7 @@ import {
   buildCadena,
   computeHuella,
   createClient,
+  formatDateTime,
   serializeEnvio,
   validate,
 } from "../dist/index.js";
@@ -6500,3 +6501,1058 @@ test("Unicode-date probe accepts a re-run attempt's run id and still refuses oth
     );
   }
 });
+
+const R5S_STAGES = [
+  "case1Receipt",
+  "case1Refund",
+  "case1DateFix",
+  "case2Receipt",
+  "case2Refund",
+  "case2DateFix",
+  "case3Receipt",
+  "case3DateFix",
+  "case4Receipt",
+  "case4Refund",
+  "case5Receipt",
+  "case5DateFix",
+  "case5Refund",
+];
+const R5S_REQUESTS = [
+  ["case1Receipt", "case1Refund", "case1DateFix"],
+  ["case2Receipt"],
+  ["case2Refund"],
+  ["case2DateFix"],
+  ["case3Receipt"],
+  ["case3DateFix"],
+  ["case4Receipt"],
+  ["case4Refund"],
+  ["case5Receipt"],
+  ["case5DateFix"],
+  ["case5Refund"],
+];
+const R5S_TOMORROW = new Set(["case1Receipt", "case2Receipt", "case3Receipt", "case5Receipt"]);
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function r5sRecordsAt(now, options = decimalOptions) {
+  assert.equal(typeof live.buildReplacementAfterCreditProbeRecords, "function");
+  const records = {};
+  for (const stages of R5S_REQUESTS) {
+    const chain = Object.entries(records)
+      .filter(([stage]) => stage.slice(0, 5) === stages[0].slice(0, 5))
+      .map(([, record]) => record);
+    const built = live.buildReplacementAfterCreditProbeRecords(options, stages, now, chain);
+    for (const [i, stage] of stages.entries()) records[stage] = built[i];
+  }
+  return records;
+}
+
+function r5sSent(requests) {
+  const sent = requests.flat();
+  return Object.fromEntries(R5S_REQUESTS.flat().map((stage, i) => [stage, sent[i]]));
+}
+
+function r5sEnvelope(response) {
+  const states = response.RespuestaLinea.map((line) => line.EstadoRegistro);
+  response.EstadoEnvio = states.every((state) => state === "Correcto")
+    ? "Correcto"
+    : states.every((state) => state === "Incorrecto")
+      ? "Incorrecto"
+      : "ParcialmenteCorrecto";
+  return response;
+}
+
+async function r5sProbe(fault = {}) {
+  assert.equal(typeof live.submitReplacementAfterCreditProbe, "function");
+  let clock = decimalOptions.now.getTime();
+  const fake = createFakeAeat({ serverNow: new Date(clock), tiempoEsperaInicial: 13 });
+  let exchange;
+  const requests = [];
+  const submitClocks = [];
+  const consultas = [];
+  const waits = [];
+  const reports = [];
+  const consultaReports = [];
+  let clockReads = 0;
+  const soap = createClient({
+    endpoint: "https://fake.aeat.test/soap",
+    fetch: async (url, init) => {
+      exchange = { request: init.body };
+      const response = await fake.fetch(url, init);
+      exchange.reply = await response.clone().text();
+      return response;
+    },
+  });
+  const uncaptured = createClient({
+    endpoint: "https://fake.aeat.test/soap",
+    fetch: (url, init) => fake.fetch(url, init),
+  });
+  const evidence = await live.submitReplacementAfterCreditProbe(
+    {
+      async submit(header, records) {
+        requests.push(records.map(({ RegistroAlta }) => structuredClone(RegistroAlta)));
+        submitClocks.push(clock);
+        const n = requests.length;
+        if (fault.preTransportAt === n) throw new Error("failed before transport");
+        if (fault.transportAt === n) {
+          exchange = { request: serializeEnvio(header, records) };
+          throw new Error("connection closed");
+        }
+        const response = await (fault.uncapturedAt === n ? uncaptured : soap).submit(
+          header,
+          records,
+        );
+        response.TiempoEsperaEnvio = fault.waitSeconds ?? n + 10;
+        return fault.submission?.(response, n) ?? response;
+      },
+      async consultar(header, filter) {
+        consultas.push([structuredClone(header), structuredClone(filter)]);
+        if (fault.consultaFails === consultas.length) throw new Error("consulta failed");
+        const result = await soap.consultar(header, filter);
+        return fault.consultation?.(result, filter.NumSerieFactura) ?? result;
+      },
+    },
+    successorHeader,
+    { ...decimalOptions, ...fault.options },
+    {
+      now: () => (++clockReads === fault.invalidClockAt ? new Date(NaN) : new Date(clock)),
+      waitForSubmission: async (seconds) => {
+        waits.push(seconds);
+        if (fault.waitBefore === requests.length + 1) throw new Error("wait interrupted");
+        clock += seconds * 1000;
+        fake.setServerNow(new Date(clock));
+      },
+      rawExchange: () => {
+        if (fault.noExchange || !exchange) return undefined;
+        const copy = structuredClone(exchange);
+        if (fault.dropExchange) delete copy[fault.dropExchange];
+        return copy;
+      },
+      clearRawExchange: () => {
+        exchange = undefined;
+      },
+      report: (request, entries) => reports.push(structuredClone([request, entries])),
+      reportConsulta: (stage, entry) => consultaReports.push([stage, structuredClone(entry)]),
+    },
+  );
+  return { evidence, requests, submitClocks, consultas, waits, reports, consultaReports };
+}
+
+function refuseLine(serialEnd, code = 1100) {
+  return (response) => {
+    for (const line of response.RespuestaLinea) {
+      if (line.IDFactura.NumSerieFactura.endsWith(serialEnd)) {
+        line.EstadoRegistro = "Incorrecto";
+        line.CodigoErrorRegistro = code;
+        line.DescripcionErrorRegistro = "controlled refusal";
+      }
+    }
+    return r5sEnvelope(response);
+  };
+}
+
+function atLookup(serialEnd, mutate) {
+  return (result, serial) => {
+    if (serial.endsWith(serialEnd)) mutate(result, serial);
+    return result;
+  };
+}
+
+test("replacement after credit chains each record to the one before it in its case, even a refused one, unlike advance-rest", () => {
+  const records = r5sRecordsAt(decimalOptions.now);
+  assert.deepEqual(Object.keys(records), R5S_STAGES);
+  for (const [number, stages] of [
+    [1, ["case1Receipt", "case1Refund", "case1DateFix"]],
+    [2, ["case2Receipt", "case2Refund", "case2DateFix"]],
+    [3, ["case3Receipt", "case3DateFix"]],
+    [4, ["case4Receipt", "case4Refund"]],
+    [5, ["case5Receipt", "case5DateFix", "case5Refund"]],
+  ]) {
+    const chain = stages.map((stage) => records[stage]);
+    assert.deepEqual(chain[0].Encadenamiento, { PrimerRegistro: "S" });
+    for (const [i, record] of chain.entries()) {
+      assert.equal(record.SistemaInformatico.NumeroInstalacion, `CI-R5S-12345-${number}`);
+      if (i > 0) {
+        assert.deepEqual(record.Encadenamiento, {
+          RegistroAnterior: { ...chain[i - 1].IDFactura, Huella: chain[i - 1].Huella },
+        });
+      }
+    }
+  }
+  assert.equal(records.case1Receipt.IDFactura.NumSerieFactura, "CI-R5S/20260927/12345-1F");
+  assert.equal(records.case2Refund.IDFactura.NumSerieFactura, "CI-R5S/20260927/12345-2I");
+  assert.equal(records.case3DateFix.IDFactura.NumSerieFactura, "CI-R5S/20260927/12345-3S");
+  assert.equal(records.case5Refund.IDFactura.NumSerieFactura, "CI-R5S/20260927/12345-5I");
+  assert.equal(records.case4Receipt.RefExterna, "CI-R5S-12345-4F");
+  assert.equal(
+    new Set(Object.values(records).map((record) => record.IDFactura.NumSerieFactura)).size,
+    13,
+  );
+  const fastClock = new Date(decimalOptions.now.getTime() + DAY_MS);
+  for (const [stage, record] of Object.entries(records)) {
+    const corrected =
+      stage === "case5Refund"
+        ? records.case5DateFix
+        : records[stage.replace(/(Refund|DateFix)$/, "Receipt")];
+    assert.equal(record.Destinatarios, undefined, stage);
+    assert.equal(record.FechaOperacion, undefined, stage);
+    assert.equal(record.Desglose.length, 1, stage);
+    assert.equal(record.Desglose[0].TipoImpositivo, "10.00", stage);
+    assert.equal(record.Desglose[0].ClaveRegimen, "01", stage);
+    assert.equal(record.Desglose[0].CalificacionOperacion, "S1", stage);
+    assert.equal(record.Huella, computeHuella(record), stage);
+    const futureReceipt = R5S_TOMORROW.has(stage);
+    assert.equal(
+      record.IDFactura.FechaExpedicionFactura,
+      futureReceipt ? "28-09-2026" : "27-09-2026",
+    );
+    assert.equal(
+      record.FechaHoraHusoGenRegistro,
+      futureReceipt ? "2026-09-28T14:00:00+02:00" : "2026-09-27T14:00:00+02:00",
+      stage,
+    );
+    assert.deepEqual(
+      validate(record, { now: futureReceipt ? fastClock : decimalOptions.now }).filter(
+        ({ severity }) => severity === "error",
+      ),
+      [],
+      stage,
+    );
+    if (stage.endsWith("Receipt")) {
+      assert.equal(record.TipoFactura, "F2");
+      assert.equal(record.TipoRectificativa, undefined);
+      assert.equal(record.FacturasRectificadas, undefined);
+      assert.equal(record.ImporteRectificacion, undefined);
+    } else {
+      assert.equal(record.TipoFactura, "R5");
+      assert.deepEqual(record.FacturasRectificadas, {
+        IDFacturaRectificada: [corrected.IDFactura],
+      });
+    }
+    const refund = stage.endsWith("Refund");
+    assert.deepEqual(
+      [
+        record.Desglose[0].BaseImponibleOimporteNoSujeto,
+        record.Desglose[0].CuotaRepercutida,
+        record.CuotaTotal,
+        record.ImporteTotal,
+      ],
+      refund ? ["-4.55", "-0.45", "-0.45", "-5.00"] : ["45.45", "4.55", "4.55", "50.00"],
+      stage,
+    );
+    if (refund) {
+      assert.equal(record.TipoRectificativa, "I");
+      assert.equal(record.ImporteRectificacion, undefined);
+    }
+    if (stage.endsWith("DateFix")) {
+      assert.equal(record.TipoRectificativa, "S");
+      assert.deepEqual(record.ImporteRectificacion, {
+        BaseRectificada: "0.00",
+        CuotaRectificada: "0.00",
+      });
+    }
+  }
+});
+
+test("replacement after credit case 5 refunds the date fix, naming its number and issue date", () => {
+  const records = r5sRecordsAt(decimalOptions.now);
+  assert.deepEqual(records.case5DateFix.FacturasRectificadas, {
+    IDFacturaRectificada: [records.case5Receipt.IDFactura],
+  });
+  assert.deepEqual(records.case5Refund.FacturasRectificadas.IDFacturaRectificada, [
+    {
+      IDEmisorFactura: decimalOptions.nif,
+      NumSerieFactura: "CI-R5S/20260927/12345-5S",
+      FechaExpedicionFactura: "27-09-2026",
+    },
+  ]);
+  assert.deepEqual(records.case5Refund.Encadenamiento, {
+    RegistroAnterior: { ...records.case5DateFix.IDFactura, Huella: records.case5DateFix.Huella },
+  });
+  assert.equal(records.case5Refund.TipoRectificativa, "I");
+  assert.equal(records.case5Refund.ImporteTotal, "-5.00");
+});
+
+for (const [change, now, issued, generated] of [
+  ["autumn", "2027-10-30T22:00:00Z", "01-11-2027", "2027-11-01T00:00:00+01:00"],
+  ["spring", "2027-03-27T22:30:00Z", "28-03-2027", "2027-03-28T23:30:00+02:00"],
+]) {
+  test(`replacement after credit generates the receipt dated tomorrow on its own Madrid issue day across the ${change} clock change`, () => {
+    assert.equal(typeof live.buildReplacementAfterCreditProbeRecords, "function");
+    const [receipt] = live.buildReplacementAfterCreditProbeRecords(
+      decimalOptions,
+      ["case1Receipt"],
+      new Date(now),
+    );
+    assert.equal(receipt.IDFactura.FechaExpedicionFactura, issued);
+    assert.equal(receipt.FechaHoraHusoGenRegistro, generated);
+    const [day, month, year] = issued.split("-");
+    assert.equal(receipt.FechaHoraHusoGenRegistro.slice(0, 10), `${year}-${month}-${day}`);
+  });
+}
+
+test("replacement after credit sends case 1 in one request and every other record alone, then consults each number", async () => {
+  const { evidence, requests, submitClocks, consultas, waits, reports, consultaReports } =
+    await r5sProbe();
+  assert.equal(evidence.incomplete, false);
+  assert.equal(live.replacementAfterCreditPassed(evidence), true);
+  assert.deepEqual(
+    requests.map((batch) => batch.map((record) => record.IDFactura.NumSerieFactura.slice(-2))),
+    [
+      ["1F", "1I", "1S"],
+      ["2F"],
+      ["2I"],
+      ["2S"],
+      ["3F"],
+      ["3S"],
+      ["4F"],
+      ["4I"],
+      ["5F"],
+      ["5S"],
+      ["5I"],
+    ],
+  );
+  assert.deepEqual(waits, [11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
+  assert.deepEqual(
+    reports.map(([request]) => request.stages),
+    R5S_REQUESTS,
+  );
+  const sent = r5sSent(requests);
+  for (const [i, stages] of R5S_REQUESTS.entries()) {
+    for (const stage of stages) {
+      const entry = evidence[stage];
+      assert.deepEqual(entry.record, sent[stage], stage);
+      if (!R5S_TOMORROW.has(stage)) {
+        assert.equal(
+          entry.record.FechaHoraHusoGenRegistro,
+          formatDateTime(new Date(submitClocks[i]), 120),
+          stage,
+        );
+      }
+      assert.equal(entry.matchesExpectation, true, stage);
+      assert.equal(entry.unverified, undefined, stage);
+      const future = R5S_TOMORROW.has(stage);
+      assert.equal(entry.line.EstadoRegistro, future ? "Incorrecto" : "Correcto", stage);
+      if (future) assert.equal(entry.line.CodigoErrorRegistro, 1112, stage);
+    }
+  }
+  for (const [request] of reports) {
+    assert.match(request.exchange.request, /RegFactuSistemaFacturacion/);
+    assert.match(request.exchange.reply, /RespuestaRegFactuSistemaFacturacion/);
+  }
+  assert.deepEqual(
+    consultas,
+    R5S_STAGES.map((stage) => {
+      const [, month, year] = sent[stage].IDFactura.FechaExpedicionFactura.split("-");
+      return [
+        issuerConsultaHeader(successorHeader.ObligadoEmision),
+        minimalIssuerConsultaFilter(sent[stage], year, month),
+      ];
+    }),
+  );
+  assert.deepEqual(
+    consultaReports.map(([stage]) => stage),
+    R5S_STAGES,
+  );
+  for (const stage of R5S_STAGES) {
+    assert.equal(evidence.consulta[stage].matchesExpectation, true, stage);
+  }
+  assert.equal(evidence.consulta.case1Receipt.ResultadoConsulta, "SinDatos");
+  assert.equal(evidence.consulta.case1Receipt.filter.Periodo, "09");
+  assert.equal(evidence.consulta.case2DateFix.ResultadoConsulta, "ConDatos");
+  assert.equal(evidence.consulta.case2DateFix.EstadoRegistro, "Correcto");
+  assert.equal(evidence.consulta.case2DateFix.Huella, sent.case2DateFix.Huella);
+  assert.equal(evidence.consulta.case5Refund.Huella, sent.case5Refund.Huella);
+});
+
+test("replacement after credit builds each request's records after its wait, at the clock read then", async () => {
+  const { evidence, requests, submitClocks, waits } = await r5sProbe({ waitSeconds: 60 });
+  assert.equal(
+    waits.reduce((total, seconds) => total + seconds, 0),
+    600,
+  );
+  for (const [i, batch] of requests.entries()) {
+    const at = submitClocks[i];
+    for (const [j, record] of batch.entries()) {
+      const stage = R5S_REQUESTS[i][j];
+      const generatedAt = R5S_TOMORROW.has(stage) ? at + DAY_MS : at;
+      assert.equal(
+        record.FechaHoraHusoGenRegistro,
+        formatDateTime(new Date(generatedAt), 120),
+        stage,
+      );
+    }
+  }
+  const sent = r5sSent(requests);
+  assert.deepEqual(sent.case2DateFix.Encadenamiento, {
+    RegistroAnterior: { ...sent.case2Refund.IDFactura, Huella: sent.case2Refund.Huella },
+  });
+  assert.deepEqual(sent.case2DateFix.FacturasRectificadas, {
+    IDFacturaRectificada: [sent.case2Receipt.IDFactura],
+  });
+  assert.deepEqual(sent.case5Refund.FacturasRectificadas, {
+    IDFacturaRectificada: [sent.case5DateFix.IDFactura],
+  });
+  assert.equal(live.replacementAfterCreditPassed(evidence), true);
+});
+
+test("replacement after credit summarises each record's case, expectation and AEAT's verdict in one line", () => {
+  assert.equal(typeof live.replacementAfterCreditSummary, "function");
+  assert.deepEqual(
+    live.replacementAfterCreditSummary("case2DateFix", {
+      EstadoEnvio: "Incorrecto",
+      line: {
+        EstadoRegistro: "Incorrecto",
+        CodigoErrorRegistro: 1100,
+        DescripcionErrorRegistro: "controlled refusal",
+      },
+    }),
+    {
+      case: 2,
+      record: "date fix replacing the receipt (R5 S)",
+      expected: "Correcto",
+      EstadoEnvio: "Incorrecto",
+      EstadoRegistro: "Incorrecto",
+      CodigoErrorRegistro: 1100,
+      DescripcionErrorRegistro: "controlled refusal",
+    },
+  );
+  assert.deepEqual(
+    live.replacementAfterCreditSummary("case5Refund", {
+      EstadoEnvio: "Correcto",
+      line: { EstadoRegistro: "Correcto" },
+    }),
+    {
+      case: 5,
+      record: "refund of 5.00 by difference naming the date fix (R5 I)",
+      expected: "Correcto",
+      EstadoEnvio: "Correcto",
+      EstadoRegistro: "Correcto",
+    },
+  );
+  assert.deepEqual(live.replacementAfterCreditSummary("case5Receipt", { error: "boom" }), {
+    case: 5,
+    record: "receipt dated tomorrow (F2)",
+    expected: "Incorrecto 1112",
+    verdict: "unverified",
+    reason: "no answer from AEAT was read",
+    error: "boom",
+  });
+  assert.deepEqual(
+    live.replacementAfterCreditSummary("case4Refund", {
+      line: { EstadoRegistro: "Correcto" },
+      unverified: "AEAT's reply names another invoice",
+    }),
+    {
+      case: 4,
+      record: "refund of 5.00 by difference (R5 I)",
+      expected: "Correcto",
+      verdict: "unverified",
+      reason: "AEAT's reply names another invoice",
+    },
+  );
+});
+
+test("replacement after credit keeps going past a refused R5 and fails the run", async () => {
+  const { evidence, requests } = await r5sProbe({
+    submission: (response, n) => (n === 4 ? refuseLine("-2S")(response) : response),
+  });
+  assert.equal(requests.length, 11);
+  assert.equal(evidence.incomplete, false);
+  assert.equal(evidence.case2DateFix.matchesExpectation, false);
+  assert.equal(evidence.case2DateFix.line.CodigoErrorRegistro, 1100);
+  assert.equal(evidence.case4Refund.matchesExpectation, true);
+  assert.equal(live.replacementAfterCreditPassed(evidence), false);
+});
+
+test("replacement after credit fails the run when a refused R5 sits inside case 1's request", async () => {
+  const { evidence, requests } = await r5sProbe({
+    submission: (response, n) => (n === 1 ? refuseLine("-1I")(response) : response),
+  });
+  assert.equal(requests.length, 11);
+  assert.equal(evidence.case1Refund.matchesExpectation, false);
+  assert.equal(evidence.case1DateFix.matchesExpectation, true);
+  assert.equal(live.replacementAfterCreditPassed(evidence), false);
+});
+
+test("replacement after credit fails the run when AEAT refuses the refund naming the date fix", async () => {
+  const { evidence, requests } = await r5sProbe({
+    submission: (response, n) => (n === 11 ? refuseLine("-5I")(response) : response),
+  });
+  assert.equal(requests.length, 11);
+  assert.equal(evidence.incomplete, false);
+  assert.equal(evidence.case5DateFix.matchesExpectation, true);
+  assert.equal(evidence.case5Refund.matchesExpectation, false);
+  assert.equal(evidence.case5Refund.line.CodigoErrorRegistro, 1100);
+  assert.equal(live.replacementAfterCreditPassed(evidence), false);
+});
+
+for (const [name, mutate] of [
+  [
+    "AEAT accepts a receipt dated tomorrow",
+    (response) => {
+      response.RespuestaLinea[0].EstadoRegistro = "Correcto";
+      delete response.RespuestaLinea[0].CodigoErrorRegistro;
+      delete response.RespuestaLinea[0].DescripcionErrorRegistro;
+      return r5sEnvelope(response);
+    },
+  ],
+  ["AEAT refuses a receipt dated tomorrow with another code", refuseLine("-3F", 1100)],
+]) {
+  test(`replacement after credit fails the run when ${name}`, async () => {
+    const { evidence } = await r5sProbe({
+      submission: (response, n) => (n === 5 ? mutate(response) : response),
+    });
+    assert.equal(evidence.incomplete, false);
+    assert.equal(evidence.case3Receipt.matchesExpectation, false);
+    assert.equal(live.replacementAfterCreditPassed(evidence), false);
+  });
+}
+
+test("replacement after credit fails the run when the dated-today control is refused", async () => {
+  const { evidence } = await r5sProbe({
+    submission: (response, n) => (n === 7 ? refuseLine("-4F")(response) : response),
+  });
+  assert.equal(evidence.case4Receipt.matchesExpectation, false);
+  assert.equal(live.replacementAfterCreditPassed(evidence), false);
+});
+
+test("replacement after credit passes only when every planned record and its lookup matched", () => {
+  const passing = Object.fromEntries(
+    R5S_STAGES.map((stage) => [stage, { matchesExpectation: true }]),
+  );
+  const consulta = Object.fromEntries(
+    R5S_STAGES.map((stage) => [stage, { matchesExpectation: true }]),
+  );
+  assert.equal(
+    live.replacementAfterCreditPassed({ incomplete: false, ...passing, consulta }),
+    true,
+  );
+  assert.equal(
+    live.replacementAfterCreditPassed({ incomplete: true, ...passing, consulta }),
+    false,
+  );
+  const missing = { incomplete: false, ...passing, consulta };
+  delete missing.case5Refund;
+  assert.equal(live.replacementAfterCreditPassed(missing), false);
+  const lookupMissing = { incomplete: false, ...passing, consulta: { ...consulta } };
+  delete lookupMissing.consulta.case5Refund;
+  assert.equal(live.replacementAfterCreditPassed(lookupMissing), false);
+  const lookupFailed = {
+    incomplete: false,
+    ...passing,
+    consulta: { ...consulta, case2DateFix: { matchesExpectation: false } },
+  };
+  assert.equal(live.replacementAfterCreditPassed(lookupFailed), false);
+});
+
+for (const [name, at, fault, reason, stopped] of [
+  [
+    "an empty reply line list",
+    3,
+    { mutate: (r) => (r.RespuestaLinea = []) },
+    /0 lines, not 1/,
+    ["case2Refund"],
+  ],
+  [
+    "a reply to case 1 missing a line",
+    1,
+    { mutate: (r) => r.RespuestaLinea.pop() },
+    /2 lines, not 3/,
+    R5S_REQUESTS[0],
+  ],
+  [
+    "a reply to case 1 naming one invoice twice",
+    1,
+    { mutate: (r) => (r.RespuestaLinea[2] = structuredClone(r.RespuestaLinea[0])) },
+    /does not name each invoice sent exactly once/,
+    R5S_REQUESTS[0],
+  ],
+  [
+    "a reply naming another invoice",
+    4,
+    { mutate: (r) => (r.RespuestaLinea[0].IDFactura.NumSerieFactura = "other") },
+    /does not name each invoice sent exactly once/,
+    ["case2DateFix"],
+  ],
+  [
+    "a reply line for a cancellation",
+    5,
+    { mutate: (r) => (r.RespuestaLinea[0].Operacion = { TipoOperacion: "Anulacion" }) },
+    /not for an Alta/,
+    ["case3Receipt"],
+  ],
+  [
+    "a reply line with no operation",
+    6,
+    { mutate: (r) => delete r.RespuestaLinea[0].Operacion },
+    /not for an Alta/,
+    ["case3DateFix"],
+  ],
+  [
+    "a reply line carrying another external reference",
+    7,
+    { mutate: (r) => (r.RespuestaLinea[0].RefExterna = "other") },
+    /another RefExterna/,
+    ["case4Receipt"],
+  ],
+  [
+    "a reply line with no record state",
+    8,
+    { mutate: (r) => (r.RespuestaLinea[0].EstadoRegistro = undefined) },
+    /no recognised EstadoRegistro/,
+    ["case4Refund"],
+  ],
+  [
+    "a reply line with an unknown record state",
+    2,
+    { mutate: (r) => (r.RespuestaLinea[0].EstadoRegistro = "Pendiente") },
+    /no recognised EstadoRegistro/,
+    ["case2Receipt"],
+  ],
+  [
+    "a reply to case 5's refund naming another invoice",
+    11,
+    { mutate: (r) => (r.RespuestaLinea[0].IDFactura.NumSerieFactura = "other") },
+    /does not name each invoice sent exactly once/,
+    ["case5Refund"],
+  ],
+  ["no raw exchange", 1, { noExchange: true }, /not captured/, R5S_REQUESTS[0]],
+  ["no raw request", 1, { dropExchange: "request" }, /not captured/, R5S_REQUESTS[0]],
+  ["no raw reply", 1, { dropExchange: "reply" }, /not captured/, R5S_REQUESTS[0]],
+]) {
+  test(`replacement after credit stops after ${name} and prints no verdict for it`, async () => {
+    const { evidence, requests, consultas } = await r5sProbe({
+      ...fault,
+      submission(response, n) {
+        if (n === at) fault.mutate?.(response);
+        return response;
+      },
+    });
+    assert.equal(requests.length, at);
+    assert.equal(evidence.incomplete, true);
+    assert.equal(evidence.stoppedAfter, stopped.at(-1));
+    assert.equal(live.replacementAfterCreditPassed(evidence), false);
+    for (const stage of stopped) {
+      assert.equal(evidence[stage].matchesExpectation, false, stage);
+      const summary = live.replacementAfterCreditSummary(stage, evidence[stage]);
+      assert.equal(summary.verdict, "unverified");
+      assert.match(summary.reason, reason);
+      assert.equal("EstadoRegistro" in summary, false);
+    }
+    const next = R5S_STAGES[R5S_STAGES.indexOf(stopped.at(-1)) + 1];
+    if (next) assert.equal(evidence[next], undefined);
+    assert.equal(consultas.length, requests.flat().length);
+  });
+}
+
+for (const [variant, at, mutate] of [
+  ["Correcto over case 1's refused receipt", 1, (r) => (r.EstadoEnvio = "Correcto")],
+  ["Incorrecto over case 1's accepted R5s", 1, (r) => (r.EstadoEnvio = "Incorrecto")],
+  ["Correcto over a refused receipt", 2, (r) => (r.EstadoEnvio = "Correcto")],
+  [
+    "ParcialmenteCorrecto over an accepted refund",
+    3,
+    (r) => (r.EstadoEnvio = "ParcialmenteCorrecto"),
+  ],
+  ["Incorrecto over an accepted date fix", 4, (r) => (r.EstadoEnvio = "Incorrecto")],
+  ["no EstadoEnvio", 10, (r) => delete r.EstadoEnvio],
+]) {
+  test(`replacement after credit stops on a reply whose envelope disagrees with its lines (${variant})`, async () => {
+    const { evidence, requests } = await r5sProbe({
+      submission(response, n) {
+        if (n === at) mutate(response);
+        return response;
+      },
+    });
+    const stages = R5S_REQUESTS[at - 1];
+    assert.equal(requests.length, at);
+    assert.equal(evidence.incomplete, true);
+    assert.equal(evidence.stoppedAfter, stages.at(-1));
+    assert.equal(live.replacementAfterCreditPassed(evidence), false);
+    for (const stage of stages) {
+      assert.equal(evidence[stage].matchesExpectation, false, stage);
+      const summary = live.replacementAfterCreditSummary(stage, evidence[stage]);
+      assert.equal(summary.verdict, "unverified");
+      assert.match(summary.reason, /EstadoEnvio/);
+    }
+  });
+}
+
+test("replacement after credit reads a line accepted with errors under a partly correct envelope as an answer", async () => {
+  const { evidence, requests } = await r5sProbe({
+    submission(response, n) {
+      if (n === 3) {
+        response.RespuestaLinea[0].EstadoRegistro = "AceptadoConErrores";
+        response.RespuestaLinea[0].CodigoErrorRegistro = 2004;
+        r5sEnvelope(response);
+        assert.equal(response.EstadoEnvio, "ParcialmenteCorrecto");
+      }
+      return response;
+    },
+  });
+  assert.equal(requests.length, 11);
+  assert.equal(evidence.incomplete, false);
+  assert.equal(evidence.case2Refund.line.EstadoRegistro, "AceptadoConErrores");
+  assert.equal(evidence.case2Refund.matchesExpectation, false);
+  assert.equal(evidence.consulta.case2Refund.matchesExpectation, true);
+  assert.equal(live.replacementAfterCreditPassed(evidence), false);
+});
+
+test("replacement after credit stops at a transport error, keeps the request and consults what it sent", async () => {
+  const { evidence, requests, consultas } = await r5sProbe({ transportAt: 2 });
+  assert.equal(requests.length, 2);
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedAfter, "case2Receipt");
+  assert.match(evidence.case2Receipt.error, /connection closed/);
+  assert.ok(evidence.requests[1].exchange.request);
+  assert.equal(evidence.case2Refund, undefined);
+  assert.equal(consultas.length, 4);
+  assert.equal(live.replacementAfterCreditPassed(evidence), false);
+});
+
+test("replacement after credit keeps no earlier exchange when submission fails before transport", async () => {
+  const { evidence, requests } = await r5sProbe({ preTransportAt: 3 });
+  assert.equal(requests.length, 3);
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedAfter, "case2Refund");
+  assert.match(evidence.case2Refund.error, /failed before transport/);
+  assert.equal(evidence.requests[2].exchange, undefined);
+  assert.equal(evidence.case2Receipt.matchesExpectation, true);
+  assert.equal(evidence.case2DateFix, undefined);
+  assert.equal(live.replacementAfterCreditPassed(evidence), false);
+});
+
+test("replacement after credit stops when a reply after a captured one has no capture of its own", async () => {
+  const { evidence, requests } = await r5sProbe({ uncapturedAt: 2 });
+  assert.equal(requests.length, 2);
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedAfter, "case2Receipt");
+  assert.equal(evidence.case1DateFix.matchesExpectation, true);
+  assert.match(evidence.case2Receipt.unverified, /not captured/);
+  assert.equal(evidence.requests[1].exchange, undefined);
+});
+
+test("replacement after credit stops at an interrupted wait without sending", async () => {
+  const { evidence, requests, consultas } = await r5sProbe({ waitBefore: 3 });
+  assert.equal(requests.length, 2);
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedAfter, "case2Refund");
+  assert.match(evidence.case2Refund.error, /wait interrupted/);
+  assert.equal(evidence.requests[2].exchange, undefined);
+  assert.equal(consultas.length, 4);
+});
+
+test("replacement after credit sends nothing when the first request's records fail validation", async () => {
+  const { evidence, requests, consultas } = await r5sProbe({ options: { nif: "11111111X" } });
+  assert.equal(requests.length, 0);
+  assert.equal(consultas.length, 0);
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedAfter, "case1DateFix");
+  assert.match(evidence.case1Receipt.error, /NIF/);
+  assert.equal(evidence.requests[0].exchange, undefined);
+  assert.equal(live.replacementAfterCreditPassed(evidence), false);
+});
+
+test("replacement after credit counts a failed consulta as an incomplete run", async () => {
+  const { evidence, consultas } = await r5sProbe({ consultaFails: 2 });
+  assert.equal(consultas.length, 13);
+  assert.match(evidence.consulta.case1Refund.error, /consulta failed/);
+  assert.equal(evidence.consulta.case1Refund.matchesExpectation, false);
+  assert.equal(evidence.incomplete, true);
+  assert.equal(live.replacementAfterCreditPassed(evidence), false);
+});
+
+for (const [name, mutate] of [
+  [
+    "only another invoice",
+    (r) => (r.registros[0].IDFactura = { ...r.registros[0].IDFactura, NumSerieFactura: "other" }),
+  ],
+  [
+    "the invoice under another issuer",
+    (r) =>
+      (r.registros[0].IDFactura = { ...r.registros[0].IDFactura, IDEmisorFactura: "B99999997" }),
+  ],
+  [
+    "the invoice on another issue date",
+    (r) =>
+      (r.registros[0].IDFactura = {
+        ...r.registros[0].IDFactura,
+        FechaExpedicionFactura: "26-09-2026",
+      }),
+  ],
+  ["two copies of the invoice", (r) => r.registros.push(structuredClone(r.registros[0]))],
+  ["no rows under ConDatos", (r) => (r.registros = [])],
+  ["the invoice with more pages to follow", (r) => (r.IndicadorPaginacion = "S")],
+]) {
+  test(`replacement after credit counts a lookup answering ${name} as unanswered`, async () => {
+    const { evidence, consultaReports } = await r5sProbe({
+      consultation: atLookup("-2S", mutate),
+    });
+    const entry = evidence.consulta.case2DateFix;
+    assert.equal(entry.matchesExpectation, false);
+    assert.match(entry.unanswered, /exactly one/);
+    assert.equal(evidence.consulta.case2Refund.matchesExpectation, true);
+    assert.equal(evidence.incomplete, true);
+    assert.equal(live.replacementAfterCreditPassed(evidence), false);
+    assert.deepEqual(
+      consultaReports.find(([stage]) => stage === "case2DateFix")[1].unanswered,
+      entry.unanswered,
+    );
+  });
+}
+
+for (const [name, mutate] of [
+  ["an unknown result", (r) => (r.ResultadoConsulta = "Desconocido")],
+  ["records under SinDatos", (r) => (r.ResultadoConsulta = "SinDatos")],
+]) {
+  test(`replacement after credit counts an invalid lookup reply (${name}) as unanswered`, async () => {
+    const { evidence } = await r5sProbe({ consultation: atLookup("-2S", mutate) });
+    const entry = evidence.consulta.case2DateFix;
+    assert.match(entry.error, /AEAT/);
+    assert.equal(entry.matchesExpectation, false);
+    assert.equal(evidence.incomplete, true);
+    assert.equal(live.replacementAfterCreditPassed(evidence), false);
+  });
+}
+
+test("replacement after credit counts an unknown result for a refused record's lookup as unanswered", async () => {
+  const { evidence } = await r5sProbe({
+    consultation: atLookup("-1F", (r) => (r.ResultadoConsulta = "Desconocido")),
+  });
+  assert.equal(evidence.consulta.case1Receipt.matchesExpectation, false);
+  assert.equal(evidence.incomplete, true);
+  assert.equal(live.replacementAfterCreditPassed(evidence), false);
+});
+
+for (const [name, mutate] of [
+  ["another hash", (r) => (r.registros[0].DatosRegistroFacturacion.Huella = "0".repeat(64))],
+  ["another state", (r) => (r.registros[0].EstadoRegistro = "Anulado")],
+  [
+    "nothing",
+    (r) => {
+      r.ResultadoConsulta = "SinDatos";
+      r.registros = [];
+    },
+  ],
+]) {
+  test(`replacement after credit fails the run when an accepted record's lookup finds ${name}`, async () => {
+    const { evidence } = await r5sProbe({ consultation: atLookup("-2S", mutate) });
+    const entry = evidence.consulta.case2DateFix;
+    assert.equal(entry.unanswered, undefined);
+    assert.equal(entry.error, undefined);
+    assert.equal(entry.matchesExpectation, false);
+    assert.equal(evidence.incomplete, false);
+    assert.equal(live.replacementAfterCreditPassed(evidence), false);
+  });
+}
+
+function storedRow(serial, issued, huella = "0".repeat(64)) {
+  return (r) => {
+    r.ResultadoConsulta = "ConDatos";
+    r.registros = [
+      {
+        IDFactura: {
+          IDEmisorFactura: decimalOptions.nif,
+          NumSerieFactura: serial,
+          FechaExpedicionFactura: issued,
+        },
+        EstadoRegistro: "Correcto",
+        DatosRegistroFacturacion: { Huella: huella },
+      },
+    ];
+  };
+}
+
+test("replacement after credit fails the run when a refused record's lookup finds it stored", async () => {
+  const { evidence } = await r5sProbe({
+    consultation: atLookup("-1F", (r, serial) => storedRow(serial, "28-09-2026")(r)),
+  });
+  const entry = evidence.consulta.case1Receipt;
+  assert.equal(evidence.case1Receipt.line.EstadoRegistro, "Incorrecto");
+  assert.equal(entry.RegistrosEncontrados, 1);
+  assert.equal(entry.EstadoRegistro, "Correcto");
+  assert.equal(entry.unanswered, undefined);
+  assert.equal(entry.matchesExpectation, false);
+  assert.equal(evidence.incomplete, false);
+  assert.equal(live.replacementAfterCreditPassed(evidence), false);
+});
+
+test("replacement after credit passes when a refused record's lookup answers SinDatos", async () => {
+  const { evidence } = await r5sProbe();
+  for (const stage of R5S_TOMORROW) {
+    assert.equal(evidence[stage].line.EstadoRegistro, "Incorrecto", stage);
+    assert.equal(evidence.consulta[stage].ResultadoConsulta, "SinDatos", stage);
+    assert.equal(evidence.consulta[stage].matchesExpectation, true, stage);
+  }
+  assert.equal(live.replacementAfterCreditPassed(evidence), true);
+});
+
+for (const [answer, mutate] of [
+  ["SinDatos", undefined],
+  ["the record stored", (r, serial) => storedRow(serial, "28-09-2026")(r)],
+]) {
+  test(`replacement after credit accepts ${answer} for the lookup of a record whose request got no reply`, async () => {
+    const { evidence } = await r5sProbe({
+      transportAt: 2,
+      consultation: mutate && atLookup("-2F", mutate),
+    });
+    const entry = evidence.consulta.case2Receipt;
+    assert.equal(evidence.case2Receipt.line, undefined);
+    assert.equal(entry.ResultadoConsulta, mutate ? "ConDatos" : "SinDatos");
+    assert.equal(entry.matchesExpectation, true);
+    assert.equal(live.replacementAfterCreditPassed(evidence), false);
+  });
+}
+
+test("replacement after credit stops when a later request's records fail to build and looks up only what it sent", async () => {
+  const { evidence, requests, consultas } = await r5sProbe({ invalidClockAt: 3 });
+  assert.equal(requests.length, 2);
+  assert.equal(evidence.requests.length, 3);
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedAfter, "case2Refund");
+  assert.ok(evidence.case2Refund.error);
+  assert.equal(evidence.case2Refund.record, undefined);
+  assert.equal(evidence.requests[2].exchange, undefined);
+  assert.equal(evidence.case2Receipt.matchesExpectation, true);
+  assert.equal(evidence.case2DateFix, undefined);
+  assert.equal(consultas.length, 4);
+  assert.deepEqual(Object.keys(evidence.consulta), [
+    "case1Receipt",
+    "case1Refund",
+    "case1DateFix",
+    "case2Receipt",
+  ]);
+  assert.equal(live.replacementAfterCreditPassed(evidence), false);
+});
+
+test("replacement-after-credit is a reachable live CLI mode listed in the workflow", () => {
+  const run = spawnSync(process.execPath, ["scripts/live-aeat.mjs", "replacement-after-credit"], {
+    encoding: "utf8",
+    timeout: 5000,
+    env: { PATH: process.env.PATH },
+  });
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /Set AEAT_TEST_NIF/);
+  assert.doesNotMatch(run.stderr, /Unknown AEAT preproduction mode/);
+  const workflow = readFileSync(".github/workflows/live-aeat.yml", "utf8");
+  assert.match(workflow, /^ {10}- replacement-after-credit$/m);
+});
+
+function r5sCli(refuseSerialEnd) {
+  const source = `
+    import https from "node:https";
+    import { syncBuiltinESMExports } from "node:module";
+    import { EventEmitter } from "node:events";
+    import { pathToFileURL } from "node:url";
+    import { createFakeAeat } from "./dist/testing/fake-aeat.js";
+    import { parseEnvio } from "./dist/index.js";
+    const RealDate = Date;
+    const realTimeout = setTimeout;
+    let clock = RealDate.parse("2026-10-21T10:00:00Z");
+    globalThis.Date = class extends RealDate {
+      constructor(...args) { super(...(args.length ? args : [clock])); }
+      static now() { return clock; }
+    };
+    globalThis.setTimeout = (callback, milliseconds, ...args) => {
+      clock += milliseconds;
+      return realTimeout(callback, 0, ...args);
+    };
+    const fake = createFakeAeat({ serverNow: new RealDate(clock), tiempoEsperaInicial: 0 });
+    globalThis.fetch = () => { throw new Error("unexpected external request"); };
+    https.request = (url, options, callback) => {
+      if (!url.startsWith("https://prewww") || options.method !== "POST") throw new Error("unexpected endpoint");
+      const req = new EventEmitter();
+      req.end = async (body) => {
+        try {
+          fake.setServerNow(new RealDate(clock));
+          if (${JSON.stringify(refuseSerialEnd)} && body.includes("RegFactuSistemaFacturacion>")) {
+            for (const entry of parseEnvio(body).registros) {
+              const id = entry.RegistroAlta.IDFactura;
+              if (id.NumSerieFactura.endsWith(${JSON.stringify(refuseSerialEnd)})) {
+                fake.reject(id.IDEmisorFactura + "|" + id.NumSerieFactura + "|" + id.FechaExpedicionFactura, 1100, "controlled refusal");
+              }
+            }
+          }
+          const result = await fake.fetch(url, { method: options.method, headers: options.headers, body });
+          const response = new EventEmitter();
+          response.statusCode = result.status;
+          callback(response);
+          response.emit("data", Buffer.from(await result.text()));
+          response.emit("end");
+        } catch (error) { req.emit("error", error); }
+      };
+      return req;
+    };
+    syncBuiltinESMExports();
+    process.argv = [process.execPath, process.cwd() + "/scripts/live-aeat.mjs", "replacement-after-credit"];
+    await import(pathToFileURL(process.argv[1]));
+  `;
+  return spawnSync(process.execPath, ["--input-type=module", "--eval", source], {
+    encoding: "utf8",
+    timeout: 10000,
+    env: {
+      PATH: process.env.PATH,
+      AEAT_TEST_P12_BASE64: Buffer.from("invalid synthetic certificate").toString("base64"),
+      AEAT_TEST_P12_PASSWORD: "synthetic-password-never-logged",
+      AEAT_TEST_NIF: "89890001K",
+      AEAT_TEST_NAME: "Issuer & Partners <A>",
+      AEAT_TEST_SYSTEM_NIF: "B99999997",
+      AEAT_TEST_SYSTEM_NAME: "Software & Systems <B>",
+      AEAT_TEST_RECIPIENT_NIF: "11111111H",
+      AEAT_TEST_RECIPIENT_NAME: "Guest & Friends <C>",
+      GITHUB_RUN_ID: "7654321",
+    },
+  });
+}
+
+for (const refuse of ["", "-2S"]) {
+  test(`replacement after credit CLI exits ${refuse ? 1 : 0} and prints each record's verdict`, () => {
+    const run = r5sCli(refuse);
+    assert.equal(run.status, refuse ? 1 : 0, run.stderr + run.stdout);
+    const lines = run.stdout.trim().split("\n");
+    assert.equal(lines.length, 1 + 13 + 11 + 13 + 1, run.stdout);
+    assert.match(
+      lines[0],
+      /^AEAT replacement-after-credit expectation: each receipt dated tomorrow \(cases 1-3 and 5\) Incorrecto with 1112; every R5 Correcto, case 5's refund naming the date fix included; case 4's receipt dated today Correcto\./,
+    );
+    assert.match(
+      lines[0],
+      / Exit 0 only when every record matches and every lookup answers: each record answered Correcto found once, Correcto, with the hash sent, and each refused record not found;/,
+    );
+    const summaries = lines
+      .filter((line) => / result: /.test(line))
+      .map((line) => JSON.parse(line.replace(/^AEAT replacement-after-credit \w+ result: /, "")));
+    assert.equal(summaries.length, 13);
+    for (const [i, summary] of summaries.entries()) {
+      const stage = R5S_STAGES[i];
+      assert.equal(summary.case, Number(stage[4]));
+      const future = R5S_TOMORROW.has(stage);
+      const refused = future || (refuse && stage === "case2DateFix");
+      assert.equal(summary.EstadoRegistro, refused ? "Incorrecto" : "Correcto", stage);
+      if (future) assert.equal(summary.CodigoErrorRegistro, 1112);
+    }
+    assert.equal(lines.filter((line) => / consulta: /.test(line)).length, 13);
+    const evidence = JSON.parse(
+      lines.at(-1).replace("AEAT replacement-after-credit complete: ", ""),
+    );
+    assert.equal(evidence.incomplete, false);
+    assert.match(evidence.case1Receipt.record.IDFactura.NumSerieFactura, /\/7654321-1F$/);
+    assert.equal(evidence.case4Receipt.record.FechaHoraHusoGenRegistro.slice(0, 10), "2026-10-21");
+    for (const request of evidence.requests) {
+      assert.match(request.exchange.request, /\[identity\]/);
+      assert.ok(request.exchange.reply);
+    }
+    for (const identity of [
+      "89890001K",
+      "B99999997",
+      "Issuer",
+      "Partners",
+      "Software &",
+      "Systems",
+      "synthetic-password-never-logged",
+    ]) {
+      assert.equal(run.stdout.includes(identity), false, identity);
+      assert.equal(run.stderr.includes(identity), false, identity);
+    }
+  });
+}

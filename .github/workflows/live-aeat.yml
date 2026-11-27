@@ -35,6 +35,7 @@ on:
           - double-correction
           - final-cent-correction
           - advance-rest
+          - replacement-after-credit
         default: consult
         required: true
       excluded_regime:
