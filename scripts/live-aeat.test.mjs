@@ -8436,8 +8436,12 @@ for (const [name, now, yesterday, tomorrow] of [
   });
 }
 
-async function restatementProbe(fault = {}) {
+function restatementProbe(fault = {}) {
   assert.equal(typeof live.submitRestatementProbe, "function");
+  return chainedProbe(live.submitRestatementProbe, decimalOptions, fault);
+}
+
+async function chainedProbe(submitProbe, options, fault = {}) {
   let clock = fault.start ?? decimalOptions.now.getTime();
   const fake = createFakeAeat({ serverNow: new Date(clock), tiempoEsperaInicial: 13 });
   let exchange;
@@ -8455,7 +8459,7 @@ async function restatementProbe(fault = {}) {
       return new Response(exchange.reply, { status: response.status, headers: response.headers });
     },
   });
-  const evidence = await live.submitRestatementProbe(
+  const evidence = await submitProbe(
     {
       async submit(header, records) {
         requests.push(records.map(({ RegistroAlta }) => structuredClone(RegistroAlta)));
@@ -8481,7 +8485,7 @@ async function restatementProbe(fault = {}) {
       },
     },
     successorHeader,
-    decimalOptions,
+    options,
     {
       now: () => new Date(clock),
       waitForSubmission: async (seconds) => {
@@ -8872,6 +8876,10 @@ test("restatement-corrections is a reachable live CLI mode listed in the workflo
 });
 
 function restatementCli(refuseSerialEnd) {
+  return modeCli(["restatement-corrections"], refuseSerialEnd);
+}
+
+function modeCli(args, refuseSerialEnd, env = {}) {
   const source = `
     import https from "node:https";
     import { syncBuiltinESMExports } from "node:module";
@@ -8917,7 +8925,7 @@ function restatementCli(refuseSerialEnd) {
       return req;
     };
     syncBuiltinESMExports();
-    process.argv = [process.execPath, process.cwd() + "/scripts/live-aeat.mjs", "restatement-corrections"];
+    process.argv = [process.execPath, process.cwd() + "/scripts/live-aeat.mjs", ...${JSON.stringify(args)}];
     await import(pathToFileURL(process.argv[1]));
   `;
   return spawnSync(process.execPath, ["--input-type=module", "--eval", source], {
@@ -8934,6 +8942,7 @@ function restatementCli(refuseSerialEnd) {
       AEAT_TEST_RECIPIENT_NIF: "11111111H",
       AEAT_TEST_RECIPIENT_NAME: "Guest & Friends <C>",
       GITHUB_RUN_ID: "7654321",
+      ...env,
     },
   });
 }
@@ -9012,3 +9021,703 @@ for (const [refuse, status] of [
     }
   });
 }
+
+const FIC_CHAINS = [
+  ["A1", ["caseA1Invoice", "caseA1Credit"]],
+  ["A2", ["caseA2Invoice", "caseA2Credit"]],
+  ["A3", ["caseA3Invoice", "caseA3Dish", "caseA3Rest"]],
+  ["A4", ["caseA4Invoice", "caseA4Restatement", "caseA4Credit"]],
+  ["B1", ["caseB1Invoice", "caseB1Restatement"]],
+  ["B2", ["caseB2Invoice", "caseB2Restatement"]],
+  ["B3", ["caseB3Invoice", "caseB3Restatement"]],
+  ["B4", ["caseB4Invoice", "caseB4Restatement", "caseB4Renaming"]],
+  ["B5", ["caseB5Invoice", "caseB5Credit", "caseB5Reissue"]],
+];
+const FIC_STAGES = FIC_CHAINS.flatMap(([, stages]) => stages);
+const FIC_PART_A_STAGES = FIC_CHAINS.filter(([name]) => name.startsWith("A")).flatMap(
+  ([, stages]) => stages,
+);
+const ficOptions = {
+  ...decimalOptions,
+  otherRecipientNif: "B99999997",
+  otherRecipientName: "Cliente Dos",
+};
+
+function fullInvoiceChangeRecordsAt(now, options = ficOptions) {
+  assert.equal(typeof live.buildFullInvoiceChangesProbeRecords, "function");
+  const records = {};
+  for (const [, stages] of FIC_CHAINS) {
+    const chain = [];
+    for (const stage of stages) {
+      [records[stage]] = live.buildFullInvoiceChangesProbeRecords(options, [stage], now, chain);
+      chain.push(records[stage]);
+    }
+  }
+  return records;
+}
+
+test("full-invoice-changes builds each case's records with the figures, the rectified invoice and the customer", () => {
+  const records = fullInvoiceChangeRecordsAt(ficOptions.now);
+  const id = (stage) => [records[stage].IDFactura];
+  const rectified = (BaseRectificada, CuotaRectificada) => ({ BaseRectificada, CuotaRectificada });
+  const whole = [
+    ["10.00", "20.00", "2.00"],
+    ["21.00", "10.00", "2.10"],
+  ];
+  const lessOneDish = [
+    ["10.00", "10.00", "1.00"],
+    ["21.00", "10.00", "2.10"],
+  ];
+  const negate = (lines) => lines.map(([rate, amount, vat]) => [rate, `-${amount}`, `-${vat}`]);
+  const customerA = [{ NombreRazon: "Cliente Uno", NIF: "11111111H" }];
+  const renamed = [{ NombreRazon: "Renamed Customer SL", NIF: "11111111H" }];
+  const customerB = [{ NombreRazon: "Cliente Dos", NIF: "B99999997" }];
+  const invoice = { TipoFactura: "F1", lines: whole, CuotaTotal: "4.10", ImporteTotal: "34.10" };
+  const toZero = (type, stage) => ({
+    TipoFactura: type,
+    TipoRectificativa: "I",
+    lines: negate(whole),
+    CuotaTotal: "-4.10",
+    ImporteTotal: "-34.10",
+    names: id(stage),
+  });
+  const restatedLess = (type, stage, customer = customerA) => ({
+    TipoFactura: type,
+    TipoRectificativa: "S",
+    lines: lessOneDish,
+    CuotaTotal: "3.10",
+    ImporteTotal: "23.10",
+    ImporteRectificacion: rectified("30.00", "4.10"),
+    names: id(stage),
+    customer,
+  });
+  const expected = {
+    caseA1Invoice: invoice,
+    caseA1Credit: toZero("R4", "caseA1Invoice"),
+    caseA2Invoice: invoice,
+    caseA2Credit: toZero("R1", "caseA2Invoice"),
+    caseA3Invoice: invoice,
+    caseA3Dish: {
+      TipoFactura: "R1",
+      TipoRectificativa: "I",
+      lines: [["10.00", "-10.00", "-1.00"]],
+      CuotaTotal: "-1.00",
+      ImporteTotal: "-11.00",
+      names: id("caseA3Invoice"),
+    },
+    caseA3Rest: {
+      TipoFactura: "R4",
+      TipoRectificativa: "I",
+      lines: negate(lessOneDish),
+      CuotaTotal: "-3.10",
+      ImporteTotal: "-23.10",
+      names: id("caseA3Invoice"),
+    },
+    caseA4Invoice: invoice,
+    caseA4Restatement: restatedLess("R1", "caseA4Invoice"),
+    caseA4Credit: {
+      TipoFactura: "R4",
+      TipoRectificativa: "I",
+      lines: negate(lessOneDish),
+      CuotaTotal: "-3.10",
+      ImporteTotal: "-23.10",
+      names: id("caseA4Restatement"),
+    },
+    caseB1Invoice: invoice,
+    caseB1Restatement: {
+      TipoFactura: "R4",
+      TipoRectificativa: "S",
+      lines: whole,
+      CuotaTotal: "4.10",
+      ImporteTotal: "34.10",
+      ImporteRectificacion: rectified("30.00", "4.10"),
+      names: id("caseB1Invoice"),
+      customer: renamed,
+    },
+    caseB2Invoice: invoice,
+    caseB2Restatement: {
+      TipoFactura: "R4",
+      TipoRectificativa: "S",
+      lines: whole,
+      CuotaTotal: "4.10",
+      ImporteTotal: "34.10",
+      ImporteRectificacion: rectified("30.00", "4.10"),
+      names: id("caseB2Invoice"),
+    },
+    caseB3Invoice: invoice,
+    caseB3Restatement: restatedLess("R1", "caseB3Invoice", renamed),
+    caseB4Invoice: invoice,
+    caseB4Restatement: restatedLess("R1", "caseB4Invoice"),
+    caseB4Renaming: {
+      TipoFactura: "R4",
+      TipoRectificativa: "S",
+      lines: lessOneDish,
+      CuotaTotal: "3.10",
+      ImporteTotal: "23.10",
+      ImporteRectificacion: rectified("20.00", "3.10"),
+      names: id("caseB4Restatement"),
+      customer: renamed,
+    },
+    caseB5Invoice: invoice,
+    caseB5Credit: toZero("R4", "caseB5Invoice"),
+    caseB5Reissue: { ...invoice, customer: customerB, FechaOperacion: "26-09-2026" },
+  };
+  assert.deepEqual(Object.keys(records), FIC_STAGES);
+  for (const stage of FIC_STAGES) {
+    const { customer = customerA, ...figures } = expected[stage];
+    const record = records[stage];
+    assert.deepEqual(figuresOf(record), { ...figuresOf({ Desglose: [] }), ...figures }, stage);
+    assert.deepEqual(record.Destinatarios?.IDDestinatario, customer, stage);
+    assert.equal(record.IDFactura.FechaExpedicionFactura, "27-09-2026", stage);
+    assert.deepEqual(validate(record, { now: ficOptions.now }), [], stage);
+    assert.notEqual(record.TipoFactura, "R5", stage);
+  }
+  assert.deepEqual(records.caseB2Restatement.Destinatarios, records.caseB2Invoice.Destinatarios);
+});
+
+test("full-invoice-changes gives each case its own installation and chain, numbering its records in order", () => {
+  const records = fullInvoiceChangeRecordsAt(ficOptions.now);
+  for (const [name, stages] of FIC_CHAINS) {
+    for (const [i, stage] of stages.entries()) {
+      const record = records[stage];
+      const series = { F1: "FF", R1: "R1", R4: "R4" }[record.TipoFactura];
+      assert.equal(
+        record.IDFactura.NumSerieFactura,
+        `CI-FIC-${series}/20260927/12345-${name}-${i + 1}`,
+        stage,
+      );
+      assert.equal(record.SistemaInformatico.NumeroInstalacion, `CI-FIC-12345-${name}`, stage);
+      const previous = records[stages[i - 1]];
+      assert.deepEqual(
+        record.Encadenamiento,
+        previous
+          ? { RegistroAnterior: { ...previous.IDFactura, Huella: previous.Huella } }
+          : { PrimerRegistro: "S" },
+        stage,
+      );
+    }
+  }
+  assert.equal(
+    new Set(FIC_STAGES.map((stage) => records[stage].IDFactura.NumSerieFactura)).size,
+    FIC_STAGES.length,
+  );
+});
+
+test("full-invoice-changes refuses to give customer B the same tax number as customer A", () => {
+  assert.throws(
+    () =>
+      live.buildFullInvoiceChangesProbeRecords(
+        { ...ficOptions, otherRecipientNif: ficOptions.recipientNif },
+        ["caseB5Invoice"],
+        ficOptions.now,
+      ),
+    /customer B must have another tax number than customer A/,
+  );
+});
+
+test("full-invoice-changes refuses to build a record after the Madrid day changed in its chain", () => {
+  const [first] = live.buildFullInvoiceChangesProbeRecords(
+    ficOptions,
+    ["caseA1Invoice"],
+    new Date("2026-11-28T22:59:55Z"),
+  );
+  assert.throws(
+    () =>
+      live.buildFullInvoiceChangesProbeRecords(
+        ficOptions,
+        ["caseA1Credit"],
+        new Date("2026-11-28T23:00:05Z"),
+        [first],
+      ),
+    {
+      message:
+        "Case (A1)'s chain began with a record dated 28-11-2026, but this one would be dated 29-11-2026: the Madrid day changed between them, so nothing more was sent; run again away from Madrid midnight",
+    },
+  );
+});
+
+test("full-invoice-changes reads its cases argument: all by default, or part A's alone", () => {
+  for (const argument of [undefined, "", "all"]) {
+    assert.equal(live.fullInvoiceChangesPart(argument), "all", String(argument));
+  }
+  assert.equal(live.fullInvoiceChangesPart("part-a"), "part-a");
+  assert.throws(() => live.fullInvoiceChangesPart("part-b"), /Unknown full-invoice-changes cases/);
+  assert.deepEqual(live.fullInvoiceChangesCases("all").flat(2), FIC_STAGES);
+  assert.deepEqual(live.fullInvoiceChangesCases("part-a").flat(2), FIC_PART_A_STAGES);
+});
+
+function fullInvoiceChangesProbe(fault = {}, part = "all") {
+  assert.equal(typeof live.submitFullInvoiceChangesProbe, "function");
+  return chainedProbe(live.submitFullInvoiceChangesProbe, { ...ficOptions, part }, fault);
+}
+
+test("full-invoice-changes sends each record alone, in its chain, then looks up every number", async () => {
+  const { evidence, requests, consultas, waits, reports } = await fullInvoiceChangesProbe();
+  assert.equal(evidence.incomplete, false);
+  assert.equal(live.fullInvoiceChangesPassed(evidence, "all"), true);
+  assert.deepEqual(
+    reports,
+    FIC_STAGES.map((stage) => [stage]),
+  );
+  assert.equal(waits.length, FIC_STAGES.length - 1);
+  for (const [i, stage] of FIC_STAGES.entries()) {
+    assert.deepEqual(evidence[stage].record, requests[i][0], stage);
+    assert.equal(evidence[stage].line.EstadoRegistro, "Correcto", stage);
+    assert.equal(evidence.consulta[stage].matchesExpectation, true, stage);
+  }
+  assert.deepEqual(
+    consultas.map(([, filter]) => filter.NumSerieFactura),
+    requests.map(([record]) => record.IDFactura.NumSerieFactura),
+  );
+});
+
+test("full-invoice-changes part-a sends part A's cases alone and passes on them", async () => {
+  const { evidence, reports } = await fullInvoiceChangesProbe({}, "part-a");
+  assert.deepEqual(
+    reports,
+    FIC_PART_A_STAGES.map((stage) => [stage]),
+  );
+  assert.equal(evidence.caseB1Invoice, undefined);
+  assert.equal(live.fullInvoiceChangesPassed(evidence, "part-a"), true);
+  assert.equal(live.fullInvoiceChangesPassed(evidence, "all"), false);
+});
+
+for (const [stage, serialEnd] of [
+  ["caseA1Credit", "R4/20260927/12345-A1-2"],
+  ["caseB1Restatement", "R4/20260927/12345-B1-2"],
+  ["caseB5Reissue", "FF/20260927/12345-B5-3"],
+]) {
+  test(`full-invoice-changes fails the run and prints AEAT's code when ${stage} is refused`, async () => {
+    const { evidence, requests } = await fullInvoiceChangesProbe({ reject: serialEnd });
+    assert.equal(requests.length, FIC_STAGES.length);
+    assert.equal(evidence.incomplete, false);
+    assert.equal(evidence[stage].matchesExpectation, false);
+    assert.equal(evidence.consulta[stage].matchesExpectation, true);
+    assert.equal(live.fullInvoiceChangesPassed(evidence, "all"), false);
+    const summary = live.fullInvoiceChangesSummary(stage, evidence[stage]);
+    assert.equal(summary.case, stage.slice(4, 6));
+    assert.equal(summary.expected, "Correcto");
+    assert.equal(summary.EstadoRegistro, "Incorrecto");
+    assert.equal(summary.CodigoErrorRegistro, 1100);
+  });
+}
+
+test("full-invoice-changes counts a failed lookup as an incomplete run", async () => {
+  const { evidence } = await fullInvoiceChangesProbe({
+    consultaFails: FIC_STAGES.indexOf("caseB4Renaming") + 1,
+  });
+  assert.equal(evidence.consulta.caseB4Renaming.error, "consulta failed");
+  assert.equal(evidence.incomplete, true);
+  assert.equal(live.fullInvoiceChangesPassed(evidence, "all"), false);
+});
+
+test("full-invoice-changes stops case A1, sending nothing more, when Madrid midnight passes before its credit", async () => {
+  const { evidence, requests, consultas } = await fullInvoiceChangesProbe({
+    start: Date.parse("2026-11-28T22:59:55Z"),
+  });
+  assert.equal(requests.length, 1);
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedAfter, "caseA1Credit");
+  assert.equal(evidence.caseA1Credit.record, undefined);
+  assert.match(evidence.caseA1Credit.error, /the Madrid day changed between them/);
+  assert.equal(evidence.caseA2Invoice, undefined);
+  assert.equal(consultas.length, 1);
+  assert.equal(live.fullInvoiceChangesPassed(evidence, "all"), false);
+});
+
+test("full-invoice-changes passes only when every selected record and its lookup matched", () => {
+  for (const [part, stages] of [
+    ["all", FIC_STAGES],
+    ["part-a", FIC_PART_A_STAGES],
+  ]) {
+    const passing = Object.fromEntries(
+      stages.map((stage) => [stage, { matchesExpectation: true }]),
+    );
+    const consulta = Object.fromEntries(
+      stages.map((stage) => [stage, { matchesExpectation: true }]),
+    );
+    assert.equal(
+      live.fullInvoiceChangesPassed({ incomplete: false, ...passing, consulta }, part),
+      true,
+    );
+    assert.equal(
+      live.fullInvoiceChangesPassed({ incomplete: true, ...passing, consulta }, part),
+      false,
+    );
+    for (const stage of stages) {
+      const missing = { incomplete: false, ...passing, consulta: { ...consulta } };
+      delete missing[stage];
+      assert.equal(live.fullInvoiceChangesPassed(missing, part), false, stage);
+      const lookupFailed = {
+        incomplete: false,
+        ...passing,
+        consulta: { ...consulta, [stage]: { matchesExpectation: false } },
+      };
+      assert.equal(live.fullInvoiceChangesPassed(lookupFailed, part), false, stage);
+    }
+  }
+});
+
+test("full-invoice-changes summarises each record's case, kind and expectation", () => {
+  assert.deepEqual(live.fullInvoiceChangesSummary("caseB5Reissue", { error: "boom" }), {
+    case: "B5",
+    record: "full invoice to customer B of 34.10, carrying FechaOperacion yesterday (F1)",
+    expected: "Correcto",
+    verdict: "unverified",
+    reason: "no answer from AEAT was read",
+    error: "boom",
+  });
+  const invoice = [
+    "full invoice to customer A of 34.10, 22.00 at 10% and 12.10 at 21% (F1)",
+    "Correcto",
+  ];
+  const toZero = (type) => [
+    `credit to zero by differences naming the full invoice, customer A as sent (${type} I)`,
+    "Correcto",
+  ];
+  const lessOneDish = (customer) => [
+    `restatement one dish lower, to 23.10, naming the full invoice, rectified 30.00 + 4.10, ${customer} (R1 S)`,
+    "Correcto",
+  ];
+  const sameFigures = (customer) => [
+    `restatement with the same figures naming the full invoice, rectified 30.00 + 4.10, ${customer} (R4 S)`,
+    "Correcto",
+  ];
+  const renamed = "customer A's tax number under another name";
+  assert.deepEqual(
+    Object.fromEntries(
+      FIC_STAGES.map((stage) => {
+        const { case: name, record, expected, verdict } = live.fullInvoiceChangesSummary(stage, {});
+        assert.equal(name, stage.slice(4, 6), stage);
+        assert.equal(verdict, "unverified", stage);
+        return [stage, [record, expected]];
+      }),
+    ),
+    {
+      caseA1Invoice: invoice,
+      caseA1Credit: toZero("R4"),
+      caseA2Invoice: invoice,
+      caseA2Credit: toZero("R1"),
+      caseA3Invoice: invoice,
+      caseA3Dish: [
+        "credit of one dish, -11.00 at 10%, by differences naming the full invoice (R1 I)",
+        "Correcto",
+      ],
+      caseA3Rest: [
+        "credit of the rest, -23.10, by differences naming the full invoice (R4 I)",
+        "Correcto",
+      ],
+      caseA4Invoice: invoice,
+      caseA4Restatement: lessOneDish("customer A as sent"),
+      caseA4Credit: [
+        "credit to zero, -23.10, by differences naming the restatement (R4 I)",
+        "Correcto",
+      ],
+      caseB1Invoice: invoice,
+      caseB1Restatement: sameFigures(renamed),
+      caseB2Invoice: invoice,
+      caseB2Restatement: sameFigures("customer A as sent"),
+      caseB3Invoice: invoice,
+      caseB3Restatement: lessOneDish(renamed),
+      caseB4Invoice: invoice,
+      caseB4Restatement: lessOneDish("customer A as sent"),
+      caseB4Renaming: [
+        `restatement with the restated figures naming the restatement, rectified 20.00 + 3.10, ${renamed} (R4 S)`,
+        "Correcto",
+      ],
+      caseB5Invoice: invoice,
+      caseB5Credit: toZero("R4"),
+      caseB5Reissue: [
+        "full invoice to customer B of 34.10, carrying FechaOperacion yesterday (F1)",
+        "Correcto",
+      ],
+    },
+  );
+});
+
+async function fullInvoiceChangesRefusedBeforeSending(options, message) {
+  const calls = [];
+  const client = {
+    async submit() {
+      calls.push("submit");
+      throw new Error("a record was sent");
+    },
+    async consultar() {
+      calls.push("consultar");
+      throw new Error("a lookup was sent");
+    },
+  };
+  await assert.rejects(
+    live.submitFullInvoiceChangesProbe(client, successorHeader, options, {
+      waitForSubmission: async () => {},
+      now: () => options.now,
+    }),
+    { message },
+  );
+  assert.deepEqual(calls, []);
+}
+
+const CUSTOMER_B_REFUSAL =
+  "Customer B, the producer's tax number (AEAT_TEST_SYSTEM_NIF), is the issuer's or customer A's, so case B5 would send a full invoice addressed to one of them; nothing was sent: give the producer secret a tax number of its own, or run part-a";
+const RENAMED_REFUSAL =
+  'Customer A (AEAT_TEST_RECIPIENT_NAME) is already named "Renamed Customer SL", the name cases B1, B3 and B4 give it, so their renaming would change nothing; nothing was sent: give customer A another name, or run part-a';
+
+for (const [name, otherRecipientNif] of [
+  ["the issuer", " 89890001k "],
+  ["customer A", "11111111h "],
+]) {
+  test(`full-invoice-changes refuses before sending anything when customer B's tax number is ${name}'s`, async () => {
+    await fullInvoiceChangesRefusedBeforeSending(
+      { ...ficOptions, otherRecipientNif, part: "all" },
+      CUSTOMER_B_REFUSAL,
+    );
+  });
+
+  test(`full-invoice-changes part-a runs and passes when customer B's tax number is ${name}'s`, async () => {
+    const { evidence, requests } = await chainedProbe(
+      live.submitFullInvoiceChangesProbe,
+      { ...ficOptions, otherRecipientNif: otherRecipientNif.trim().toUpperCase(), part: "part-a" },
+      {},
+    );
+    assert.equal(requests.length, FIC_PART_A_STAGES.length);
+    assert.equal(live.fullInvoiceChangesPassed(evidence, "part-a"), true);
+  });
+}
+
+for (const [name, settings] of [
+  ["the issuer", { nif: " 89890001k ", otherRecipientNif: "89890001K" }],
+  ["customer A", { recipientNif: "11111111h ", otherRecipientNif: "11111111H" }],
+]) {
+  test(`full-invoice-changes tidies ${name}'s tax number too before comparing customer B's`, async () => {
+    await fullInvoiceChangesRefusedBeforeSending(
+      { ...ficOptions, ...settings, part: "all" },
+      CUSTOMER_B_REFUSAL,
+    );
+  });
+}
+
+test("full-invoice-changes refuses to build case B5's reissue to the issuer", () => {
+  const [invoice] = live.buildFullInvoiceChangesProbeRecords(
+    { ...ficOptions, otherRecipientNif: ficOptions.nif },
+    ["caseA1Invoice"],
+    ficOptions.now,
+  );
+  assert.equal(invoice.TipoFactura, "F1");
+  assert.throws(
+    () =>
+      live.buildFullInvoiceChangesProbeRecords(
+        { ...ficOptions, otherRecipientNif: ficOptions.nif },
+        ["caseB5Reissue"],
+        ficOptions.now,
+      ),
+    { message: "customer B must have another tax number than customer A and the issuer" },
+  );
+});
+
+test("full-invoice-changes refuses before sending anything when customer A already has the new name", async () => {
+  await fullInvoiceChangesRefusedBeforeSending(
+    { ...ficOptions, recipientName: "  renamed   CUSTOMER sl ", part: "all" },
+    RENAMED_REFUSAL,
+  );
+  const { evidence } = await chainedProbe(
+    live.submitFullInvoiceChangesProbe,
+    { ...ficOptions, recipientName: "Renamed Customer SL", part: "part-a" },
+    {},
+  );
+  assert.equal(live.fullInvoiceChangesPassed(evidence, "part-a"), true);
+});
+
+test("full-invoice-changes fails a record whose lookup finds it once, Correcto, with another hash", async () => {
+  const serial = "CI-FIC-FF/20260927/12345-B5-3";
+  const { evidence } = await fullInvoiceChangesProbe({
+    consultaReply: (request, reply) =>
+      request.includes("ConsultaFactuSistemaFacturacion") && request.includes(`${serial}<`)
+        ? reply.replace(
+            /<sfRC:Huella>[^<]*<\/sfRC:Huella>/,
+            `<sfRC:Huella>${"F".repeat(64)}</sfRC:Huella>`,
+          )
+        : undefined,
+  });
+  const lookup = evidence.consulta.caseB5Reissue;
+  assert.equal(lookup.ResultadoConsulta, "ConDatos");
+  assert.equal(lookup.RegistrosEncontrados, 1);
+  assert.equal(lookup.EstadoRegistro, "Correcto");
+  assert.equal(lookup.Huella, "F".repeat(64));
+  assert.notEqual(evidence.caseB5Reissue.record.Huella, lookup.Huella);
+  assert.equal(lookup.matchesExpectation, false);
+  assert.equal(evidence.caseB5Reissue.matchesExpectation, true);
+  assert.equal(live.fullInvoiceChangesPassed(evidence, "all"), false);
+});
+
+for (const [start, issued, operation, period] of [
+  ["2027-01-01T08:00:00Z", "01-01-2027", "31-12-2026", ["2026", "12"]],
+  ["2026-10-01T08:00:00Z", "01-10-2026", "30-09-2026", ["2026", "09"]],
+]) {
+  test(`full-invoice-changes looks up case B5's reissue in the month of its operation date on ${issued}`, async () => {
+    const { evidence, requests, consultas } = await fullInvoiceChangesProbe({
+      start: Date.parse(start),
+    });
+    const reissue = requests[FIC_STAGES.indexOf("caseB5Reissue")][0];
+    assert.equal(reissue.IDFactura.FechaExpedicionFactura, issued);
+    assert.equal(reissue.FechaOperacion, operation);
+    const [, filter] = consultas.find(
+      ([, { NumSerieFactura }]) => NumSerieFactura === reissue.IDFactura.NumSerieFactura,
+    );
+    assert.deepEqual([filter.Ejercicio, filter.Periodo], period);
+    assert.equal(evidence.consulta.caseB5Reissue.ResultadoConsulta, "ConDatos");
+    assert.equal(evidence.consulta.caseB5Reissue.matchesExpectation, true);
+    assert.equal(evidence.incomplete, false);
+    assert.equal(live.fullInvoiceChangesPassed(evidence, "all"), true);
+  });
+}
+
+for (const [name, now, today, yesterday] of [
+  ["a month", "2026-10-01T08:00:00Z", "01-10-2026", "30-09-2026"],
+  ["the autumn clock change", "2027-10-30T22:30:00Z", "31-10-2027", "30-10-2027"],
+  ["the autumn clock change's long day", "2027-10-31T22:30:00Z", "31-10-2027", "30-10-2027"],
+  ["the spring clock change", "2027-03-27T23:30:00Z", "28-03-2027", "27-03-2027"],
+  [
+    "the day after the spring clock change's short day",
+    "2027-03-28T22:30:00Z",
+    "29-03-2027",
+    "28-03-2027",
+  ],
+]) {
+  test(`full-invoice-changes dates case B5's reissue's operation on the Madrid day before across ${name}`, () => {
+    const at = new Date(now);
+    const chain = [];
+    for (const stage of ["caseB5Invoice", "caseB5Credit", "caseB5Reissue"]) {
+      chain.push(...live.buildFullInvoiceChangesProbeRecords(ficOptions, [stage], at, chain));
+    }
+    const reissue = chain.at(-1);
+    assert.equal(reissue.IDFactura.FechaExpedicionFactura, today);
+    assert.equal(reissue.FechaOperacion, yesterday);
+  });
+}
+
+const NOT_SENT = "not sent: an earlier record in its case was not answered as expected";
+
+for (const [refused, serialEnd, unsent] of [
+  ["caseA4Restatement", "R1/20260927/12345-A4-2", ["caseA4Credit"]],
+  ["caseB4Invoice", "FF/20260927/12345-B4-1", ["caseB4Restatement", "caseB4Renaming"]],
+]) {
+  test(`full-invoice-changes sends nothing more in a case once ${refused} is refused, and carries on with the next`, async () => {
+    const { evidence, requests, consultas, waits, reports } = await fullInvoiceChangesProbe({
+      reject: serialEnd,
+    });
+    const sent = FIC_STAGES.filter((stage) => !unsent.includes(stage));
+    assert.deepEqual(
+      requests.map(([record]) => record.IDFactura.NumSerieFactura),
+      sent.map((stage) => evidence[stage].record.IDFactura.NumSerieFactura),
+    );
+    assert.equal(waits.length, sent.length - 1);
+    assert.deepEqual(
+      reports,
+      FIC_STAGES.map((stage) => [stage]),
+    );
+    assert.equal(evidence[refused].line.EstadoRegistro, "Incorrecto");
+    assert.equal(evidence[refused].matchesExpectation, false);
+    for (const stage of unsent) {
+      assert.deepEqual(evidence[stage], { notSent: NOT_SENT, matchesExpectation: false }, stage);
+      assert.equal(evidence.consulta[stage], undefined, stage);
+      assert.deepEqual(live.fullInvoiceChangesSummary(stage, evidence[stage]), {
+        case: stage.slice(4, 6),
+        record: live.fullInvoiceChangesSummary(stage, {}).record,
+        expected: "Correcto",
+        verdict: "not sent",
+        reason: NOT_SENT,
+      });
+    }
+    assert.equal(consultas.length, sent.length);
+    assert.deepEqual(
+      evidence.requests.map((request) => request.stages[0]),
+      sent,
+    );
+    for (const stage of sent.filter((stage) => stage !== refused)) {
+      assert.equal(evidence[stage].matchesExpectation, true, stage);
+    }
+    assert.equal(evidence.incomplete, false);
+    assert.equal(live.fullInvoiceChangesPassed(evidence, "all"), false);
+  });
+}
+
+test("full-invoice-changes is a reachable live CLI mode listed in the workflow, with its cases input", () => {
+  const run = spawnSync(process.execPath, ["scripts/live-aeat.mjs", "full-invoice-changes"], {
+    encoding: "utf8",
+    timeout: 5000,
+    env: { PATH: process.env.PATH },
+  });
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /Set AEAT_TEST_NIF/);
+  assert.doesNotMatch(run.stderr, /Unknown AEAT preproduction mode/);
+  const unknown = spawnSync(
+    process.execPath,
+    ["scripts/live-aeat.mjs", "full-invoice-changes", "part-c"],
+    { encoding: "utf8", timeout: 5000, env: { PATH: process.env.PATH } },
+  );
+  assert.equal(unknown.status, 1);
+  assert.match(unknown.stderr, /Unknown full-invoice-changes cases/);
+  const workflow = readFileSync(".github/workflows/live-aeat.yml", "utf8");
+  assert.match(workflow, /^ {10}- full-invoice-changes$/m);
+  assert.match(workflow, /^ {6}cases:\n(?: {8}.*\n)*? {10}- part-a$/m);
+  assert.match(workflow, /node scripts\/live-aeat\.mjs "\$TEST_MODE" "\$TEST_CASES"/);
+});
+
+for (const [args, refuse, status, stages] of [
+  [["full-invoice-changes"], "", 0, FIC_STAGES],
+  [["full-invoice-changes"], "R4/20261021/7654321-B1-2", 1, FIC_STAGES],
+  [["full-invoice-changes", "part-a"], "", 0, FIC_PART_A_STAGES],
+  [["full-invoice-changes", "part-a"], "R1/20261021/7654321-A2-2", 1, FIC_PART_A_STAGES],
+]) {
+  test(`full-invoice-changes CLI (${args.join(" ")}) exits ${status} ${refuse ? `when ${refuse} is refused` : "when every record is Correcto"}`, () => {
+    const run = modeCli(args, refuse);
+    assert.equal(run.status, status, run.stderr + run.stdout);
+    const lines = run.stdout.trim().split("\n");
+    assert.equal(lines.length, 1 + stages.length * 3 + 1, run.stdout);
+    assert.match(lines[0], /^AEAT full-invoice-changes expectation: /);
+    assert.match(lines[0], /Test service only; results do not establish production behaviour\.$/);
+    const summaries = lines
+      .filter((line) => / result: /.test(line))
+      .map((line) => JSON.parse(line.replace(/^AEAT full-invoice-changes \w+ result: /, "")));
+    assert.deepEqual(
+      summaries.map((summary) => summary.case),
+      stages.map((stage) => stage.slice(4, 6)),
+    );
+    for (const [i, summary] of summaries.entries()) {
+      const refused =
+        refuse !== "" &&
+        stages[i] === (refuse.includes("B1") ? "caseB1Restatement" : "caseA2Credit");
+      assert.equal(summary.EstadoRegistro, refused ? "Incorrecto" : "Correcto", stages[i]);
+    }
+    assert.equal(lines.filter((line) => / consulta: /.test(line)).length, stages.length);
+    const evidence = JSON.parse(lines.at(-1).replace("AEAT full-invoice-changes complete: ", ""));
+    assert.equal(evidence.incomplete, false);
+    for (const identity of [
+      "89890001K",
+      "B99999997",
+      "11111111H",
+      "Issuer",
+      "Partners",
+      "Software &",
+      "Systems",
+      "Guest",
+      "synthetic-password-never-logged",
+    ]) {
+      assert.equal(run.stdout.includes(identity), false, identity);
+      assert.equal(run.stderr.includes(identity), false, identity);
+    }
+  });
+}
+
+test("full-invoice-changes CLI exits 1, sending nothing, when the producer's tax number is the issuer's", () => {
+  const run = modeCli(["full-invoice-changes"], "", { AEAT_TEST_SYSTEM_NIF: "89890001K" });
+  assert.equal(run.status, 1, run.stderr + run.stdout);
+  const lines = run.stdout.trim().split("\n");
+  assert.equal(lines.length, 1, run.stdout);
+  assert.match(lines[0], /^AEAT full-invoice-changes expectation: /);
+  assert.equal(run.stderr, `AEAT preproduction check failed: ${CUSTOMER_B_REFUSAL}\n`);
+  const partA = modeCli(["full-invoice-changes", "part-a"], "", {
+    AEAT_TEST_SYSTEM_NIF: "89890001K",
+  });
+  assert.equal(partA.status, 0, partA.stderr + partA.stdout);
+});

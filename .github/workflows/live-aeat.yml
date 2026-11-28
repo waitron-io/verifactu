@@ -38,8 +38,17 @@ on:
           - replacement-after-credit
           - canje
           - restatement-corrections
+          - full-invoice-changes
         default: consult
         required: true
+      cases:
+        description: Cases the full-invoice-changes mode runs
+        type: choice
+        options:
+          - all
+          - part-a
+        default: all
+        required: false
       excluded_regime:
         description: Excluded regime used by mixed-regime submit or consulta mode
         type: choice
@@ -97,4 +106,5 @@ jobs:
           AEAT_TEST_EXISTING_ISSUE_DATE: ${{ inputs.existing_issue_date }}
           AEAT_TEST_LEGACY_MIXED_PREFIX: ${{ inputs.legacy_mixed_prefix }}
           TEST_MODE: ${{ github.event_name == 'schedule' && 'submit' || inputs.mode }}
-        run: node scripts/live-aeat.mjs "$TEST_MODE"
+          TEST_CASES: ${{ inputs.cases }}
+        run: node scripts/live-aeat.mjs "$TEST_MODE" "$TEST_CASES"
