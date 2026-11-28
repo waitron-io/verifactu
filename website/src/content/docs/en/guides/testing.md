@@ -21,8 +21,8 @@ console.log(aeat.stored().length); // 1
 ```
 
 Its clock is fixed at 21 July 2026 unless you pass `serverNow`, which keeps your tests the same
-from day to day. Like AEAT, it rejects an invoice dated after its clock. Move the clock during a
-test with `aeat.setServerNow(date)`.
+from day to day. Like AEAT, it rejects an invoice dated in the future, judged by its clock's date
+in Madrid. Move the clock during a test with `aeat.setServerNow(date)`.
 
 If your code creates its own client, pass it `aeat.fetch` in place of your certificate fetch:
 

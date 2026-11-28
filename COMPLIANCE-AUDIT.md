@@ -1452,7 +1452,9 @@ cancellation consumes it. The fake's `forget()` control also clears that history
 invoice trace.
 The fake also distinguishes the error tables' date cases: a future invoice date rejects with
 `1112`, while a future `FechaHoraHusoGenRegistro` is stored as `AceptadoConErrores` with `2004`.
-Only AEAT's clock and unpublished tolerance can decide the live boundary.
+The invoice-date check compares with the fake clock's date in Madrid, following the invoice-date
+probe of 28 November 2026 under “Existing live evidence”. AEAT's clock still decides the live
+boundary.
 
 The offline §6 matrix is complete for the fake's one-record-per-invoice model. It records only
 whether the matching operation kind was rejected, not AEAT's complete attempt history, and its
@@ -1739,6 +1741,25 @@ spelling and does not match the fake's ASCII period comparison, even when querie
 digits. Other Unicode decimal-digit scripts, such as Persian digits, pass request validation but
 are not converted by this fake. Neither case was tested against AEAT. No submission, hash or
 canonicalization rule changed.
+
+#### Invoice-date boundary probe result — 28 November 2026
+
+A one-off probe run from Waitron, not from this repository's workflow, so with no public run link,
+sent four throwaway altas to AEAT's TEST service at 2026-11-27T23:10:13Z, which was 00:10 on
+28 November in Madrid. Each was sent as the first record of its own chain. AEAT answered:
+
+- dated `27-11-2026`, generated `2026-11-28T00:10:13+01:00`: `Correcto`;
+- dated `28-11-2026`, generated `2026-11-28T00:10:13+01:00`: `Correcto`;
+- dated `28-11-2026`, generated `2026-11-27T23:10:13+00:00`: `Correcto`;
+- dated `29-11-2026`, generated `2026-11-28T00:10:13+01:00`: `Incorrecto` with `1112`, “El campo
+  FechaExpedicionFactura es superior a la fecha actual.”
+
+This fits AEAT comparing the invoice date with its own calendar date in Madrid, with either of the
+two offsets the records carried. It also fits a comparison with the UTC date that allows at least
+49 minutes 47 seconds, so the run does not separate the two. The fake follows the Madrid reading. `validate()`
+still takes the current date from the record's own offset, so it refuses the third record with
+`FECHA_EXPEDICION_FUTURE`; that check is unchanged. One winter instant on the TEST service was
+probed; summer time and production were not.
 
 #### Decimal lexical probe design (E28)
 

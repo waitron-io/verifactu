@@ -344,6 +344,129 @@ describe("fake AEAT — submit", () => {
     expect(aeat.stored()).toEqual([]);
   });
 
+  async function lineFor(serverNow: Date, record: RegistroAlta) {
+    const aeat = createFakeAeat({ serverNow });
+    const response = await aeat.client().submit(cabecera, [{ RegistroAlta: record }]);
+    return { line: response.RespuestaLinea[0], stored: aeat.stored() };
+  }
+
+  it("judges a future invoice date by AEAT's Madrid calendar date, not midnight UTC", async () => {
+    const serverNow = new Date("2026-11-27T23:10:13Z");
+    const generated = "2026-11-28T00:10:00+01:00";
+    const today = {
+      ...altaFixture("A/MADRID-TODAY", "28-11-2026"),
+      FechaHoraHusoGenRegistro: generated,
+    };
+    const todayWrittenInUtc = {
+      ...altaFixture("A/MADRID-TODAY-UTC", "28-11-2026"),
+      FechaHoraHusoGenRegistro: "2026-11-27T23:10:13+00:00",
+    };
+    const tomorrow = {
+      ...altaFixture("A/MADRID-TOMORROW", "29-11-2026"),
+      FechaHoraHusoGenRegistro: generated,
+    };
+
+    expect((await lineFor(serverNow, today)).line?.EstadoRegistro).toBe("Correcto");
+    expect((await lineFor(serverNow, todayWrittenInUtc)).line?.EstadoRegistro).toBe("Correcto");
+    expect((await lineFor(serverNow, tomorrow)).line).toMatchObject({
+      EstadoRegistro: "Incorrecto",
+      CodigoErrorRegistro: 1112,
+    });
+  });
+
+  it("refuses Madrid's tomorrow in winter while UTC+2 has already reached it", async () => {
+    const { line } = await lineFor(
+      new Date("2026-11-27T22:50:00Z"),
+      altaFixture("A/MADRID-WINTER-EVE", "28-11-2026"),
+    );
+
+    expect(line).toMatchObject({ EstadoRegistro: "Incorrecto", CodigoErrorRegistro: 1112 });
+  });
+
+  it("judges Madrid's calendar date with summer time's two-hour offset", async () => {
+    const record = altaFixture("A/MADRID-SUMMER", "21-07-2026");
+
+    const afterMidnight = await lineFor(new Date("2026-07-20T22:10:00Z"), record);
+    const beforeMidnight = await lineFor(new Date("2026-07-20T21:50:00Z"), record);
+
+    expect(afterMidnight.line?.EstadoRegistro).toBe("Correcto");
+    expect(beforeMidnight.line).toMatchObject({
+      EstadoRegistro: "Incorrecto",
+      CodigoErrorRegistro: 1112,
+    });
+  });
+
+  it("does not judge an invoice date written in non-ASCII digits as future", async () => {
+    const { line, stored } = await lineFor(
+      new Date("2026-07-21T00:00:00Z"),
+      altaFixture("A/ARABIC-INDIC-DATE", "٢٢-٠٧-٢٠٢٦"),
+    );
+
+    expect(line?.EstadoRegistro).toBe("Correcto");
+    expect(stored).toHaveLength(1);
+  });
+
+  it.each(["20-13-2026", "32-07-2026", "00-08-2026", "21-00-2027"])(
+    "does not judge the impossible invoice date %s as future",
+    async (fecha) => {
+      const { line, stored } = await lineFor(
+        new Date("2026-07-21T00:00:00Z"),
+        altaFixture("A/IMPOSSIBLE-DATE", fecha),
+      );
+
+      expect(line?.EstadoRegistro).toBe("Correcto");
+      expect(stored).toHaveLength(1);
+    },
+  );
+
+  it.each(["122-07-2026", "22-07-20266"])(
+    "does not judge the malformed invoice date %s, sent as raw XML, as future",
+    async (fecha) => {
+      const aeat = createFakeAeat({ serverNow: new Date("2026-07-21T00:00:00Z") });
+      const xml = serializeEnvio(cabecera, [
+        { RegistroAlta: altaFixture("A/MALFORMED-DATE", "22-07-2026") },
+      ]).replace(
+        "<sf:FechaExpedicionFactura>22-07-2026</sf:FechaExpedicionFactura>",
+        `<sf:FechaExpedicionFactura>${fecha}</sf:FechaExpedicionFactura>`,
+      );
+      const wireResponse = await aeat.fetch("https://example.test/Verifactu", {
+        method: "POST",
+        headers: { "Content-Type": "text/xml; charset=utf-8", SOAPAction: '""' },
+        body: xml,
+      });
+      // The client's response parser refuses the echoed date, so read the wire text.
+      const wireText = await wireResponse.text();
+
+      expect(wireText).toContain("<sfR:EstadoRegistro>Correcto</sfR:EstadoRegistro>");
+      expect(aeat.stored()).toHaveLength(1);
+    },
+  );
+
+  it("compares calendar years of any width as numbers", async () => {
+    const generated = { FechaHoraHusoGenRegistro: "0999-07-20T12:00:00+00:00" };
+    const threeDigitYear = await lineFor(new Date("0999-07-20T12:00:00Z"), {
+      ...altaFixture("A/YEAR-999", "21-07-0999"),
+      ...generated,
+    });
+    const fiveDigitYear = await lineFor(
+      new Date("+010000-01-01T12:00:00Z"),
+      altaFixture("A/YEAR-10000", "31-12-9999"),
+    );
+
+    expect(threeDigitYear.line).toMatchObject({
+      EstadoRegistro: "Incorrecto",
+      CodigoErrorRegistro: 1112,
+    });
+    expect(fiveDigitYear.line?.EstadoRegistro).toBe("Correcto");
+  });
+
+  it("judges no invoice date future on an invalid clock", async () => {
+    const { line, stored } = await lineFor(new Date(Number.NaN), altaFixture("A/INVALID-CLOCK"));
+
+    expect(line?.EstadoRegistro).toBe("Correcto");
+    expect(stored).toHaveLength(1);
+  });
+
   it("marks an all-rejected batch Incorrecto without issuing a CSV", async () => {
     const aeat = createFakeAeat();
     const first = altaFixture("A/91");

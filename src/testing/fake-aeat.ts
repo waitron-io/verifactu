@@ -1,5 +1,6 @@
 import { createClient, type VerifactuClient } from "../client.js";
 import { trimValue } from "../format.js";
+import { fechaOrdinal } from "../validate.js";
 import { escapeXml } from "../xml/escape.js";
 import { parseConsulta, parseEnvioUnchecked } from "../xml/parse-request.js";
 import type { EstadoRegistroConsulta } from "../xml/parse-consulta.js";
@@ -173,10 +174,20 @@ export function keyOf(record: RegistroAlta | RegistroAnulacion): FacturaKey {
   return keyOfIdentity(identityOf(entry).idf);
 }
 
-// "DD-MM-YYYY" (AEAT's sf:fecha) → a UTC Date at midnight, for the future-dating (2004) check.
-function fechaToDate(ddMmYyyy: string): Date {
-  const [dd, mm, yyyy] = ddMmYyyy.split("-");
-  return new Date(`${yyyy}-${mm}-${dd}T00:00:00Z`);
+// Built per call: mutation runs load the module once, so module-level options go untested.
+function madridDateNumber(instant: Date): number {
+  if (Number.isNaN(instant.getTime())) return Number.NaN;
+  const madridDateFormat = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Madrid",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+  });
+  const parts = Object.fromEntries(
+    madridDateFormat.formatToParts(instant).map(({ type, value }) => [type, value]),
+  );
+  const part = (type: string): number => Number(parts[type]);
+  return part("year") * 10000 + part("month") * 100 + part("day");
 }
 
 function periodoImputacionOf(ddMmYyyy: string): string {
@@ -216,6 +227,7 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
     let anyAcceptedWithErrors = false;
     // The synthetic petition ID and the CSV for a non-rejected batch share this sequence.
     const csv = `CSV-${String(++csvSequence).padStart(8, "0")}`;
+    const madridToday = madridDateNumber(serverNow);
     for (const entry of registros) {
       const {
         idf,
@@ -230,7 +242,8 @@ export function createFakeAeat(options: FakeAeatOptions = {}): FakeAeat {
       const key = keyOfIdentity(idf);
       const existing = store.get(key);
       const forced = rejections.get(key);
-      const futureInvoiceDate = fechaToDate(fecha).getTime() > serverNow.getTime();
+      // See COMPLIANCE-AUDIT.md, "Invoice-date boundary probe result — 28 November 2026".
+      const futureInvoiceDate = (fechaOrdinal(fecha) ?? Number.NaN) > madridToday;
       const futureGenerationTime = Date.parse(fechaHoraHusoGenRegistro) > serverNow.getTime();
       const alta = "RegistroAlta" in entry ? entry.RegistroAlta : undefined;
       const anulacion = "RegistroAnulacion" in entry ? entry.RegistroAnulacion : undefined;
