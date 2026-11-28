@@ -75,16 +75,21 @@ which belongs to non-VERI*FACTU submissions made in response to an AEAT requirem
 
 Create the `aeat-preproduction` GitHub environment and add these environment secrets:
 
-| Secret                     | Value                                                               |
-| -------------------------- | ------------------------------------------------------------------- |
-| `AEAT_TEST_P12_BASE64`     | Base64 encoding of the authorized certificate's `.p12`/`.pfx` bytes |
-| `AEAT_TEST_P12_PASSWORD`   | Password for that certificate                                       |
-| `AEAT_TEST_NIF`            | Test issuer NIF accepted by AEAT for that certificate               |
-| `AEAT_TEST_NAME`           | Test issuer's registered name                                       |
-| `AEAT_TEST_SYSTEM_NIF`     | NIF of the software producer represented in `SistemaInformatico`    |
-| `AEAT_TEST_SYSTEM_NAME`    | Registered name of that software producer                           |
-| `AEAT_TEST_RECIPIENT_NIF`  | Spanish NIF of the test invoice recipient                           |
-| `AEAT_TEST_RECIPIENT_NAME` | Registered name matching `AEAT_TEST_RECIPIENT_NIF`                  |
+| Secret                     | Value                                                                              |
+| -------------------------- | ---------------------------------------------------------------------------------- |
+| `AEAT_TEST_P12_BASE64`     | Base64 encoding of the authorized certificate's `.p12`/`.pfx` bytes                |
+| `AEAT_TEST_P12_PASSWORD`   | Password for that certificate                                                      |
+| `AEAT_TEST_NIF`            | Test issuer NIF accepted by AEAT for that certificate                              |
+| `AEAT_TEST_NAME`           | Test issuer's registered name                                                      |
+| `AEAT_TEST_SYSTEM_NIF`     | NIF of the software producer represented in `SistemaInformatico`, and customer B's |
+| `AEAT_TEST_SYSTEM_NAME`    | Registered name of that software producer, and customer B's                        |
+| `AEAT_TEST_RECIPIENT_NIF`  | Spanish NIF of the test invoice recipient                                          |
+| `AEAT_TEST_RECIPIENT_NAME` | Registered name matching `AEAT_TEST_RECIPIENT_NIF`                                 |
+
+The `full-invoice-changes` mode sends the producer as customer B in case B5. A run of all its cases
+is refused before anything is sent if `AEAT_TEST_SYSTEM_NIF` matches `AEAT_TEST_NIF` or
+`AEAT_TEST_RECIPIENT_NIF`, or if `AEAT_TEST_RECIPIENT_NAME` is already "Renamed Customer SL" (in
+any capitalisation or spacing), the name cases B1, B3 and B4 give customer A.
 
 When configuring another repository or environment, set the repository variable
 `AEAT_TEST_CERT_KIND` to `personal` or `sello` (defaults to

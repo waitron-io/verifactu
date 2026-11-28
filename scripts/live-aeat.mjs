@@ -974,6 +974,7 @@ function replacementAfterCreditExpected(stage) {
 }
 
 function answerSummary(entry) {
+  if (entry.notSent !== undefined) return { verdict: "not sent", reason: entry.notSent };
   const reason = entry.unverified ?? (entry.line ? undefined : "no answer from AEAT was read");
   const { line } = entry;
   return {
@@ -1080,10 +1081,14 @@ export function submitReplacementAfterCreditProbe(client, cabecera, options, hoo
   );
 }
 
+const NOT_SENT_AFTER_MISMATCH =
+  "not sent: an earlier record in its case was not answered as expected";
+
 // Each case is its own chain; each request's records are built after the wait
 // before it, because AEAT answered 2004 for a record generated over 240
 // seconds before it arrived. A stage whose `expected` is undefined is reported
-// without a verdict.
+// without a verdict. With `stopCaseOnMismatch`, a case sends nothing more once
+// a line is answered otherwise, so no later record names a refused one.
 async function submitChainedProbe(
   client,
   cabecera,
@@ -1103,7 +1108,16 @@ async function submitChainedProbe(
   let previousResponse;
   submitting: for (const requests of probe.cases) {
     const chain = [];
+    let caseStopped = false;
     for (const stages of requests) {
+      if (caseStopped) {
+        const entries = stages.map((stage) => {
+          evidence[stage] = { notSent: NOT_SENT_AFTER_MISMATCH, matchesExpectation: false };
+          return [stage, evidence[stage]];
+        });
+        report({ stages, notSent: NOT_SENT_AFTER_MISMATCH }, entries);
+        continue;
+      }
       const request = { stages };
       const entries = stages.map(() => ({}));
       let attempted = false;
@@ -1157,6 +1171,9 @@ async function submitChainedProbe(
         break submitting;
       }
       previousResponse = request.response;
+      caseStopped =
+        probe.stopCaseOnMismatch === true &&
+        entries.some((entry) => entry.matchesExpectation === false);
     }
   }
   evidence.consulta = {};
@@ -1447,6 +1464,80 @@ function centsSum(values) {
 }
 
 // A record built after the Madrid day changed would no longer ask its case's question.
+function assertChainDay(built, now, day, label) {
+  if (built.length === 0) return;
+  const began = built[0].IDFactura.FechaExpedicionFactura;
+  if (began !== madridDayFrom(now, day)) {
+    const relation = { [-1]: ", not the day after it", 1: ", not the day before it" }[day];
+    throw new Error(
+      `Case (${label})'s chain began with a record dated ${began}, but this one would be dated ${madridDayFrom(now, 0)}${relation ?? ""}: the Madrid day changed between them, so nothing more was sent; run again away from Madrid midnight`,
+    );
+  }
+}
+
+function chainedProbeRecord(
+  base,
+  {
+    serial,
+    issueDate,
+    reference,
+    type,
+    named,
+    rectified,
+    operationDate,
+    description,
+    lines,
+    previous,
+    generatedAt,
+    installation,
+    recipient,
+  },
+) {
+  const { offsetMinutes } = madridClock(generatedAt);
+  const body = {
+    ...base,
+    IDFactura: { ...base.IDFactura, NumSerieFactura: serial, FechaExpedicionFactura: issueDate },
+    RefExterna: reference,
+    TipoFactura: type,
+    ...(type.startsWith("R")
+      ? {
+          TipoRectificativa: rectified ? "S" : "I",
+          FacturasRectificadas: { IDFacturaRectificada: [named.IDFactura] },
+        }
+      : {}),
+    ...(rectified
+      ? { ImporteRectificacion: { BaseRectificada: rectified[0], CuotaRectificada: rectified[1] } }
+      : {}),
+    ...(operationDate ? { FechaOperacion: operationDate } : {}),
+    DescripcionOperacion: description,
+    Desglose: lines.map(([rate, amount, vat]) => ({
+      ...base.Desglose[0],
+      TipoImpositivo: rate,
+      BaseImponibleOimporteNoSujeto: amount,
+      CuotaRepercutida: vat,
+    })),
+    CuotaTotal: centsSum(lines.map(([, , vat]) => vat)),
+    ImporteTotal: centsSum(lines.flatMap(([, amount, vat]) => [amount, vat])),
+    Encadenamiento: previous
+      ? { RegistroAnterior: { ...previous.IDFactura, Huella: previous.Huella } }
+      : { PrimerRegistro: "S" },
+    FechaHoraHusoGenRegistro: formatDateTime(generatedAt, offsetMinutes),
+    SistemaInformatico: { ...base.SistemaInformatico, NumeroInstalacion: installation },
+  };
+  if (["F2", "R5"].includes(type)) delete body.Destinatarios;
+  else if (recipient) body.Destinatarios = { IDDestinatario: [recipient] };
+  const record = { ...body, Huella: computeHuella(body) };
+  assertValid(record, { now: generatedAt });
+  return record;
+}
+
+function namedRecord(built, stage, names, serialOf) {
+  if (names === undefined) return undefined;
+  const named = built.find((record) => record.IDFactura.NumSerieFactura === serialOf(names));
+  if (named === undefined) throw new Error(`${stage} must be built after ${names} in its chain`);
+  return named;
+}
+
 export function buildRestatementProbeRecords(options, stages, now, chain = []) {
   const base = buildTestRecord({ ...options, now });
   const built = [...chain];
@@ -1456,73 +1547,24 @@ export function buildRestatementProbeRecords(options, stages, now, chain = []) {
     const spec = RESTATEMENT_STAGES[stage];
     const letter = stage[4].toLowerCase();
     const start = RESTATEMENT_CHAIN_START.get(stage);
-    if (built.length > 0) {
-      const began = built[0].IDFactura.FechaExpedicionFactura;
-      const day = RESTATEMENT_STAGES[start].day ?? 0;
-      if (began !== madridDayFrom(now, day)) {
-        const relation = { [-1]: ", not the day after it", 1: ", not the day before it" }[day];
-        throw new Error(
-          `Case (${letter})'s chain began with a record dated ${began}, but this one would be dated ${madridDayFrom(now, 0)}${relation ?? ""}: the Madrid day changed between them, so nothing more was sent; run again away from Madrid midnight`,
-        );
-      }
-    }
-    const named =
-      spec.names === undefined
-        ? undefined
-        : built.find((record) => record.IDFactura.NumSerieFactura === serialOf(spec.names));
-    if (spec.names !== undefined && named === undefined) {
-      throw new Error(`${stage} must be built after ${spec.names} in its chain`);
-    }
-    const generatedAt = spec.day === 1 ? sameMadridTimeTomorrow(now) : now;
-    const { offsetMinutes } = madridClock(generatedAt);
-    const previous = built.at(-1);
-    const corrective = spec.type.startsWith("R");
-    const body = {
-      ...base,
-      IDFactura: {
-        ...base.IDFactura,
-        NumSerieFactura: serialOf(stage),
-        FechaExpedicionFactura: madridDayFrom(now, spec.day ?? 0),
-      },
-      RefExterna: `CI-RST-${options.runId}-${restatementSerialEnd(stage)}`,
-      TipoFactura: spec.type,
-      ...(corrective
-        ? {
-            TipoRectificativa: spec.rectified ? "S" : "I",
-            FacturasRectificadas: { IDFacturaRectificada: [named.IDFactura] },
-          }
-        : {}),
-      ...(spec.rectified
-        ? {
-            ImporteRectificacion: {
-              BaseRectificada: spec.rectified[0],
-              CuotaRectificada: spec.rectified[1],
-            },
-          }
-        : {}),
-      ...(spec.operation ? { FechaOperacion: named.IDFactura.FechaExpedicionFactura } : {}),
-      DescripcionOperacion: `Restatement probe: case ${letter} ${stage.slice(5)}`,
-      Desglose: spec.lines.map(([rate, amount, vat]) => ({
-        ...base.Desglose[0],
-        TipoImpositivo: rate,
-        BaseImponibleOimporteNoSujeto: amount,
-        CuotaRepercutida: vat,
-      })),
-      CuotaTotal: centsSum(spec.lines.map(([, , vat]) => vat)),
-      ImporteTotal: centsSum(spec.lines.flatMap(([, amount, vat]) => [amount, vat])),
-      Encadenamiento: previous
-        ? { RegistroAnterior: { ...previous.IDFactura, Huella: previous.Huella } }
-        : { PrimerRegistro: "S" },
-      FechaHoraHusoGenRegistro: formatDateTime(generatedAt, offsetMinutes),
-      SistemaInformatico: {
-        ...base.SistemaInformatico,
-        NumeroInstalacion: `CI-RST-${options.runId}-${start[4]}`,
-      },
-    };
-    if (!["F1", "R1"].includes(spec.type)) delete body.Destinatarios;
-    const record = { ...body, Huella: computeHuella(body) };
-    assertValid(record, { now: generatedAt });
-    built.push(record);
+    assertChainDay(built, now, RESTATEMENT_STAGES[start].day ?? 0, letter);
+    const named = namedRecord(built, stage, spec.names, serialOf);
+    built.push(
+      chainedProbeRecord(base, {
+        serial: serialOf(stage),
+        issueDate: madridDayFrom(now, spec.day ?? 0),
+        reference: `CI-RST-${options.runId}-${restatementSerialEnd(stage)}`,
+        type: spec.type,
+        named,
+        rectified: spec.rectified,
+        operationDate: spec.operation ? named.IDFactura.FechaExpedicionFactura : undefined,
+        description: `Restatement probe: case ${letter} ${stage.slice(5)}`,
+        lines: spec.lines,
+        previous: built.at(-1),
+        generatedAt: spec.day === 1 ? sameMadridTimeTomorrow(now) : now,
+        installation: `CI-RST-${options.runId}-${start[4]}`,
+      }),
+    );
   }
   return built.slice(chain.length);
 }
@@ -1582,6 +1624,248 @@ export function submitRestatementProbe(client, cabecera, options, hooks) {
       cases: RESTATEMENT_CASES,
       build: buildRestatementProbeRecords,
       expected: restatementExpected,
+    },
+    hooks,
+  );
+}
+
+const WHOLE_INVOICE = [
+  ["10.00", "20.00", "2.00"],
+  ["21.00", "10.00", "2.10"],
+];
+const LESS_ONE_DISH = [
+  ["10.00", "10.00", "1.00"],
+  ["21.00", "10.00", "2.10"],
+];
+const negated = (lines) => lines.map(([rate, amount, vat]) => [rate, `-${amount}`, `-${vat}`]);
+const WHOLE_INVOICE_RECTIFIED = ["30.00", "4.10"];
+const FULL_INVOICE = {
+  record: "full invoice to customer A of 34.10, 22.00 at 10% and 12.10 at 21% (F1)",
+  type: "F1",
+  lines: WHOLE_INVOICE,
+};
+const RENAMED_CUSTOMER = "Renamed Customer SL";
+
+function creditToZero(type, names) {
+  return {
+    record: `credit to zero by differences naming the full invoice, customer A as sent (${type} I)`,
+    type,
+    names,
+    lines: negated(WHOLE_INVOICE),
+  };
+}
+
+const customerWording = (customer) =>
+  customer === "renamed" ? "customer A's tax number under another name" : "customer A as sent";
+
+function restatedLessOneDish(names, customer) {
+  return {
+    record: `restatement one dish lower, to 23.10, naming the full invoice, rectified 30.00 + 4.10, ${customerWording(customer)} (R1 S)`,
+    type: "R1",
+    names,
+    lines: LESS_ONE_DISH,
+    rectified: WHOLE_INVOICE_RECTIFIED,
+    customer,
+  };
+}
+
+function restatedSameFigures(names, customer) {
+  return {
+    record: `restatement with the same figures naming the full invoice, rectified 30.00 + 4.10, ${customerWording(customer)} (R4 S)`,
+    type: "R4",
+    names,
+    lines: WHOLE_INVOICE,
+    rectified: WHOLE_INVOICE_RECTIFIED,
+    customer,
+  };
+}
+
+// A corrective that changes no customer repeats the one its invoice was sent to.
+const FULL_INVOICE_CHANGE_STAGES = {
+  caseA1Invoice: FULL_INVOICE,
+  caseA1Credit: creditToZero("R4", "caseA1Invoice"),
+  caseA2Invoice: FULL_INVOICE,
+  caseA2Credit: creditToZero("R1", "caseA2Invoice"),
+  caseA3Invoice: FULL_INVOICE,
+  caseA3Dish: {
+    record: "credit of one dish, -11.00 at 10%, by differences naming the full invoice (R1 I)",
+    type: "R1",
+    names: "caseA3Invoice",
+    lines: [["10.00", "-10.00", "-1.00"]],
+  },
+  caseA3Rest: {
+    record: "credit of the rest, -23.10, by differences naming the full invoice (R4 I)",
+    type: "R4",
+    names: "caseA3Invoice",
+    lines: negated(LESS_ONE_DISH),
+  },
+  caseA4Invoice: FULL_INVOICE,
+  caseA4Restatement: restatedLessOneDish("caseA4Invoice"),
+  caseA4Credit: {
+    record: "credit to zero, -23.10, by differences naming the restatement (R4 I)",
+    type: "R4",
+    names: "caseA4Restatement",
+    lines: negated(LESS_ONE_DISH),
+  },
+  caseB1Invoice: FULL_INVOICE,
+  caseB1Restatement: restatedSameFigures("caseB1Invoice", "renamed"),
+  caseB2Invoice: FULL_INVOICE,
+  caseB2Restatement: restatedSameFigures("caseB2Invoice"),
+  caseB3Invoice: FULL_INVOICE,
+  caseB3Restatement: restatedLessOneDish("caseB3Invoice", "renamed"),
+  caseB4Invoice: FULL_INVOICE,
+  caseB4Restatement: restatedLessOneDish("caseB4Invoice"),
+  caseB4Renaming: {
+    record:
+      "restatement with the restated figures naming the restatement, rectified 20.00 + 3.10, customer A's tax number under another name (R4 S)",
+    type: "R4",
+    names: "caseB4Restatement",
+    lines: LESS_ONE_DISH,
+    rectified: ["20.00", "3.10"],
+    customer: "renamed",
+  },
+  caseB5Invoice: FULL_INVOICE,
+  caseB5Credit: creditToZero("R4", "caseB5Invoice"),
+  caseB5Reissue: {
+    record: "full invoice to customer B of 34.10, carrying FechaOperacion yesterday (F1)",
+    type: "F1",
+    lines: WHOLE_INVOICE,
+    operation: -1,
+    customer: "B",
+  },
+};
+
+const FULL_INVOICE_CHANGE_CASES = [
+  ["A1", ["caseA1Invoice", "caseA1Credit"]],
+  ["A2", ["caseA2Invoice", "caseA2Credit"]],
+  ["A3", ["caseA3Invoice", "caseA3Dish", "caseA3Rest"]],
+  ["A4", ["caseA4Invoice", "caseA4Restatement", "caseA4Credit"]],
+  ["B1", ["caseB1Invoice", "caseB1Restatement"]],
+  ["B2", ["caseB2Invoice", "caseB2Restatement"]],
+  ["B3", ["caseB3Invoice", "caseB3Restatement"]],
+  ["B4", ["caseB4Invoice", "caseB4Restatement", "caseB4Renaming"]],
+  ["B5", ["caseB5Invoice", "caseB5Credit", "caseB5Reissue"]],
+];
+
+const FULL_INVOICE_CHANGE_SERIAL_ENDS = new Map(
+  FULL_INVOICE_CHANGE_CASES.flatMap(([name, stages]) =>
+    stages.map((stage, i) => [stage, `${name}-${i + 1}`]),
+  ),
+);
+
+const FULL_INVOICE_CHANGE_SERIES = { F1: "FF", R1: "R1", R4: "R4" };
+
+export function fullInvoiceChangesPart(argument) {
+  if (argument === undefined || argument === "" || argument === "all") return "all";
+  if (argument === "part-a") return "part-a";
+  throw new Error(`Unknown full-invoice-changes cases ${argument}: use all or part-a`);
+}
+
+export function fullInvoiceChangesCases(part) {
+  return FULL_INVOICE_CHANGE_CASES.filter(([name]) => part === "all" || name.startsWith("A")).map(
+    ([, stages]) => stages.map((stage) => [stage]),
+  );
+}
+
+const sameTaxNumber = (a, b) => String(a).trim().toUpperCase() === String(b).trim().toUpperCase();
+const sameName = (a, b) =>
+  String(a).trim().replace(/\s+/g, " ").toLowerCase() ===
+  String(b).trim().replace(/\s+/g, " ").toLowerCase();
+
+function customerBIsTaken(options) {
+  return (
+    sameTaxNumber(options.otherRecipientNif, options.recipientNif) ||
+    sameTaxNumber(options.otherRecipientNif, options.nif)
+  );
+}
+
+export function buildFullInvoiceChangesProbeRecords(options, stages, now, chain = []) {
+  if (stages.some((stage) => stage.startsWith("caseB5")) && customerBIsTaken(options)) {
+    throw new Error("customer B must have another tax number than customer A and the issuer");
+  }
+  const base = buildTestRecord({ ...options, now });
+  const built = [...chain];
+  const serialOf = (stage) =>
+    `${base.IDFactura.NumSerieFactura.replace("CI/", `CI-FIC-${FULL_INVOICE_CHANGE_SERIES[FULL_INVOICE_CHANGE_STAGES[stage].type]}/`)}-${FULL_INVOICE_CHANGE_SERIAL_ENDS.get(stage)}`;
+  const customers = {
+    renamed: { NombreRazon: RENAMED_CUSTOMER, NIF: options.recipientNif },
+    B: { NombreRazon: options.otherRecipientName, NIF: options.otherRecipientNif },
+  };
+  for (const stage of stages) {
+    const spec = FULL_INVOICE_CHANGE_STAGES[stage];
+    const name = stage.slice(4, 6);
+    assertChainDay(built, now, 0, name);
+    built.push(
+      chainedProbeRecord(base, {
+        serial: serialOf(stage),
+        issueDate: madridDayFrom(now, 0),
+        reference: `CI-FIC-${options.runId}-${FULL_INVOICE_CHANGE_SERIAL_ENDS.get(stage)}`,
+        type: spec.type,
+        named: namedRecord(built, stage, spec.names, serialOf),
+        rectified: spec.rectified,
+        operationDate: spec.operation ? madridDayFrom(now, spec.operation) : undefined,
+        description: `Full invoice changes probe: case ${name} ${stage.slice(6)}`,
+        lines: spec.lines,
+        previous: built.at(-1),
+        generatedAt: now,
+        installation: `CI-FIC-${options.runId}-${name}`,
+        recipient: customers[spec.customer],
+      }),
+    );
+  }
+  return built.slice(chain.length);
+}
+
+function fullInvoiceChangesExpected() {
+  return { state: "Correcto" };
+}
+
+export function fullInvoiceChangesSummary(stage, entry) {
+  return {
+    case: stage.slice(4, 6),
+    record: FULL_INVOICE_CHANGE_STAGES[stage].record,
+    expected: fullInvoiceChangesExpected().state,
+    ...answerSummary(entry),
+  };
+}
+
+export function fullInvoiceChangesPassed(evidence, part) {
+  return (
+    !evidence.incomplete &&
+    fullInvoiceChangesCases(part)
+      .flat(2)
+      .every(
+        (stage) =>
+          evidence[stage]?.matchesExpectation === true &&
+          evidence.consulta?.[stage]?.matchesExpectation === true,
+      )
+  );
+}
+
+export async function submitFullInvoiceChangesProbe(client, cabecera, options, hooks) {
+  const cases = fullInvoiceChangesCases(options.part);
+  const customers = new Set(
+    cases.flat(2).map((stage) => FULL_INVOICE_CHANGE_STAGES[stage].customer),
+  );
+  if (customers.has("B") && customerBIsTaken(options)) {
+    throw new Error(
+      "Customer B, the producer's tax number (AEAT_TEST_SYSTEM_NIF), is the issuer's or customer A's, so case B5 would send a full invoice addressed to one of them; nothing was sent: give the producer secret a tax number of its own, or run part-a",
+    );
+  }
+  if (customers.has("renamed") && sameName(options.recipientName, RENAMED_CUSTOMER)) {
+    throw new Error(
+      `Customer A (AEAT_TEST_RECIPIENT_NAME) is already named "${RENAMED_CUSTOMER}", the name cases B1, B3 and B4 give it, so their renaming would change nothing; nothing was sent: give customer A another name, or run part-a`,
+    );
+  }
+  return submitChainedProbe(
+    client,
+    cabecera,
+    options,
+    {
+      cases,
+      build: buildFullInvoiceChangesProbeRecords,
+      expected: fullInvoiceChangesExpected,
+      stopCaseOnMismatch: true,
     },
     hooks,
   );
@@ -3726,10 +4010,13 @@ async function main() {
       "replacement-after-credit",
       "canje",
       "restatement-corrections",
+      "full-invoice-changes",
     ].includes(mode)
   ) {
     throw new Error("Unknown AEAT preproduction mode");
   }
+  const fullInvoicePart =
+    mode === "full-invoice-changes" ? fullInvoiceChangesPart(process.argv[3]) : undefined;
   const nif = required("AEAT_TEST_NIF");
   const name = required("AEAT_TEST_NAME");
   const passphrase = required("AEAT_TEST_P12_PASSWORD");
@@ -3869,6 +4156,62 @@ async function main() {
       `AEAT replacement-after-credit complete: ${outageFlagEvidenceJson(evidence, identities)}\n`,
     );
     if (!replacementAfterCreditPassed(evidence)) process.exitCode = 1;
+    return;
+  }
+
+  if (mode === "full-invoice-changes") {
+    process.stdout.write(
+      `AEAT full-invoice-changes expectation: every record Correcto${fullInvoicePart === "part-a" ? ", part A's cases alone" : ""}. Each case is its own installation and chain, one record per request, all dated today; each case begins with a full invoice (F1) of 34.10 to customer A, 22.00 at 10% and 12.10 at 21%, and every corrective names a customer and none is an R5. Part A cancels or splits an invoice: (A1) an R4 "I" to zero, customer A as sent; (A2) the same as an R1 "I"; (A3) an R1 "I" of one dish, -11.00, then an R4 "I" of the rest, -23.10, both naming the invoice; (A4) an R1 "S" restating it one dish lower, to 23.10, then an R4 "I" of -23.10 naming the R1 "S". Part B changes the customer: (B1) an R4 "S" with the same figures, rectified 30.00 + 4.10, customer A's tax number under another name; (B2) the same with customer A as sent; (B3) an R1 "S" one dish lower under another name; (B4) an R1 "S" one dish lower, then an R4 "S" naming it with its figures, rectified 20.00 + 3.10, under another name; (B5) an R4 "I" to zero, then a full invoice to customer B carrying FechaOperacion yesterday. Exit 0 only when every record sent is Correcto and its lookup finds it once, Correcto, with the hash sent, and every request and lookup gets a readable answer; any other result exits 1 for the owner to read: for a record answered otherwise, read its EstadoRegistro and CodigoErrorRegistro. If a record is answered otherwise, nothing more in its case is sent, and the next case begins; if the Madrid day changes within a case, or a request gets no readable answer, no more records are sent at all. A run of all cases refuses before sending anything if customer B (the producer's tax number) is the issuer's or customer A's, or if customer A is already named as B1, B3 and B4 rename it. Test service only; results do not establish production behaviour.\n`,
+    );
+    const systemNif = required("AEAT_TEST_SYSTEM_NIF");
+    const systemName = required("AEAT_TEST_SYSTEM_NAME");
+    const probeOptions = {
+      nif,
+      name,
+      systemNif,
+      systemName,
+      recipientNif: recipient.NIF,
+      recipientName: recipient.NombreRazon,
+      // Customer B is the software producer: the only second identity the test secrets hold.
+      otherRecipientNif: systemNif,
+      otherRecipientName: systemName,
+      runId,
+      part: fullInvoicePart,
+    };
+    const identities = [
+      nif,
+      name,
+      probeOptions.systemNif,
+      probeOptions.systemName,
+      recipient.NIF,
+      recipient.NombreRazon,
+    ];
+    const evidence = await submitFullInvoiceChangesProbe(client, cabecera, probeOptions, {
+      rawExchange: () => ({ request: lastRawRequest, reply: lastRawReply }),
+      clearRawExchange: () => {
+        lastRawRequest = undefined;
+        lastRawReply = undefined;
+      },
+      report: (request, entries) => {
+        for (const [stage, entry] of entries) {
+          process.stdout.write(
+            `AEAT full-invoice-changes ${stage} result: ${outageFlagEvidenceJson(fullInvoiceChangesSummary(stage, entry), identities)}\n`,
+          );
+        }
+        process.stdout.write(
+          `AEAT full-invoice-changes ${request.stages.join("+")}: ${outageFlagEvidenceJson(request, identities)}\n`,
+        );
+      },
+      reportConsulta: (stage, entry) => {
+        process.stdout.write(
+          `AEAT full-invoice-changes ${stage} consulta: ${outageFlagEvidenceJson(entry, identities)}\n`,
+        );
+      },
+    });
+    process.stdout.write(
+      `AEAT full-invoice-changes complete: ${outageFlagEvidenceJson(evidence, identities)}\n`,
+    );
+    if (!fullInvoiceChangesPassed(evidence, fullInvoicePart)) process.exitCode = 1;
     return;
   }
 
