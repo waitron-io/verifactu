@@ -7556,3 +7556,588 @@ for (const refuse of ["", "-2S"]) {
     }
   });
 }
+
+const CANJE_STAGES = [
+  "caseAReceipt",
+  "caseAInvoice",
+  "caseBReceipt",
+  "caseBInvoice",
+  "caseCInvoice",
+];
+const CANJE_VERDICT_STAGES = CANJE_STAGES.filter((stage) => !stage.startsWith("caseC"));
+
+function canjeRecordsAt(now, options = decimalOptions) {
+  assert.equal(typeof live.buildCanjeProbeRecords, "function");
+  const records = {};
+  for (const stage of CANJE_STAGES) {
+    const chain = Object.entries(records)
+      .filter(([earlier]) => earlier.slice(0, 5) === stage.slice(0, 5))
+      .map(([, record]) => record);
+    [records[stage]] = live.buildCanjeProbeRecords(options, [stage], now, chain);
+  }
+  return records;
+}
+
+async function canjeProbe(fault = {}) {
+  assert.equal(typeof live.submitCanjeProbe, "function");
+  let clock = fault.start ?? decimalOptions.now.getTime();
+  const fake = createFakeAeat({ serverNow: new Date(clock), tiempoEsperaInicial: 13 });
+  let exchange;
+  const requests = [];
+  const submitClocks = [];
+  const consultas = [];
+  const waits = [];
+  const reports = [];
+  const consultaReports = [];
+  const soap = createClient({
+    endpoint: "https://fake.aeat.test/soap",
+    fetch: async (url, init) => {
+      exchange = { request: init.body };
+      const response = await fake.fetch(url, init);
+      exchange.reply = await response.clone().text();
+      return response;
+    },
+  });
+  const evidence = await live.submitCanjeProbe(
+    {
+      async submit(header, records) {
+        requests.push(records.map(({ RegistroAlta }) => structuredClone(RegistroAlta)));
+        submitClocks.push(clock);
+        const n = requests.length;
+        for (const { RegistroAlta: id } of records) {
+          if (fault.reject && id.IDFactura.NumSerieFactura.endsWith(fault.reject)) {
+            const { IDEmisorFactura, NumSerieFactura, FechaExpedicionFactura } = id.IDFactura;
+            fake.reject(
+              `${IDEmisorFactura}|${NumSerieFactura}|${FechaExpedicionFactura}`,
+              1100,
+              "controlled refusal",
+            );
+          }
+        }
+        if (fault.transportAt === n) {
+          exchange = { request: serializeEnvio(header, records) };
+          throw new Error("connection closed");
+        }
+        const response = await soap.submit(header, records);
+        response.TiempoEsperaEnvio = n + 10;
+        return fault.submission?.(response, n) ?? response;
+      },
+      async consultar(header, filter) {
+        consultas.push([structuredClone(header), structuredClone(filter)]);
+        if (fault.consultaFails === consultas.length) throw new Error("consulta failed");
+        const result = await soap.consultar(header, filter);
+        return fault.consultation?.(result, filter.NumSerieFactura) ?? result;
+      },
+    },
+    successorHeader,
+    decimalOptions,
+    {
+      now: () => new Date(clock),
+      waitForSubmission: async (seconds) => {
+        waits.push(seconds);
+        clock += seconds * 1000;
+        fake.setServerNow(new Date(clock));
+      },
+      rawExchange: () => (exchange ? structuredClone(exchange) : undefined),
+      clearRawExchange: () => {
+        exchange = undefined;
+      },
+      report: (request, entries) => reports.push(structuredClone([request, entries])),
+      reportConsulta: (stage, entry) => consultaReports.push([stage, structuredClone(entry)]),
+    },
+  );
+  return { evidence, requests, submitClocks, consultas, waits, reports, consultaReports };
+}
+
+test("canje builds an F2 and the F3 replacing it in each chain, and an F3 naming an unsent F2 alone", () => {
+  const records = canjeRecordsAt(decimalOptions.now);
+  const { caseAReceipt, caseAInvoice, caseBReceipt, caseBInvoice, caseCInvoice } = records;
+  for (const [letter, chain] of [
+    ["A", [caseAReceipt, caseAInvoice]],
+    ["B", [caseBReceipt, caseBInvoice]],
+    ["C", [caseCInvoice]],
+  ]) {
+    assert.deepEqual(chain[0].Encadenamiento, { PrimerRegistro: "S" });
+    for (const record of chain) {
+      assert.equal(record.SistemaInformatico.NumeroInstalacion, `CI-F3-12345-${letter}`);
+    }
+    if (chain[1]) {
+      assert.deepEqual(chain[1].Encadenamiento, {
+        RegistroAnterior: { ...chain[0].IDFactura, Huella: chain[0].Huella },
+      });
+    }
+  }
+  assert.equal(caseAReceipt.IDFactura.NumSerieFactura, "CI-F3-FS/20260927/12345-A");
+  assert.equal(caseAInvoice.IDFactura.NumSerieFactura, "CI-F3-FF/20260927/12345-A");
+  assert.equal(caseBReceipt.IDFactura.NumSerieFactura, "CI-F3-FS/20260927/12345-B");
+  assert.equal(caseCInvoice.IDFactura.NumSerieFactura, "CI-F3-FF/20260927/12345-C");
+  assert.equal(caseAInvoice.RefExterna, "CI-F3-12345-AF3");
+  assert.equal(caseBReceipt.IDFactura.FechaExpedicionFactura, "26-09-2026");
+  assert.equal(caseBReceipt.FechaHoraHusoGenRegistro, "2026-09-27T14:00:00+02:00");
+  for (const stage of ["caseAReceipt", "caseAInvoice", "caseBInvoice", "caseCInvoice"]) {
+    assert.equal(records[stage].IDFactura.FechaExpedicionFactura, "27-09-2026", stage);
+  }
+  assert.deepEqual(caseAInvoice.FacturasSustituidas, {
+    IDFacturaSustituida: [caseAReceipt.IDFactura],
+  });
+  assert.deepEqual(caseBInvoice.FacturasSustituidas, {
+    IDFacturaSustituida: [caseBReceipt.IDFactura],
+  });
+  assert.deepEqual(caseCInvoice.FacturasSustituidas, {
+    IDFacturaSustituida: [
+      {
+        IDEmisorFactura: decimalOptions.nif,
+        NumSerieFactura: "CI-F3-FS/20260927/12345-C",
+        FechaExpedicionFactura: "27-09-2026",
+      },
+    ],
+  });
+  assert.equal(caseBInvoice.FechaOperacion, "26-09-2026");
+  for (const [stage, record] of Object.entries(records)) {
+    const invoice = stage.endsWith("Invoice");
+    assert.equal(record.TipoFactura, invoice ? "F3" : "F2", stage);
+    assert.equal(record.TipoRectificativa, undefined, stage);
+    assert.equal(record.FacturasRectificadas, undefined, stage);
+    assert.equal(record.ImporteRectificacion, undefined, stage);
+    if (stage !== "caseBInvoice") assert.equal(record.FechaOperacion, undefined, stage);
+    if (invoice) {
+      assert.deepEqual(record.Destinatarios, {
+        IDDestinatario: [
+          { NombreRazon: decimalOptions.recipientName, NIF: decimalOptions.recipientNif },
+        ],
+      });
+    } else {
+      assert.equal(record.Destinatarios, undefined, stage);
+      assert.equal(record.FacturasSustituidas, undefined, stage);
+    }
+    assert.equal(record.Desglose.length, 1, stage);
+    assert.deepEqual(
+      [
+        record.Desglose[0].TipoImpositivo,
+        record.Desglose[0].BaseImponibleOimporteNoSujeto,
+        record.Desglose[0].CuotaRepercutida,
+        record.CuotaTotal,
+        record.ImporteTotal,
+      ],
+      ["10.00", "45.45", "4.55", "4.55", "50.00"],
+      stage,
+    );
+    assert.equal(record.Huella, computeHuella(record), stage);
+    assert.deepEqual(
+      validate(record, { now: decimalOptions.now }).filter(({ severity }) => severity === "error"),
+      [],
+      stage,
+    );
+  }
+});
+
+for (const [name, now, yesterday] of [
+  ["a month", "2026-10-01T08:00:00Z", "30-09-2026"],
+  ["the autumn clock change's long day", "2027-10-31T22:30:00Z", "30-10-2027"],
+  ["the day after the spring clock change's short day", "2027-03-28T22:30:00Z", "28-03-2027"],
+]) {
+  test(`canje dates case B's receipt on the Madrid day before across ${name}`, () => {
+    const [receipt] = live.buildCanjeProbeRecords(decimalOptions, ["caseBReceipt"], new Date(now));
+    assert.equal(receipt.IDFactura.FechaExpedicionFactura, yesterday);
+  });
+}
+
+test("canje sends each record alone after its wait, then looks up every number", async () => {
+  const { evidence, requests, submitClocks, consultas, waits, reports, consultaReports } =
+    await canjeProbe();
+  assert.equal(evidence.incomplete, false);
+  assert.equal(live.canjePassed(evidence), true);
+  assert.deepEqual(
+    requests.map((batch) => batch.map((record) => record.IDFactura.NumSerieFactura)),
+    [
+      ["CI-F3-FS/20260927/12345-A"],
+      ["CI-F3-FF/20260927/12345-A"],
+      ["CI-F3-FS/20260927/12345-B"],
+      ["CI-F3-FF/20260927/12345-B"],
+      ["CI-F3-FF/20260927/12345-C"],
+    ],
+  );
+  assert.deepEqual(waits, [11, 12, 13, 14]);
+  assert.deepEqual(
+    reports.map(([request]) => request.stages),
+    CANJE_STAGES.map((stage) => [stage]),
+  );
+  for (const [i, stage] of CANJE_STAGES.entries()) {
+    const entry = evidence[stage];
+    assert.deepEqual(entry.record, requests[i][0], stage);
+    assert.equal(
+      entry.record.FechaHoraHusoGenRegistro,
+      formatDateTime(new Date(submitClocks[i]), 120),
+      stage,
+    );
+    assert.equal(entry.line.EstadoRegistro, "Correcto", stage);
+  }
+  assert.deepEqual(requests[1][0].Encadenamiento, {
+    RegistroAnterior: { ...requests[0][0].IDFactura, Huella: requests[0][0].Huella },
+  });
+  assert.deepEqual(requests[3][0].FacturasSustituidas, {
+    IDFacturaSustituida: [requests[2][0].IDFactura],
+  });
+  assert.deepEqual(
+    consultas.map(([header, filter]) => [header, filter.NumSerieFactura]),
+    requests.map(([record]) => [
+      issuerConsultaHeader(successorHeader.ObligadoEmision),
+      record.IDFactura.NumSerieFactura,
+    ]),
+  );
+  assert.deepEqual(
+    consultaReports.map(([stage]) => stage),
+    CANJE_STAGES,
+  );
+  for (const stage of CANJE_STAGES) {
+    assert.equal(evidence.consulta[stage].matchesExpectation, true, stage);
+    assert.equal(evidence.consulta[stage].Huella, evidence[stage].record.Huella, stage);
+  }
+});
+
+for (const [name, submission] of [
+  ["accepted", undefined],
+  ["refused", "FF/20260927/12345-C"],
+]) {
+  test(`canje leaves the verdict to cases A and B when case C is ${name}`, async () => {
+    const { evidence } = await canjeProbe({ reject: submission });
+    assert.equal(evidence.caseCInvoice.line.EstadoRegistro, submission ? "Incorrecto" : "Correcto");
+    assert.equal(evidence.consulta.caseCInvoice.matchesExpectation, true);
+    assert.equal(evidence.incomplete, false);
+    assert.equal(live.canjePassed(evidence), true);
+    const summary = live.canjeSummary("caseCInvoice", evidence.caseCInvoice);
+    assert.equal(summary.expected, "reported only");
+    assert.equal(summary.EstadoRegistro, submission ? "Incorrecto" : "Correcto");
+  });
+}
+
+for (const [stage, serialEnd] of [
+  ["caseAInvoice", "FF/20260927/12345-A"],
+  ["caseBReceipt", "FS/20260927/12345-B"],
+  ["caseBInvoice", "FF/20260927/12345-B"],
+]) {
+  test(`canje fails the run and prints AEAT's code when ${stage} is refused`, async () => {
+    const { evidence, requests } = await canjeProbe({ reject: serialEnd });
+    assert.equal(requests.length, 5);
+    assert.equal(evidence.incomplete, false);
+    assert.equal(evidence[stage].matchesExpectation, false);
+    assert.equal(evidence.consulta[stage].matchesExpectation, true);
+    assert.equal(live.canjePassed(evidence), false);
+    assert.deepEqual(live.canjeSummary(stage, evidence[stage]), {
+      case: stage[4].toLowerCase(),
+      record: live.canjeSummary(stage, {}).record,
+      expected: "Correcto",
+      EstadoEnvio: "Incorrecto",
+      EstadoRegistro: "Incorrecto",
+      CodigoErrorRegistro: 1100,
+      DescripcionErrorRegistro: "controlled refusal",
+    });
+  });
+}
+
+test("canje summarises each record's case, kind and expectation", () => {
+  assert.deepEqual(live.canjeSummary("caseBInvoice", { error: "boom" }), {
+    case: "b",
+    record: "full invoice dated today replacing the receipt, carrying the sale's date (F3)",
+    expected: "Correcto",
+    verdict: "unverified",
+    reason: "no answer from AEAT was read",
+    error: "boom",
+  });
+  assert.deepEqual(live.canjeSummary("caseAReceipt", {}).record, "receipt dated today (F2)");
+  assert.deepEqual(live.canjeSummary("caseBReceipt", {}).record, "receipt dated yesterday (F2)");
+  assert.deepEqual(
+    live.canjeSummary("caseAInvoice", {}).record,
+    "full invoice dated today replacing the receipt (F3)",
+  );
+  assert.deepEqual(
+    live.canjeSummary("caseCInvoice", {}).record,
+    "full invoice replacing a receipt never sent (F3)",
+  );
+});
+
+test("canje looks up case B's full invoice in the month of its sale date on the 1st of January", async () => {
+  const { evidence, requests, consultas } = await canjeProbe({
+    start: Date.parse("2027-01-01T08:00:00Z"),
+  });
+  const invoice = requests[3][0];
+  assert.equal(invoice.IDFactura.FechaExpedicionFactura, "01-01-2027");
+  assert.equal(invoice.FechaOperacion, "31-12-2026");
+  const [, filter] = consultas.find(
+    ([, { NumSerieFactura }]) => NumSerieFactura === invoice.IDFactura.NumSerieFactura,
+  );
+  assert.deepEqual([filter.Ejercicio, filter.Periodo], ["2026", "12"]);
+  assert.equal(evidence.consulta.caseBInvoice.ResultadoConsulta, "ConDatos");
+  assert.equal(evidence.consulta.caseBInvoice.matchesExpectation, true);
+  assert.equal(evidence.incomplete, false);
+  assert.equal(live.canjePassed(evidence), true);
+});
+
+test("canje stops case A, sending nothing dated the next day, when Madrid midnight passes before its full invoice", async () => {
+  const { evidence, requests, consultas, waits } = await canjeProbe({
+    start: Date.parse("2026-11-28T22:59:55Z"),
+  });
+  assert.deepEqual(waits, [11]);
+  assert.deepEqual(
+    requests.map(([record]) => record.IDFactura.FechaExpedicionFactura),
+    ["28-11-2026"],
+  );
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedAfter, "caseAInvoice");
+  assert.equal(evidence.caseAInvoice.record, undefined);
+  assert.equal(evidence.caseAInvoice.matchesExpectation, false);
+  assert.equal(
+    evidence.caseAInvoice.error,
+    "Case (a)'s receipt was dated 28-11-2026 but its full invoice would have been dated 29-11-2026: the Madrid day changed between them, so nothing more was sent; run again away from Madrid midnight",
+  );
+  assert.equal(evidence.requests[1].error, evidence.caseAInvoice.error);
+  assert.equal(evidence.caseBReceipt, undefined);
+  assert.deepEqual(
+    consultas.map(([, filter]) => filter.NumSerieFactura),
+    [requests[0][0].IDFactura.NumSerieFactura],
+  );
+  assert.equal(live.canjePassed(evidence), false);
+});
+
+test("canje stops case B, sending nothing dated two days after its receipt, when Madrid midnight passes before its full invoice", async () => {
+  const { evidence, requests, consultas, waits } = await canjeProbe({
+    start: Date.parse("2026-11-28T22:59:30Z"),
+  });
+  assert.deepEqual(waits, [11, 12, 13]);
+  assert.deepEqual(
+    requests.map(([record]) => [
+      record.IDFactura.NumSerieFactura,
+      record.IDFactura.FechaExpedicionFactura,
+    ]),
+    [
+      ["CI-F3-FS/20261128/12345-A", "28-11-2026"],
+      ["CI-F3-FF/20261128/12345-A", "28-11-2026"],
+      ["CI-F3-FS/20261128/12345-B", "27-11-2026"],
+    ],
+  );
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedAfter, "caseBInvoice");
+  assert.equal(evidence.caseBInvoice.record, undefined);
+  assert.equal(evidence.caseBInvoice.matchesExpectation, false);
+  assert.equal(
+    evidence.caseBInvoice.error,
+    "Case (b)'s receipt was dated 27-11-2026 but its full invoice would have been dated 29-11-2026, not the day after it: the Madrid day changed between them, so nothing more was sent; run again away from Madrid midnight",
+  );
+  assert.equal(evidence.requests[3].error, evidence.caseBInvoice.error);
+  assert.equal(evidence.caseCInvoice, undefined);
+  assert.deepEqual(
+    consultas.map(([, filter]) => filter.NumSerieFactura),
+    requests.map(([record]) => record.IDFactura.NumSerieFactura),
+  );
+  assert.equal(live.canjePassed(evidence), false);
+});
+
+test("canje stops at a reply missing its line and looks up only what it sent", async () => {
+  const { evidence, requests, consultas } = await canjeProbe({
+    submission: (response, n) => {
+      if (n === 3) response.RespuestaLinea = [];
+      return response;
+    },
+  });
+  assert.equal(requests.length, 3);
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedAfter, "caseBReceipt");
+  assert.match(evidence.caseBReceipt.unverified, /0 lines, not 1/);
+  assert.equal(evidence.caseBInvoice, undefined);
+  assert.equal(consultas.length, 3);
+  assert.equal(live.canjePassed(evidence), false);
+});
+
+test("canje stops at a transport error and counts the run incomplete", async () => {
+  const { evidence, requests } = await canjeProbe({ transportAt: 2 });
+  assert.equal(requests.length, 2);
+  assert.equal(evidence.stoppedAfter, "caseAInvoice");
+  assert.match(evidence.caseAInvoice.error, /connection closed/);
+  assert.equal(live.canjePassed(evidence), false);
+});
+
+test("canje counts a failed lookup as an incomplete run, case C's included", async () => {
+  for (const at of [2, 5]) {
+    const { evidence } = await canjeProbe({ consultaFails: at });
+    assert.equal(evidence.incomplete, true);
+    assert.equal(live.canjePassed(evidence), false);
+  }
+});
+
+test("canje fails the run when an accepted record's lookup finds another hash", async () => {
+  const { evidence } = await canjeProbe({
+    consultation: atLookup(
+      "FF/20260927/12345-B",
+      (r) => (r.registros[0].DatosRegistroFacturacion.Huella = "0".repeat(64)),
+    ),
+  });
+  assert.equal(evidence.consulta.caseBInvoice.matchesExpectation, false);
+  assert.equal(evidence.incomplete, false);
+  assert.equal(live.canjePassed(evidence), false);
+});
+
+test("canje passes only when every case A and B record and its lookup matched, whatever case C shows", () => {
+  const passing = Object.fromEntries(
+    CANJE_VERDICT_STAGES.map((stage) => [stage, { matchesExpectation: true }]),
+  );
+  const consulta = Object.fromEntries(
+    CANJE_VERDICT_STAGES.map((stage) => [stage, { matchesExpectation: true }]),
+  );
+  assert.equal(live.canjePassed({ incomplete: false, ...passing, consulta }), true);
+  assert.equal(
+    live.canjePassed({
+      incomplete: false,
+      ...passing,
+      caseCInvoice: { matchesExpectation: false },
+      consulta: { ...consulta, caseCInvoice: { matchesExpectation: false } },
+    }),
+    true,
+  );
+  assert.equal(live.canjePassed({ incomplete: true, ...passing, consulta }), false);
+  for (const stage of CANJE_VERDICT_STAGES) {
+    const missing = { incomplete: false, ...passing, consulta: { ...consulta } };
+    delete missing[stage];
+    assert.equal(live.canjePassed(missing), false, stage);
+    const lookupFailed = {
+      incomplete: false,
+      ...passing,
+      consulta: { ...consulta, [stage]: { matchesExpectation: false } },
+    };
+    assert.equal(live.canjePassed(lookupFailed), false, stage);
+  }
+});
+
+test("canje is a reachable live CLI mode listed in the workflow", () => {
+  const run = spawnSync(process.execPath, ["scripts/live-aeat.mjs", "canje"], {
+    encoding: "utf8",
+    timeout: 5000,
+    env: { PATH: process.env.PATH },
+  });
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /Set AEAT_TEST_NIF/);
+  assert.doesNotMatch(run.stderr, /Unknown AEAT preproduction mode/);
+  const workflow = readFileSync(".github/workflows/live-aeat.yml", "utf8");
+  assert.match(workflow, /^ {10}- canje$/m);
+});
+
+function canjeCli(refuseSerialEnd) {
+  const source = `
+    import https from "node:https";
+    import { syncBuiltinESMExports } from "node:module";
+    import { EventEmitter } from "node:events";
+    import { pathToFileURL } from "node:url";
+    import { createFakeAeat } from "./dist/testing/fake-aeat.js";
+    import { parseEnvio } from "./dist/index.js";
+    const RealDate = Date;
+    const realTimeout = setTimeout;
+    let clock = RealDate.parse("2026-10-21T10:00:00Z");
+    globalThis.Date = class extends RealDate {
+      constructor(...args) { super(...(args.length ? args : [clock])); }
+      static now() { return clock; }
+    };
+    globalThis.setTimeout = (callback, milliseconds, ...args) => {
+      clock += milliseconds;
+      return realTimeout(callback, 0, ...args);
+    };
+    const fake = createFakeAeat({ serverNow: new RealDate(clock), tiempoEsperaInicial: 0 });
+    globalThis.fetch = () => { throw new Error("unexpected external request"); };
+    https.request = (url, options, callback) => {
+      if (!url.startsWith("https://prewww") || options.method !== "POST") throw new Error("unexpected endpoint");
+      const req = new EventEmitter();
+      req.end = async (body) => {
+        try {
+          fake.setServerNow(new RealDate(clock));
+          if (${JSON.stringify(refuseSerialEnd)} && body.includes("RegFactuSistemaFacturacion>")) {
+            for (const entry of parseEnvio(body).registros) {
+              const id = entry.RegistroAlta.IDFactura;
+              if (id.NumSerieFactura.endsWith(${JSON.stringify(refuseSerialEnd)})) {
+                fake.reject(id.IDEmisorFactura + "|" + id.NumSerieFactura + "|" + id.FechaExpedicionFactura, 1100, "controlled refusal");
+              }
+            }
+          }
+          const result = await fake.fetch(url, { method: options.method, headers: options.headers, body });
+          const response = new EventEmitter();
+          response.statusCode = result.status;
+          callback(response);
+          response.emit("data", Buffer.from(await result.text()));
+          response.emit("end");
+        } catch (error) { req.emit("error", error); }
+      };
+      return req;
+    };
+    syncBuiltinESMExports();
+    process.argv = [process.execPath, process.cwd() + "/scripts/live-aeat.mjs", "canje"];
+    await import(pathToFileURL(process.argv[1]));
+  `;
+  return spawnSync(process.execPath, ["--input-type=module", "--eval", source], {
+    encoding: "utf8",
+    timeout: 10000,
+    env: {
+      PATH: process.env.PATH,
+      AEAT_TEST_P12_BASE64: Buffer.from("invalid synthetic certificate").toString("base64"),
+      AEAT_TEST_P12_PASSWORD: "synthetic-password-never-logged",
+      AEAT_TEST_NIF: "89890001K",
+      AEAT_TEST_NAME: "Issuer & Partners <A>",
+      AEAT_TEST_SYSTEM_NIF: "B99999997",
+      AEAT_TEST_SYSTEM_NAME: "Software & Systems <B>",
+      AEAT_TEST_RECIPIENT_NIF: "11111111H",
+      AEAT_TEST_RECIPIENT_NAME: "Guest & Friends <C>",
+      GITHUB_RUN_ID: "7654321",
+    },
+  });
+}
+
+for (const [refuse, status] of [
+  ["", 0],
+  ["FF/20261021/7654321-B", 1],
+  ["FF/20261021/7654321-C", 0],
+]) {
+  test(`canje CLI exits ${status} ${refuse ? `when ${refuse} is refused` : "when every record is accepted"} and prints each record's verdict`, () => {
+    const run = canjeCli(refuse);
+    assert.equal(run.status, status, run.stderr + run.stdout);
+    const lines = run.stdout.trim().split("\n");
+    assert.equal(lines.length, 1 + 5 + 5 + 5 + 1, run.stdout);
+    assert.match(
+      lines[0],
+      /^AEAT canje expectation: cases \(a\) and \(b\) every record Correcto; case \(c\) reported only\./,
+    );
+    assert.match(lines[0], /Test service only; results do not establish production behaviour\.$/);
+    const summaries = lines
+      .filter((line) => / result: /.test(line))
+      .map((line) => JSON.parse(line.replace(/^AEAT canje \w+ result: /, "")));
+    assert.deepEqual(
+      summaries.map((summary) => summary.case),
+      ["a", "a", "b", "b", "c"],
+    );
+    for (const [i, summary] of summaries.entries()) {
+      const refused =
+        refuse !== "" &&
+        CANJE_STAGES[i] === (refuse.endsWith("B") ? "caseBInvoice" : "caseCInvoice");
+      assert.equal(summary.EstadoRegistro, refused ? "Incorrecto" : "Correcto", CANJE_STAGES[i]);
+      if (refused) assert.equal(summary.CodigoErrorRegistro, 1100);
+    }
+    assert.equal(lines.filter((line) => / consulta: /.test(line)).length, 5);
+    const evidence = JSON.parse(lines.at(-1).replace("AEAT canje complete: ", ""));
+    assert.equal(evidence.incomplete, false);
+    assert.equal(evidence.caseBReceipt.record.IDFactura.FechaExpedicionFactura, "20-10-2026");
+    assert.equal(evidence.caseBInvoice.record.FechaOperacion, "20-10-2026");
+    for (const request of evidence.requests) {
+      assert.match(request.exchange.request, /\[identity\]/);
+      assert.ok(request.exchange.reply);
+    }
+    for (const identity of [
+      "89890001K",
+      "B99999997",
+      "11111111H",
+      "Issuer",
+      "Partners",
+      "Software &",
+      "Systems",
+      "Guest",
+      "synthetic-password-never-logged",
+    ]) {
+      assert.equal(run.stdout.includes(identity), false, identity);
+      assert.equal(run.stderr.includes(identity), false, identity);
+    }
+  });
+}
