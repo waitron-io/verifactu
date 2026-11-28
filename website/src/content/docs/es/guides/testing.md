@@ -21,8 +21,8 @@ console.log(aeat.stored().length); // 1
 ```
 
 Su reloj está fijado en el 21 de julio de 2026 salvo que pases `serverNow`, así tus pruebas dan el
-mismo resultado de un día a otro. Como la AEAT, rechaza una factura con fecha posterior a su reloj.
-Mueve el reloj durante una prueba con `aeat.setServerNow(date)`.
+mismo resultado de un día a otro. Como la AEAT, rechaza una factura con fecha futura, según la
+fecha de su reloj en Madrid. Mueve el reloj durante una prueba con `aeat.setServerNow(date)`.
 
 Si tu código crea su propio cliente, pásale `aeat.fetch` en lugar del fetch que usa tu certificado:
 

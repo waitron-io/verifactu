@@ -427,8 +427,11 @@ export function parseFechaHoraHusoGenRegistro(value: string): ParsedFechaHora | 
   return { ...parts, instant: local.getTime() - offsetMinutes * 60_000 };
 }
 
-/** Returns YYYYMMDD for a real Gregorian DD-MM-YYYY date, which sorts numerically. */
-function fechaOrdinal(value: string): number | undefined {
+/**
+ * @internal Shared with the fake AEAT; not a package-root API. Returns YYYYMMDD for a real
+ * Gregorian DD-MM-YYYY date, which sorts numerically.
+ */
+export function fechaOrdinal(value: string): number | undefined {
   const match = FECHA_PATTERN.exec(value);
   if (!match) return undefined;
   const [, dayText, monthText, yearText] = match;

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Make the test fake (`createFakeAeat`) refuse a future invoice date (1112) by its clock's date in
+  Madrid, not midnight UTC, so a record dated today in Madrid is no longer refused from midnight in
+  Madrid (22:00 UTC in summer, 23:00 in winter) until midnight UTC.
 - Ship each release's declaración responsable in the package as `DECLARACION-RESPONSABLE.md` and
   attach it to the GitHub Release.
 - Breaking: Remove support for AEAT's service for records sent when AEAT demands them
