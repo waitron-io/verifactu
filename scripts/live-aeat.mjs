@@ -934,7 +934,7 @@ function envelopeStateOf(lines) {
   return "ParcialmenteCorrecto";
 }
 
-function replacementAfterCreditLines(request, records) {
+function verifiedReplyLines(request, records) {
   if (!request.exchange?.request || !request.exchange?.reply) {
     return { unverified: "the raw request or reply was not captured" };
   }
@@ -973,14 +973,10 @@ function replacementAfterCreditExpected(stage) {
   return { state, code, text: code === undefined ? state : `${state} ${code}` };
 }
 
-export function replacementAfterCreditSummary(stage, entry) {
-  const [number, kind] = R5S_STAGES.get(stage);
+function answerSummary(entry) {
   const reason = entry.unverified ?? (entry.line ? undefined : "no answer from AEAT was read");
   const { line } = entry;
   return {
-    case: number,
-    record: R5S_KINDS[kind][2],
-    expected: replacementAfterCreditExpected(stage).text,
     ...(reason === undefined
       ? {
           ...(entry.EstadoEnvio === undefined ? {} : { EstadoEnvio: entry.EstadoEnvio }),
@@ -997,6 +993,16 @@ export function replacementAfterCreditSummary(stage, entry) {
   };
 }
 
+export function replacementAfterCreditSummary(stage, entry) {
+  const [number, kind] = R5S_STAGES.get(stage);
+  return {
+    case: number,
+    record: R5S_KINDS[kind][2],
+    expected: replacementAfterCreditExpected(stage).text,
+    ...answerSummary(entry),
+  };
+}
+
 export function replacementAfterCreditPassed(evidence) {
   return (
     !evidence.incomplete &&
@@ -1008,8 +1014,10 @@ export function replacementAfterCreditPassed(evidence) {
   );
 }
 
-async function replacementAfterCreditLookup(client, header, record, submittedState) {
-  const [, month, year] = record.IDFactura.FechaExpedicionFactura.split("-");
+async function lookupSentRecord(client, header, record, submittedState) {
+  const [, month, year] = (record.FechaOperacion ?? record.IDFactura.FechaExpedicionFactura).split(
+    "-",
+  );
   const entry = { filter: minimalIssuerConsultaFilter(record, year, month) };
   try {
     const result = await client.consultar(header, entry.filter);
@@ -1048,10 +1056,33 @@ async function replacementAfterCreditLookup(client, header, record, submittedSta
   return entry;
 }
 
-export async function submitReplacementAfterCreditProbe(
+const R5S_CASES = R5S_PLAN.map(([number, requests]) =>
+  requests.map((kinds) => kinds.map((kind) => `case${number}${R5S_KINDS[kind][0]}`)),
+);
+
+export function submitReplacementAfterCreditProbe(client, cabecera, options, hooks) {
+  return submitChainedProbe(
+    client,
+    cabecera,
+    options,
+    {
+      cases: R5S_CASES,
+      build: buildReplacementAfterCreditProbeRecords,
+      expected: replacementAfterCreditExpected,
+    },
+    hooks,
+  );
+}
+
+// Each case is its own chain; each request's records are built after the wait
+// before it, because AEAT answered 2004 for a record generated over 240
+// seconds before it arrived. A stage whose `expected` is undefined is reported
+// without a verdict.
+async function submitChainedProbe(
   client,
   cabecera,
   options,
+  probe,
   {
     report = () => {},
     reportConsulta = () => {},
@@ -1064,17 +1095,16 @@ export async function submitReplacementAfterCreditProbe(
   const evidence = { incomplete: false, requests: [] };
   const sent = [];
   let previousResponse;
-  submitting: for (const [number, requests] of R5S_PLAN) {
+  submitting: for (const requests of probe.cases) {
     const chain = [];
-    for (const kinds of requests) {
-      const stages = kinds.map((kind) => `case${number}${R5S_KINDS[kind][0]}`);
+    for (const stages of requests) {
       const request = { stages };
       const entries = stages.map(() => ({}));
       let attempted = false;
       let checked = {};
       try {
         if (previousResponse) await waitForSubmission(previousResponse.TiempoEsperaEnvio);
-        const batch = buildReplacementAfterCreditProbeRecords(options, stages, now(), chain);
+        const batch = probe.build(options, stages, now(), chain);
         chain.push(...batch);
         for (const [i, record] of batch.entries()) entries[i].record = record;
         clearRawExchange();
@@ -1085,7 +1115,7 @@ export async function submitReplacementAfterCreditProbe(
           batch.map((record) => ({ RegistroAlta: record })),
         );
         request.exchange = rawExchange();
-        checked = replacementAfterCreditLines(request, batch);
+        checked = verifiedReplyLines(request, batch);
         if (checked.unverified !== undefined) request.unverified = checked.unverified;
       } catch (error) {
         request.error = error instanceof Error ? error.message : String(error);
@@ -1095,12 +1125,14 @@ export async function submitReplacementAfterCreditProbe(
         const entry = entries[i];
         if (checked.lines) {
           const line = checked.lines[i];
-          const expected = replacementAfterCreditExpected(stage);
+          const expected = probe.expected(stage);
           entry.EstadoEnvio = request.response.EstadoEnvio;
           entry.line = line;
-          entry.matchesExpectation =
-            line.EstadoRegistro === expected.state &&
-            (expected.code === undefined || Number(line.CodigoErrorRegistro) === expected.code);
+          if (expected !== undefined) {
+            entry.matchesExpectation =
+              line.EstadoRegistro === expected.state &&
+              (expected.code === undefined || Number(line.CodigoErrorRegistro) === expected.code);
+          }
         } else {
           if (request.unverified !== undefined) entry.unverified = request.unverified;
           if (request.error !== undefined) entry.error = request.error;
@@ -1125,17 +1157,139 @@ export async function submitReplacementAfterCreditProbe(
   const consultaCabecera = issuerConsultaHeader(cabecera.ObligadoEmision);
   for (const stage of sent) {
     const { record, line } = evidence[stage];
-    const entry = await replacementAfterCreditLookup(
-      client,
-      consultaCabecera,
-      record,
-      line?.EstadoRegistro,
-    );
+    const entry = await lookupSentRecord(client, consultaCabecera, record, line?.EstadoRegistro);
     if (entry.error !== undefined || entry.unanswered !== undefined) evidence.incomplete = true;
     evidence.consulta[stage] = entry;
     reportConsulta(stage, entry);
   }
   return evidence;
+}
+
+const CANJE_STAGES = {
+  caseAReceipt: ["a", "receipt dated today (F2)", "Correcto"],
+  caseAInvoice: ["a", "full invoice dated today replacing the receipt (F3)", "Correcto"],
+  caseBReceipt: ["b", "receipt dated yesterday (F2)", "Correcto"],
+  caseBInvoice: [
+    "b",
+    "full invoice dated today replacing the receipt, carrying the sale's date (F3)",
+    "Correcto",
+  ],
+  caseCInvoice: ["c", "full invoice replacing a receipt never sent (F3)", undefined],
+};
+
+const CANJE_CASES = [
+  [["caseAReceipt"], ["caseAInvoice"]],
+  [["caseBReceipt"], ["caseBInvoice"]],
+  [["caseCInvoice"]],
+];
+
+export function buildCanjeProbeRecords(options, stages, now, chain = []) {
+  const base = buildTestRecord({ ...options, now });
+  const { offsetMinutes } = madridClock(now);
+  const today = formatDate(now, offsetMinutes);
+  const built = [...chain];
+  for (const stage of stages) {
+    const letter = stage[4];
+    const invoice = stage.endsWith("Invoice");
+    const serial = (series) =>
+      `${base.IDFactura.NumSerieFactura.replace("CI/", `CI-F3-${series}/`)}-${letter}`;
+    const replaced = invoice
+      ? (built.find((record) => record.TipoFactura === "F2")?.IDFactura ?? {
+          IDEmisorFactura: options.nif,
+          NumSerieFactura: serial("FS"),
+          FechaExpedicionFactura: today,
+        })
+      : undefined;
+    if (stage === "caseAInvoice" && replaced.FechaExpedicionFactura !== today) {
+      throw new Error(
+        `Case (a)'s receipt was dated ${replaced.FechaExpedicionFactura} but its full invoice would have been dated ${today}: the Madrid day changed between them, so nothing more was sent; run again away from Madrid midnight`,
+      );
+    }
+    if (
+      stage === "caseBInvoice" &&
+      replaced.FechaExpedicionFactura !== previousSpanishCalendarDate(today)
+    ) {
+      throw new Error(
+        `Case (b)'s receipt was dated ${replaced.FechaExpedicionFactura} but its full invoice would have been dated ${today}, not the day after it: the Madrid day changed between them, so nothing more was sent; run again away from Madrid midnight`,
+      );
+    }
+    const previous = built.at(-1);
+    const body = {
+      ...base,
+      IDFactura: {
+        ...base.IDFactura,
+        NumSerieFactura: serial(invoice ? "FF" : "FS"),
+        FechaExpedicionFactura:
+          stage === "caseBReceipt" ? previousSpanishCalendarDate(today) : today,
+      },
+      RefExterna: `CI-F3-${options.runId}-${letter.toUpperCase()}${invoice ? "F3" : "F2"}`,
+      TipoFactura: invoice ? "F3" : "F2",
+      ...(invoice ? { FacturasSustituidas: { IDFacturaSustituida: [replaced] } } : {}),
+      ...(stage === "caseBInvoice" ? { FechaOperacion: replaced.FechaExpedicionFactura } : {}),
+      DescripcionOperacion: `Canje probe: case ${letter} ${invoice ? "F3" : "F2"}`,
+      Desglose: [
+        {
+          ...base.Desglose[0],
+          TipoImpositivo: "10.00",
+          BaseImponibleOimporteNoSujeto: "45.45",
+          CuotaRepercutida: "4.55",
+        },
+      ],
+      CuotaTotal: "4.55",
+      ImporteTotal: "50.00",
+      Encadenamiento: previous
+        ? { RegistroAnterior: { ...previous.IDFactura, Huella: previous.Huella } }
+        : { PrimerRegistro: "S" },
+      FechaHoraHusoGenRegistro: formatDateTime(now, offsetMinutes),
+      SistemaInformatico: {
+        ...base.SistemaInformatico,
+        NumeroInstalacion: `CI-F3-${options.runId}-${letter.toUpperCase()}`,
+      },
+    };
+    if (!invoice) delete body.Destinatarios;
+    const record = { ...body, Huella: computeHuella(body) };
+    assertValid(record, { now });
+    built.push(record);
+  }
+  return built.slice(chain.length);
+}
+
+function canjeExpected(stage) {
+  const state = CANJE_STAGES[stage][2];
+  return state === undefined ? undefined : { state };
+}
+
+export function canjeSummary(stage, entry) {
+  const [letter, record, state] = CANJE_STAGES[stage];
+  return {
+    case: letter,
+    record,
+    expected: state ?? "reported only",
+    ...answerSummary(entry),
+  };
+}
+
+export function canjePassed(evidence) {
+  return (
+    !evidence.incomplete &&
+    Object.keys(CANJE_STAGES)
+      .filter((stage) => canjeExpected(stage) !== undefined)
+      .every(
+        (stage) =>
+          evidence[stage]?.matchesExpectation === true &&
+          evidence.consulta?.[stage]?.matchesExpectation === true,
+      )
+  );
+}
+
+export function submitCanjeProbe(client, cabecera, options, hooks) {
+  return submitChainedProbe(
+    client,
+    cabecera,
+    options,
+    { cases: CANJE_CASES, build: buildCanjeProbeRecords, expected: canjeExpected },
+    hooks,
+  );
 }
 
 export async function submitFourBehaviourProbe(
@@ -3275,6 +3429,7 @@ async function main() {
       "final-cent-correction",
       "advance-rest",
       "replacement-after-credit",
+      "canje",
     ].includes(mode)
   ) {
     throw new Error("Unknown AEAT preproduction mode");
@@ -3418,6 +3573,54 @@ async function main() {
       `AEAT replacement-after-credit complete: ${outageFlagEvidenceJson(evidence, identities)}\n`,
     );
     if (!replacementAfterCreditPassed(evidence)) process.exitCode = 1;
+    return;
+  }
+
+  if (mode === "canje") {
+    process.stdout.write(
+      "AEAT canje expectation: cases (a) and (b) every record Correcto; case (c) reported only. Case (a) is a receipt (F2) dated today then the full invoice replacing it (F3) dated today; case (b) is a receipt dated yesterday then its F3 dated today carrying FechaOperacion, the receipt's date; case (c) is an F3 naming a receipt never sent, alone in its chain: read its EstadoRegistro, CodigoErrorRegistro and DescripcionErrorRegistro; an Incorrecto or AceptadoConErrores whose description is about the replaced invoice suggests the test service checks that the receipt exists; a Correcto, that it did not object to a missing one at filing. Exit 0 only when every record of (a) and (b) is Correcto and its lookup finds it once, Correcto, with the hash sent, and every request and lookup, case (c)'s included, gets a readable answer; any other result exits 1 for the owner to read: for an (a) or (b) record Incorrecto, read its CodigoErrorRegistro. Test service only; results do not establish production behaviour.\n",
+    );
+    const probeOptions = {
+      nif,
+      name,
+      systemNif: required("AEAT_TEST_SYSTEM_NIF"),
+      systemName: required("AEAT_TEST_SYSTEM_NAME"),
+      recipientNif: recipient.NIF,
+      recipientName: recipient.NombreRazon,
+      runId,
+    };
+    const identities = [
+      nif,
+      name,
+      probeOptions.systemNif,
+      probeOptions.systemName,
+      recipient.NIF,
+      recipient.NombreRazon,
+    ];
+    const evidence = await submitCanjeProbe(client, cabecera, probeOptions, {
+      rawExchange: () => ({ request: lastRawRequest, reply: lastRawReply }),
+      clearRawExchange: () => {
+        lastRawRequest = undefined;
+        lastRawReply = undefined;
+      },
+      report: (request, entries) => {
+        for (const [stage, entry] of entries) {
+          process.stdout.write(
+            `AEAT canje ${stage} result: ${outageFlagEvidenceJson(canjeSummary(stage, entry), identities)}\n`,
+          );
+        }
+        process.stdout.write(
+          `AEAT canje ${request.stages.join("+")}: ${outageFlagEvidenceJson(request, identities)}\n`,
+        );
+      },
+      reportConsulta: (stage, entry) => {
+        process.stdout.write(
+          `AEAT canje ${stage} consulta: ${outageFlagEvidenceJson(entry, identities)}\n`,
+        );
+      },
+    });
+    process.stdout.write(`AEAT canje complete: ${outageFlagEvidenceJson(evidence, identities)}\n`);
+    if (!canjePassed(evidence)) process.exitCode = 1;
     return;
   }
 
