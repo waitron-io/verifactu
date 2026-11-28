@@ -8450,8 +8450,9 @@ async function restatementProbe(fault = {}) {
     fetch: async (url, init) => {
       exchange = { request: init.body };
       const response = await fake.fetch(url, init);
-      exchange.reply = await response.clone().text();
-      return response;
+      const text = await response.text();
+      exchange.reply = fault.consultaReply?.(init.body, text) ?? text;
+      return new Response(exchange.reply, { status: response.status, headers: response.headers });
     },
   });
   const evidence = await live.submitRestatementProbe(
@@ -8471,10 +8472,11 @@ async function restatementProbe(fault = {}) {
         }
         const response = await soap.submit(header, records);
         response.TiempoEsperaEnvio = n + 10;
-        return response;
+        return fault.submission?.(response, n) ?? response;
       },
       async consultar(header, filter) {
         consultas.push([structuredClone(header), structuredClone(filter)]);
+        if (fault.consultaFails === consultas.length) throw new Error("consulta failed");
         return soap.consultar(header, filter);
       },
     },
@@ -8522,10 +8524,42 @@ test("restatement-corrections sends each record alone, in its chain, then looks 
     "Incorrecto 1112",
   );
   const decisions = live.restatementDecisions(evidence);
-  assert.equal(decisions.S4.caseCRestatement.EstadoRegistro, "Correcto");
-  assert.equal(decisions.S4.caseGRestatement.EstadoRegistro, "Correcto");
-  assert.equal(decisions.S11.caseHReceipt.CodigoErrorRegistro, 1112);
-  assert.equal(decisions.S11.caseHRestatement.EstadoRegistro, "Correcto");
+  assert.equal(decisions.fechaOperacionOnRestatement.caseCRestatement.EstadoRegistro, "Correcto");
+  assert.equal(decisions.fechaOperacionOnRestatement.caseGRestatement.EstadoRegistro, "Correcto");
+  const caseH = decisions.restatementNamingRefusedReceipt;
+  assert.equal(caseH.receiptRefused, true);
+  assert.equal(caseH.caseHReceipt.CodigoErrorRegistro, 1112);
+  assert.equal(caseH.caseHRestatement.EstadoRegistro, "Correcto");
+});
+
+test("restatement-corrections fails case I's refused receipt when AEAT's lookup finds nothing but offers another page", async () => {
+  const { evidence } = await restatementProbe({
+    consultaReply: (request, reply) =>
+      request.includes("/20260927/12345-I<")
+        ? reply
+            .replace(
+              "<sfRC:IndicadorPaginacion>N</sfRC:IndicadorPaginacion>",
+              "<sfRC:IndicadorPaginacion>S</sfRC:IndicadorPaginacion>",
+            )
+            .replace(
+              "</sfRC:RespuestaConsultaFactuSistemaFacturacion>",
+              "<sfRC:ClavePaginacion><sf:IDEmisorFactura>89890001K</sf:IDEmisorFactura>" +
+                "<sf:NumSerieFactura>CI-RST-FS/20260927/12345-I</sf:NumSerieFactura>" +
+                "<sf:FechaExpedicionFactura>28-09-2026</sf:FechaExpedicionFactura>" +
+                "</sfRC:ClavePaginacion></sfRC:RespuestaConsultaFactuSistemaFacturacion>",
+            )
+        : undefined,
+  });
+  assert.equal(evidence.caseIReceipt.matchesExpectation, true);
+  const lookup = evidence.consulta.caseIReceipt;
+  assert.equal(lookup.ResultadoConsulta, "SinDatos");
+  assert.equal(lookup.IndicadorPaginacion, "S");
+  assert.equal(lookup.matchesExpectation, false);
+  assert.equal(lookup.unanswered, "AEAT's lookup says it found nothing but offers another page");
+  assert.equal(evidence.consulta.caseIReplacement.IndicadorPaginacion, "N");
+  assert.equal(evidence.consulta.caseIReplacement.matchesExpectation, true);
+  assert.equal(evidence.incomplete, true);
+  assert.equal(live.restatementPassed(evidence), false);
 });
 
 for (const [name, reject] of [
@@ -8535,17 +8569,40 @@ for (const [name, reject] of [
   test(`restatement-corrections leaves the verdict to the required cases when case H's restatement is ${name}`, async () => {
     const { evidence } = await restatementProbe({ reject });
     assert.equal(evidence.caseHRestatement.line.EstadoRegistro, reject ? "Incorrecto" : "Correcto");
+    assert.equal(evidence.consulta.caseHRestatement.matchesExpectation, true);
     assert.equal(evidence.incomplete, false);
     assert.equal(live.restatementPassed(evidence), true);
     const summary = live.restatementSummary("caseHRestatement", evidence.caseHRestatement);
     assert.equal(summary.case, "h");
     assert.equal(summary.expected, "reported only");
-    assert.equal(
-      live.restatementDecisions(evidence).S11.caseHRestatement.EstadoRegistro,
-      reject ? "Incorrecto" : "Correcto",
-    );
+    const caseH = live.restatementDecisions(evidence).restatementNamingRefusedReceipt;
+    assert.equal(caseH.receiptRefused, true);
+    assert.equal(caseH.caseHRestatement.EstadoRegistro, reject ? "Incorrecto" : "Correcto");
   });
 }
+
+function acceptLine(serialEnd) {
+  return (response) => {
+    for (const line of response.RespuestaLinea) {
+      if (line.IDFactura.NumSerieFactura.endsWith(serialEnd)) {
+        line.EstadoRegistro = "Correcto";
+        delete line.CodigoErrorRegistro;
+        delete line.DescripcionErrorRegistro;
+      }
+    }
+    return r5sEnvelope(response);
+  };
+}
+
+test("restatement-corrections says case H's question was not asked when AEAT accepts its receipt, and leaves the exit to the required cases", async () => {
+  const { evidence } = await restatementProbe({ submission: acceptLine("FS/20260927/12345-H") });
+  assert.equal(evidence.caseHReceipt.line.EstadoRegistro, "Correcto");
+  assert.equal(evidence.incomplete, false);
+  assert.equal(live.restatementPassed(evidence), true);
+  const caseH = live.restatementDecisions(evidence).restatementNamingRefusedReceipt;
+  assert.equal(caseH.receiptRefused, false);
+  assert.equal(caseH.caseHReceipt.EstadoRegistro, "Correcto");
+});
 
 for (const [stage, serialEnd] of [
   ["caseARestatement", "RS/20260927/12345-AS"],
@@ -8563,6 +8620,7 @@ for (const [stage, serialEnd] of [
     assert.equal(requests.length, RESTATEMENT_STAGES.length);
     assert.equal(evidence.incomplete, false);
     assert.equal(evidence[stage].matchesExpectation, false);
+    assert.equal(evidence.consulta[stage].matchesExpectation, true);
     assert.equal(live.restatementPassed(evidence), false);
     assert.deepEqual(live.restatementSummary(stage, evidence[stage]), {
       case: stage[4].toLowerCase(),
@@ -8573,6 +8631,131 @@ for (const [stage, serialEnd] of [
       CodigoErrorRegistro: 1100,
       DescripcionErrorRegistro: "controlled refusal",
     });
+  });
+}
+
+test("restatement-corrections summarises each record's case, kind and expectation", () => {
+  assert.deepEqual(live.restatementSummary("caseGRestatement", { error: "boom" }), {
+    case: "g",
+    record:
+      "restatement to 6.00 today naming the receipt, rectified 8.18 + 0.82, carrying FechaOperacion (R5 S)",
+    expected: "Correcto",
+    verdict: "unverified",
+    reason: "no answer from AEAT was read",
+    error: "boom",
+  });
+  assert.deepEqual(
+    Object.fromEntries(
+      RESTATEMENT_STAGES.map((stage) => {
+        const { case: letter, record, expected } = live.restatementSummary(stage, {});
+        return [stage, [letter, record, expected]];
+      }),
+    ),
+    {
+      caseAReceipt: ["a", "receipt of 9.00 (F2)", "Correcto"],
+      caseARestatement: [
+        "a",
+        "restatement to 6.00 naming the receipt, rectified 8.18 + 0.82 (R5 S)",
+        "Correcto",
+      ],
+      caseBRestatement: [
+        "b",
+        "restatement to 3.00 naming case A's restatement, rectified 5.45 + 0.55 (R5 S)",
+        "Correcto",
+      ],
+      caseERefund: [
+        "e",
+        "correction of -3.00 by differences naming case B's restatement (R5 I)",
+        "Correcto",
+      ],
+      caseCInvoice: ["c", "full invoice of 121.00 at 21% dated yesterday (F1)", "Correcto"],
+      caseCRestatement: [
+        "c",
+        "restatement to 60.50 naming the full invoice, rectified 100.00 + 21.00, carrying FechaOperacion (R1 S)",
+        "Correcto",
+      ],
+      caseDReceipt: ["d", "receipt of 9.00 (F2)", "Correcto"],
+      caseDRefund: [
+        "d",
+        "correction of -9.00 by differences naming the receipt (R5 I)",
+        "Correcto",
+      ],
+      caseFReceipt: ["f", "receipt of 6.00 at 10% and 3.63 at 21% (F2)", "Correcto"],
+      caseFRestatement: [
+        "f",
+        "restatement to 6.00 at 10% only, rectified 8.45 + 1.18 over both rates (R5 S)",
+        "Correcto",
+      ],
+      caseGReceipt: ["g", "receipt of 9.00 dated yesterday (F2)", "Correcto"],
+      caseGRestatement: [
+        "g",
+        "restatement to 6.00 today naming the receipt, rectified 8.18 + 0.82, carrying FechaOperacion (R5 S)",
+        "Correcto",
+      ],
+      caseIReceipt: ["i", "receipt of 9.00 dated tomorrow (F2)", "Incorrecto 1112"],
+      caseIReplacement: [
+        "i",
+        "replacement of the refused receipt, 9.00, rectified 0.00 + 0.00 (R5 S)",
+        "Correcto",
+      ],
+      caseIRestatement: [
+        "i",
+        "restatement to 6.00 naming the replacement, rectified 8.18 + 0.82 (R5 S)",
+        "Correcto",
+      ],
+      caseHReceipt: ["h", "receipt of 9.00 dated tomorrow (F2)", "reported only"],
+      caseHRestatement: [
+        "h",
+        "restatement to 6.00 naming the receipt dated tomorrow, rectified 8.18 + 0.82 (R5 S)",
+        "reported only",
+      ],
+    },
+  );
+});
+
+test("restatement-corrections looks up case C's and G's restatements in the month of their operation date on the 1st of January", async () => {
+  const { evidence, requests, consultas } = await restatementProbe({
+    start: Date.parse("2027-01-01T08:00:00Z"),
+  });
+  for (const stage of ["caseCRestatement", "caseGRestatement"]) {
+    const restatement = requests[RESTATEMENT_STAGES.indexOf(stage)][0];
+    assert.equal(restatement.IDFactura.FechaExpedicionFactura, "01-01-2027", stage);
+    assert.equal(restatement.FechaOperacion, "31-12-2026", stage);
+    const [, filter] = consultas.find(
+      ([, { NumSerieFactura }]) => NumSerieFactura === restatement.IDFactura.NumSerieFactura,
+    );
+    assert.deepEqual([filter.Ejercicio, filter.Periodo], ["2026", "12"], stage);
+    assert.equal(evidence.consulta[stage].ResultadoConsulta, "ConDatos", stage);
+    assert.equal(evidence.consulta[stage].matchesExpectation, true, stage);
+  }
+  assert.equal(evidence.incomplete, false);
+  assert.equal(live.restatementPassed(evidence), true);
+});
+
+test("restatement-corrections counts a failed lookup as an incomplete run, case H's included", async () => {
+  for (const stage of ["caseARestatement", "caseHReceipt", "caseHRestatement"]) {
+    const { evidence } = await restatementProbe({
+      consultaFails: RESTATEMENT_STAGES.indexOf(stage) + 1,
+    });
+    assert.equal(evidence.consulta[stage].error, "consulta failed", stage);
+    assert.equal(evidence.incomplete, true, stage);
+    assert.equal(live.restatementPassed(evidence), false, stage);
+  }
+});
+
+for (const [name, submission] of [
+  ["accepted", acceptLine("FS/20260927/12345-I")],
+  ["refused with another code", refuseLine("FS/20260927/12345-I", 1100)],
+]) {
+  test(`restatement-corrections fails the run when case I's receipt dated tomorrow is ${name}`, async () => {
+    const { evidence } = await restatementProbe({ submission });
+    assert.notEqual(
+      `${evidence.caseIReceipt.line.EstadoRegistro} ${evidence.caseIReceipt.line.CodigoErrorRegistro}`,
+      "Incorrecto 1112",
+    );
+    assert.equal(evidence.caseIReceipt.matchesExpectation, false);
+    assert.equal(evidence.incomplete, false);
+    assert.equal(live.restatementPassed(evidence), false);
   });
 }
 
@@ -8622,18 +8805,58 @@ test("restatement-corrections passes only when every required record and its loo
   }
 });
 
-test("restatement-corrections reports case C's and G's FechaOperacion answers for S4 and case H's for S11", () => {
+test("restatement-corrections reports case C's and G's FechaOperacion answers and case H's restatement naming a refused receipt", () => {
   assert.deepEqual(live.restatementDecisions({}), {
-    S4: {
+    fechaOperacionOnRestatement: {
       caseCRestatement: { verdict: "unverified", reason: "no answer from AEAT was read" },
       caseGRestatement: { verdict: "unverified", reason: "no answer from AEAT was read" },
     },
-    S11: {
+    restatementNamingRefusedReceipt: {
+      receiptRefused: false,
       caseHReceipt: { verdict: "unverified", reason: "no answer from AEAT was read" },
       caseHRestatement: { verdict: "unverified", reason: "no answer from AEAT was read" },
     },
   });
 });
+
+for (const [name, line, found, refused] of [
+  [
+    "refused with 1112 and not found",
+    { EstadoRegistro: "Incorrecto", CodigoErrorRegistro: 1112 },
+    false,
+    true,
+  ],
+  [
+    "refused with 1112 but found by its lookup",
+    { EstadoRegistro: "Incorrecto", CodigoErrorRegistro: 1112 },
+    true,
+    false,
+  ],
+  [
+    "refused with another code",
+    { EstadoRegistro: "Incorrecto", CodigoErrorRegistro: 1100 },
+    false,
+    false,
+  ],
+  ["accepted", { EstadoRegistro: "Correcto" }, true, false],
+  [
+    "accepted with errors and 1112",
+    { EstadoRegistro: "AceptadoConErrores", CodigoErrorRegistro: 1112 },
+    true,
+    false,
+  ],
+]) {
+  test(`restatement-corrections says case H's receipt was ${refused ? "" : "not "}refused when it was ${name}`, () => {
+    const lookup = (state) => (state === "Incorrecto" ? !found : found);
+    const evidence = {
+      caseHReceipt: { EstadoEnvio: line.EstadoRegistro, line },
+      consulta: { caseHReceipt: { matchesExpectation: lookup(line.EstadoRegistro) } },
+    };
+    const caseH = live.restatementDecisions(evidence).restatementNamingRefusedReceipt;
+    assert.equal(caseH.receiptRefused, refused);
+    assert.equal(caseH.caseHReceipt.EstadoRegistro, line.EstadoRegistro);
+  });
+}
 
 test("restatement-corrections is a reachable live CLI mode listed in the workflow", () => {
   const run = spawnSync(process.execPath, ["scripts/live-aeat.mjs", "restatement-corrections"], {
@@ -8728,8 +8951,15 @@ for (const [refuse, status] of [
     assert.equal(lines.length, 1 + 17 * 3 + 2, run.stdout);
     assert.match(
       lines[0],
-      /^AEAT restatement-corrections expectation: cases \(a\) to \(g\) every record Correcto; case \(i\) its receipt dated tomorrow Incorrecto with 1112 and both its R5 Correcto; case \(h\) reported only\./,
+      /^AEAT restatement-corrections expectation: cases \(a\) to \(g\) every record Correcto; case \(i\) its receipt dated tomorrow Incorrecto with 1112 and both its R5 Correcto; case \(h\) reported only\. A restatement is a correction by substitution \(TipoRectificativa "S"\): it states the corrected invoice\. /,
     );
+    assert.ok(
+      lines[0].includes(
+        " Cases (c) and (g) show whether the test service accepts FechaOperacion on a restatement, and case (h) whether it accepts a restatement naming a refused receipt; the decisions line repeats their answers. Exit 0 only when every record of (a) to (g) and (i) is answered as stated and its lookup agrees (a record answered Correcto is found once, Correcto, with the hash sent; a refused record is not found), and every request and lookup, case (h)'s included, gets a readable answer; any other result exits 1 for the owner to read: for a required record answered otherwise, read its EstadoRegistro and CodigoErrorRegistro. Test service only; results do not establish production behaviour.",
+      ),
+      lines[0],
+    );
+    assert.doesNotMatch(lines[0], /\bS4\b|\bS11\b/);
     assert.match(lines[0], /Test service only; results do not establish production behaviour\.$/);
     const summaries = lines
       .filter((line) => / result: /.test(line))
@@ -8754,11 +8984,12 @@ for (const [refuse, status] of [
       lines.at(-2).replace("AEAT restatement-corrections decisions: ", ""),
     );
     assert.equal(
-      decisions.S4.caseCRestatement.EstadoRegistro,
+      decisions.fechaOperacionOnRestatement.caseCRestatement.EstadoRegistro,
       refusedStage === "caseCRestatement" ? "Incorrecto" : "Correcto",
     );
-    assert.equal(decisions.S4.caseGRestatement.EstadoRegistro, "Correcto");
-    assert.equal(decisions.S11.caseHReceipt.CodigoErrorRegistro, 1112);
+    assert.equal(decisions.fechaOperacionOnRestatement.caseGRestatement.EstadoRegistro, "Correcto");
+    assert.equal(decisions.restatementNamingRefusedReceipt.receiptRefused, true);
+    assert.equal(decisions.restatementNamingRefusedReceipt.caseHReceipt.CodigoErrorRegistro, 1112);
     const evidence = JSON.parse(
       lines.at(-1).replace("AEAT restatement-corrections complete: ", ""),
     );

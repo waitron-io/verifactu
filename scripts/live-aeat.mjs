@@ -1024,6 +1024,12 @@ async function lookupSentRecord(client, header, record, submittedState) {
     assertConsultation(result);
     entry.ResultadoConsulta = result.ResultadoConsulta;
     entry.RegistrosEncontrados = result.registros.length;
+    entry.IndicadorPaginacion = result.IndicadorPaginacion;
+    if (result.ResultadoConsulta === "SinDatos" && result.IndicadorPaginacion !== "N") {
+      entry.unanswered = "AEAT's lookup says it found nothing but offers another page";
+      entry.matchesExpectation = false;
+      return entry;
+    }
     let found;
     if (result.ResultadoConsulta === "ConDatos") {
       [found] = result.registros;
@@ -1396,7 +1402,7 @@ const RESTATEMENT_STAGES = {
     state: null,
   },
   caseHRestatement: {
-    record: "restatement to 6.00 naming the refused receipt, rectified 8.18 + 0.82 (R5 S)",
+    record: "restatement to 6.00 naming the receipt dated tomorrow, rectified 8.18 + 0.82 (R5 S)",
     type: "R5",
     names: "caseHReceipt",
     lines: SIX_AT_TEN,
@@ -1440,8 +1446,7 @@ function centsSum(values) {
   return (values.reduce((sum, value) => sum + Math.round(Number(value) * 100), 0) / 100).toFixed(2);
 }
 
-// Each chain's records are built one per request; a record built after the
-// Madrid day changed would no longer ask its case's question.
+// A record built after the Madrid day changed would no longer ask its case's question.
 export function buildRestatementProbeRecords(options, stages, now, chain = []) {
   const base = buildTestRecord({ ...options, now });
   const built = [...chain];
@@ -1553,9 +1558,18 @@ export function restatementPassed(evidence) {
 export function restatementDecisions(evidence) {
   const answers = (stages) =>
     Object.fromEntries(stages.map((stage) => [stage, answerSummary(evidence[stage] ?? {})]));
+  const receipt = evidence.caseHReceipt?.line;
+  // A refused record's lookup matches only when it finds nothing.
+  const receiptRefused =
+    receipt?.EstadoRegistro === "Incorrecto" &&
+    Number(receipt.CodigoErrorRegistro) === 1112 &&
+    evidence.consulta?.caseHReceipt?.matchesExpectation === true;
   return {
-    S4: answers(["caseCRestatement", "caseGRestatement"]),
-    S11: answers(["caseHReceipt", "caseHRestatement"]),
+    fechaOperacionOnRestatement: answers(["caseCRestatement", "caseGRestatement"]),
+    restatementNamingRefusedReceipt: {
+      receiptRefused,
+      ...answers(["caseHReceipt", "caseHRestatement"]),
+    },
   };
 }
 
@@ -3860,7 +3874,7 @@ async function main() {
 
   if (mode === "restatement-corrections") {
     process.stdout.write(
-      'AEAT restatement-corrections expectation: cases (a) to (g) every record Correcto; case (i) its receipt dated tomorrow Incorrecto with 1112 and both its R5 Correcto; case (h) reported only. Each case is its own installation and chain, one record per request; (b) and (e) continue (a)\'s chain. (a) is a receipt of 9.00 then an R5 "S" restating it to 6.00, ImporteRectificacion 8.18 + 0.82; (b) restates (a)\'s R5 to 3.00, rectified 5.45 + 0.55; (e) corrects (b)\'s R5 by differences, -3.00; (c) is a full invoice dated yesterday then its R1 "S" today, restated to 60.50 and carrying FechaOperacion; (d), the control, is a receipt then its R5 "I" to zero; (f) restates a receipt of two rates to its 10% rate alone, the 21% rate left out of Desglose and counted in ImporteRectificacion 8.45 + 1.18; (g) is a receipt dated yesterday then its R5 "S" today carrying FechaOperacion; (i) is a receipt AEAT refuses for its date, its replacement (R5 "S", rectified 0.00) and a restatement naming the replacement; (h) is a restatement naming a refused receipt with no replacement between. Cases (c) and (g) decide whether a restatement carries FechaOperacion (decision S4) and case (h) informs S11; the decisions line repeats their answers. Exit 0 only when every record of (a) to (g) and (i) matches and its lookup agrees: a record answered Correcto found once, Correcto, with the hash sent, a refused record not found, and every request and lookup, case (h)\'s included, gets a readable answer; any other result exits 1 for the owner to read: for a required record Incorrecto, read its CodigoErrorRegistro. Test service only; results do not establish production behaviour.\n',
+      'AEAT restatement-corrections expectation: cases (a) to (g) every record Correcto; case (i) its receipt dated tomorrow Incorrecto with 1112 and both its R5 Correcto; case (h) reported only. A restatement is a correction by substitution (TipoRectificativa "S"): it states the corrected invoice. Each case is its own installation and chain, one record per request; (b) and (e) continue (a)\'s chain. (a) is a receipt of 9.00 then an R5 "S" restating it to 6.00, ImporteRectificacion 8.18 + 0.82; (b) restates (a)\'s R5 to 3.00, rectified 5.45 + 0.55; (e) corrects (b)\'s R5 by differences, -3.00; (c) is a full invoice dated yesterday then its R1 "S" today, restated to 60.50 and carrying FechaOperacion; (d), the control, is a receipt then its R5 "I" to zero; (f) restates a receipt of two rates to its 10% rate alone, the 21% rate left out of Desglose and counted in ImporteRectificacion 8.45 + 1.18; (g) is a receipt dated yesterday then its R5 "S" today carrying FechaOperacion; (i) is a receipt AEAT refuses for its date, its replacement (R5 "S", rectified 0.00) and a restatement naming the replacement; (h) is a receipt dated tomorrow then a restatement naming it, with no replacement between; the decisions line\'s receiptRefused says whether AEAT refused that receipt. Cases (c) and (g) show whether the test service accepts FechaOperacion on a restatement, and case (h) whether it accepts a restatement naming a refused receipt; the decisions line repeats their answers. Exit 0 only when every record of (a) to (g) and (i) is answered as stated and its lookup agrees (a record answered Correcto is found once, Correcto, with the hash sent; a refused record is not found), and every request and lookup, case (h)\'s included, gets a readable answer; any other result exits 1 for the owner to read: for a required record answered otherwise, read its EstadoRegistro and CodigoErrorRegistro. Test service only; results do not establish production behaviour.\n',
     );
     const probeOptions = {
       nif,
