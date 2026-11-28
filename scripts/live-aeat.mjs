@@ -1292,6 +1292,287 @@ export function submitCanjeProbe(client, cabecera, options, hooks) {
   );
 }
 
+const NINE_AT_TEN = [["10.00", "8.18", "0.82"]];
+const SIX_AT_TEN = [["10.00", "5.45", "0.55"]];
+
+const RESTATEMENT_STAGES = {
+  caseAReceipt: { record: "receipt of 9.00 (F2)", type: "F2", lines: NINE_AT_TEN },
+  caseARestatement: {
+    record: "restatement to 6.00 naming the receipt, rectified 8.18 + 0.82 (R5 S)",
+    type: "R5",
+    names: "caseAReceipt",
+    lines: SIX_AT_TEN,
+    rectified: ["8.18", "0.82"],
+  },
+  caseBRestatement: {
+    record: "restatement to 3.00 naming case A's restatement, rectified 5.45 + 0.55 (R5 S)",
+    type: "R5",
+    names: "caseARestatement",
+    lines: [["10.00", "2.73", "0.27"]],
+    rectified: ["5.45", "0.55"],
+  },
+  caseERefund: {
+    record: "correction of -3.00 by differences naming case B's restatement (R5 I)",
+    type: "R5",
+    names: "caseBRestatement",
+    lines: [["10.00", "-2.73", "-0.27"]],
+  },
+  caseCInvoice: {
+    record: "full invoice of 121.00 at 21% dated yesterday (F1)",
+    type: "F1",
+    day: -1,
+    lines: [["21.00", "100.00", "21.00"]],
+  },
+  caseCRestatement: {
+    record:
+      "restatement to 60.50 naming the full invoice, rectified 100.00 + 21.00, carrying FechaOperacion (R1 S)",
+    type: "R1",
+    names: "caseCInvoice",
+    operation: true,
+    lines: [["21.00", "50.00", "10.50"]],
+    rectified: ["100.00", "21.00"],
+  },
+  caseDReceipt: { record: "receipt of 9.00 (F2)", type: "F2", lines: NINE_AT_TEN },
+  caseDRefund: {
+    record: "correction of -9.00 by differences naming the receipt (R5 I)",
+    type: "R5",
+    names: "caseDReceipt",
+    lines: [["10.00", "-8.18", "-0.82"]],
+  },
+  caseFReceipt: {
+    record: "receipt of 6.00 at 10% and 3.63 at 21% (F2)",
+    type: "F2",
+    lines: [...SIX_AT_TEN, ["21.00", "3.00", "0.63"]],
+  },
+  caseFRestatement: {
+    record: "restatement to 6.00 at 10% only, rectified 8.45 + 1.18 over both rates (R5 S)",
+    type: "R5",
+    names: "caseFReceipt",
+    lines: SIX_AT_TEN,
+    rectified: ["8.45", "1.18"],
+  },
+  caseGReceipt: {
+    record: "receipt of 9.00 dated yesterday (F2)",
+    type: "F2",
+    day: -1,
+    lines: NINE_AT_TEN,
+  },
+  caseGRestatement: {
+    record:
+      "restatement to 6.00 today naming the receipt, rectified 8.18 + 0.82, carrying FechaOperacion (R5 S)",
+    type: "R5",
+    names: "caseGReceipt",
+    operation: true,
+    lines: SIX_AT_TEN,
+    rectified: ["8.18", "0.82"],
+  },
+  caseIReceipt: {
+    record: "receipt of 9.00 dated tomorrow (F2)",
+    type: "F2",
+    day: 1,
+    lines: NINE_AT_TEN,
+    state: "Incorrecto",
+    code: 1112,
+  },
+  caseIReplacement: {
+    record: "replacement of the refused receipt, 9.00, rectified 0.00 + 0.00 (R5 S)",
+    type: "R5",
+    names: "caseIReceipt",
+    lines: NINE_AT_TEN,
+    rectified: ["0.00", "0.00"],
+  },
+  caseIRestatement: {
+    record: "restatement to 6.00 naming the replacement, rectified 8.18 + 0.82 (R5 S)",
+    type: "R5",
+    names: "caseIReplacement",
+    lines: SIX_AT_TEN,
+    rectified: ["8.18", "0.82"],
+  },
+  caseHReceipt: {
+    record: "receipt of 9.00 dated tomorrow (F2)",
+    type: "F2",
+    day: 1,
+    lines: NINE_AT_TEN,
+    state: null,
+  },
+  caseHRestatement: {
+    record: "restatement to 6.00 naming the refused receipt, rectified 8.18 + 0.82 (R5 S)",
+    type: "R5",
+    names: "caseHReceipt",
+    lines: SIX_AT_TEN,
+    rectified: ["8.18", "0.82"],
+    state: null,
+  },
+};
+
+const RESTATEMENT_CASES = [
+  [["caseAReceipt"], ["caseARestatement"], ["caseBRestatement"], ["caseERefund"]],
+  [["caseCInvoice"], ["caseCRestatement"]],
+  [["caseDReceipt"], ["caseDRefund"]],
+  [["caseFReceipt"], ["caseFRestatement"]],
+  [["caseGReceipt"], ["caseGRestatement"]],
+  [["caseIReceipt"], ["caseIReplacement"], ["caseIRestatement"]],
+  [["caseHReceipt"], ["caseHRestatement"]],
+];
+
+const RESTATEMENT_CHAIN_START = new Map(
+  RESTATEMENT_CASES.flatMap((requests) => requests.flat().map((stage) => [stage, requests[0][0]])),
+);
+
+const RESTATEMENT_SERIES = { F2: "FS", F1: "FF", R5: "RS", R1: "RF" };
+
+function restatementSerialEnd(stage) {
+  const kind = stage.slice(5);
+  return `${stage[4]}${{ Restatement: "S", Refund: "I", Replacement: "Q" }[kind] ?? ""}`;
+}
+
+function madridDayFrom(now, days) {
+  const today = formatDate(now, madridClock(now).offsetMinutes);
+  if (days === -1) return previousSpanishCalendarDate(today);
+  if (days === 1) {
+    const tomorrow = sameMadridTimeTomorrow(now);
+    return formatDate(tomorrow, madridClock(tomorrow).offsetMinutes);
+  }
+  return today;
+}
+
+function centsSum(values) {
+  return (values.reduce((sum, value) => sum + Math.round(Number(value) * 100), 0) / 100).toFixed(2);
+}
+
+// Each chain's records are built one per request; a record built after the
+// Madrid day changed would no longer ask its case's question.
+export function buildRestatementProbeRecords(options, stages, now, chain = []) {
+  const base = buildTestRecord({ ...options, now });
+  const built = [...chain];
+  const serialOf = (stage) =>
+    `${base.IDFactura.NumSerieFactura.replace("CI/", `CI-RST-${RESTATEMENT_SERIES[RESTATEMENT_STAGES[stage].type]}/`)}-${restatementSerialEnd(stage)}`;
+  for (const stage of stages) {
+    const spec = RESTATEMENT_STAGES[stage];
+    const letter = stage[4].toLowerCase();
+    const start = RESTATEMENT_CHAIN_START.get(stage);
+    if (built.length > 0) {
+      const began = built[0].IDFactura.FechaExpedicionFactura;
+      const day = RESTATEMENT_STAGES[start].day ?? 0;
+      if (began !== madridDayFrom(now, day)) {
+        const relation = { [-1]: ", not the day after it", 1: ", not the day before it" }[day];
+        throw new Error(
+          `Case (${letter})'s chain began with a record dated ${began}, but this one would be dated ${madridDayFrom(now, 0)}${relation ?? ""}: the Madrid day changed between them, so nothing more was sent; run again away from Madrid midnight`,
+        );
+      }
+    }
+    const named =
+      spec.names === undefined
+        ? undefined
+        : built.find((record) => record.IDFactura.NumSerieFactura === serialOf(spec.names));
+    if (spec.names !== undefined && named === undefined) {
+      throw new Error(`${stage} must be built after ${spec.names} in its chain`);
+    }
+    const generatedAt = spec.day === 1 ? sameMadridTimeTomorrow(now) : now;
+    const { offsetMinutes } = madridClock(generatedAt);
+    const previous = built.at(-1);
+    const corrective = spec.type.startsWith("R");
+    const body = {
+      ...base,
+      IDFactura: {
+        ...base.IDFactura,
+        NumSerieFactura: serialOf(stage),
+        FechaExpedicionFactura: madridDayFrom(now, spec.day ?? 0),
+      },
+      RefExterna: `CI-RST-${options.runId}-${restatementSerialEnd(stage)}`,
+      TipoFactura: spec.type,
+      ...(corrective
+        ? {
+            TipoRectificativa: spec.rectified ? "S" : "I",
+            FacturasRectificadas: { IDFacturaRectificada: [named.IDFactura] },
+          }
+        : {}),
+      ...(spec.rectified
+        ? {
+            ImporteRectificacion: {
+              BaseRectificada: spec.rectified[0],
+              CuotaRectificada: spec.rectified[1],
+            },
+          }
+        : {}),
+      ...(spec.operation ? { FechaOperacion: named.IDFactura.FechaExpedicionFactura } : {}),
+      DescripcionOperacion: `Restatement probe: case ${letter} ${stage.slice(5)}`,
+      Desglose: spec.lines.map(([rate, amount, vat]) => ({
+        ...base.Desglose[0],
+        TipoImpositivo: rate,
+        BaseImponibleOimporteNoSujeto: amount,
+        CuotaRepercutida: vat,
+      })),
+      CuotaTotal: centsSum(spec.lines.map(([, , vat]) => vat)),
+      ImporteTotal: centsSum(spec.lines.flatMap(([, amount, vat]) => [amount, vat])),
+      Encadenamiento: previous
+        ? { RegistroAnterior: { ...previous.IDFactura, Huella: previous.Huella } }
+        : { PrimerRegistro: "S" },
+      FechaHoraHusoGenRegistro: formatDateTime(generatedAt, offsetMinutes),
+      SistemaInformatico: {
+        ...base.SistemaInformatico,
+        NumeroInstalacion: `CI-RST-${options.runId}-${start[4]}`,
+      },
+    };
+    if (!["F1", "R1"].includes(spec.type)) delete body.Destinatarios;
+    const record = { ...body, Huella: computeHuella(body) };
+    assertValid(record, { now: generatedAt });
+    built.push(record);
+  }
+  return built.slice(chain.length);
+}
+
+function restatementExpected(stage) {
+  const { state = "Correcto", code } = RESTATEMENT_STAGES[stage];
+  if (state === null) return undefined;
+  return { state, code, text: code === undefined ? state : `${state} ${code}` };
+}
+
+export function restatementSummary(stage, entry) {
+  return {
+    case: stage[4].toLowerCase(),
+    record: RESTATEMENT_STAGES[stage].record,
+    expected: restatementExpected(stage)?.text ?? "reported only",
+    ...answerSummary(entry),
+  };
+}
+
+export function restatementPassed(evidence) {
+  return (
+    !evidence.incomplete &&
+    Object.keys(RESTATEMENT_STAGES)
+      .filter((stage) => restatementExpected(stage) !== undefined)
+      .every(
+        (stage) =>
+          evidence[stage]?.matchesExpectation === true &&
+          evidence.consulta?.[stage]?.matchesExpectation === true,
+      )
+  );
+}
+
+export function restatementDecisions(evidence) {
+  const answers = (stages) =>
+    Object.fromEntries(stages.map((stage) => [stage, answerSummary(evidence[stage] ?? {})]));
+  return {
+    S4: answers(["caseCRestatement", "caseGRestatement"]),
+    S11: answers(["caseHReceipt", "caseHRestatement"]),
+  };
+}
+
+export function submitRestatementProbe(client, cabecera, options, hooks) {
+  return submitChainedProbe(
+    client,
+    cabecera,
+    options,
+    {
+      cases: RESTATEMENT_CASES,
+      build: buildRestatementProbeRecords,
+      expected: restatementExpected,
+    },
+    hooks,
+  );
+}
+
 export async function submitFourBehaviourProbe(
   client,
   cabecera,
@@ -3430,6 +3711,7 @@ async function main() {
       "advance-rest",
       "replacement-after-credit",
       "canje",
+      "restatement-corrections",
     ].includes(mode)
   ) {
     throw new Error("Unknown AEAT preproduction mode");
@@ -3573,6 +3855,59 @@ async function main() {
       `AEAT replacement-after-credit complete: ${outageFlagEvidenceJson(evidence, identities)}\n`,
     );
     if (!replacementAfterCreditPassed(evidence)) process.exitCode = 1;
+    return;
+  }
+
+  if (mode === "restatement-corrections") {
+    process.stdout.write(
+      'AEAT restatement-corrections expectation: cases (a) to (g) every record Correcto; case (i) its receipt dated tomorrow Incorrecto with 1112 and both its R5 Correcto; case (h) reported only. Each case is its own installation and chain, one record per request; (b) and (e) continue (a)\'s chain. (a) is a receipt of 9.00 then an R5 "S" restating it to 6.00, ImporteRectificacion 8.18 + 0.82; (b) restates (a)\'s R5 to 3.00, rectified 5.45 + 0.55; (e) corrects (b)\'s R5 by differences, -3.00; (c) is a full invoice dated yesterday then its R1 "S" today, restated to 60.50 and carrying FechaOperacion; (d), the control, is a receipt then its R5 "I" to zero; (f) restates a receipt of two rates to its 10% rate alone, the 21% rate left out of Desglose and counted in ImporteRectificacion 8.45 + 1.18; (g) is a receipt dated yesterday then its R5 "S" today carrying FechaOperacion; (i) is a receipt AEAT refuses for its date, its replacement (R5 "S", rectified 0.00) and a restatement naming the replacement; (h) is a restatement naming a refused receipt with no replacement between. Cases (c) and (g) decide whether a restatement carries FechaOperacion (decision S4) and case (h) informs S11; the decisions line repeats their answers. Exit 0 only when every record of (a) to (g) and (i) matches and its lookup agrees: a record answered Correcto found once, Correcto, with the hash sent, a refused record not found, and every request and lookup, case (h)\'s included, gets a readable answer; any other result exits 1 for the owner to read: for a required record Incorrecto, read its CodigoErrorRegistro. Test service only; results do not establish production behaviour.\n',
+    );
+    const probeOptions = {
+      nif,
+      name,
+      systemNif: required("AEAT_TEST_SYSTEM_NIF"),
+      systemName: required("AEAT_TEST_SYSTEM_NAME"),
+      recipientNif: recipient.NIF,
+      recipientName: recipient.NombreRazon,
+      runId,
+    };
+    const identities = [
+      nif,
+      name,
+      probeOptions.systemNif,
+      probeOptions.systemName,
+      recipient.NIF,
+      recipient.NombreRazon,
+    ];
+    const evidence = await submitRestatementProbe(client, cabecera, probeOptions, {
+      rawExchange: () => ({ request: lastRawRequest, reply: lastRawReply }),
+      clearRawExchange: () => {
+        lastRawRequest = undefined;
+        lastRawReply = undefined;
+      },
+      report: (request, entries) => {
+        for (const [stage, entry] of entries) {
+          process.stdout.write(
+            `AEAT restatement-corrections ${stage} result: ${outageFlagEvidenceJson(restatementSummary(stage, entry), identities)}\n`,
+          );
+        }
+        process.stdout.write(
+          `AEAT restatement-corrections ${request.stages.join("+")}: ${outageFlagEvidenceJson(request, identities)}\n`,
+        );
+      },
+      reportConsulta: (stage, entry) => {
+        process.stdout.write(
+          `AEAT restatement-corrections ${stage} consulta: ${outageFlagEvidenceJson(entry, identities)}\n`,
+        );
+      },
+    });
+    process.stdout.write(
+      `AEAT restatement-corrections decisions: ${outageFlagEvidenceJson(restatementDecisions(evidence), identities)}\n`,
+    );
+    process.stdout.write(
+      `AEAT restatement-corrections complete: ${outageFlagEvidenceJson(evidence, identities)}\n`,
+    );
+    if (!restatementPassed(evidence)) process.exitCode = 1;
     return;
   }
 

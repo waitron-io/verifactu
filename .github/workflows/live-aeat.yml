@@ -37,6 +37,7 @@ on:
           - advance-rest
           - replacement-after-credit
           - canje
+          - restatement-corrections
         default: consult
         required: true
       excluded_regime:

@@ -8141,3 +8141,643 @@ for (const [refuse, status] of [
     }
   });
 }
+
+const RESTATEMENT_CHAINS = [
+  ["A", ["caseAReceipt", "caseARestatement", "caseBRestatement", "caseERefund"]],
+  ["C", ["caseCInvoice", "caseCRestatement"]],
+  ["D", ["caseDReceipt", "caseDRefund"]],
+  ["F", ["caseFReceipt", "caseFRestatement"]],
+  ["G", ["caseGReceipt", "caseGRestatement"]],
+  ["I", ["caseIReceipt", "caseIReplacement", "caseIRestatement"]],
+  ["H", ["caseHReceipt", "caseHRestatement"]],
+];
+const RESTATEMENT_STAGES = RESTATEMENT_CHAINS.flatMap(([, stages]) => stages);
+const RESTATEMENT_VERDICT_STAGES = RESTATEMENT_STAGES.filter((stage) => !stage.startsWith("caseH"));
+
+function restatementRecordsAt(now, options = decimalOptions) {
+  assert.equal(typeof live.buildRestatementProbeRecords, "function");
+  const records = {};
+  for (const [, stages] of RESTATEMENT_CHAINS) {
+    const chain = [];
+    for (const stage of stages) {
+      [records[stage]] = live.buildRestatementProbeRecords(options, [stage], now, chain);
+      chain.push(records[stage]);
+    }
+  }
+  return records;
+}
+
+function figuresOf(record) {
+  return {
+    TipoFactura: record.TipoFactura,
+    TipoRectificativa: record.TipoRectificativa,
+    lines: record.Desglose.map((line) => [
+      line.TipoImpositivo,
+      line.BaseImponibleOimporteNoSujeto,
+      line.CuotaRepercutida,
+    ]),
+    CuotaTotal: record.CuotaTotal,
+    ImporteTotal: record.ImporteTotal,
+    ImporteRectificacion: record.ImporteRectificacion,
+    names: record.FacturasRectificadas?.IDFacturaRectificada,
+    FechaOperacion: record.FechaOperacion,
+  };
+}
+
+test("restatement-corrections builds each case's records with the restated and replaced figures", () => {
+  const records = restatementRecordsAt(decimalOptions.now);
+  const id = (stage) => records[stage].IDFactura;
+  const rectified = (BaseRectificada, CuotaRectificada) => ({ BaseRectificada, CuotaRectificada });
+  const nine = [["10.00", "8.18", "0.82"]];
+  const six = [["10.00", "5.45", "0.55"]];
+  const expected = {
+    caseAReceipt: { TipoFactura: "F2", lines: nine, CuotaTotal: "0.82", ImporteTotal: "9.00" },
+    caseARestatement: {
+      TipoFactura: "R5",
+      TipoRectificativa: "S",
+      lines: six,
+      CuotaTotal: "0.55",
+      ImporteTotal: "6.00",
+      ImporteRectificacion: rectified("8.18", "0.82"),
+      names: [id("caseAReceipt")],
+    },
+    caseBRestatement: {
+      TipoFactura: "R5",
+      TipoRectificativa: "S",
+      lines: [["10.00", "2.73", "0.27"]],
+      CuotaTotal: "0.27",
+      ImporteTotal: "3.00",
+      ImporteRectificacion: rectified("5.45", "0.55"),
+      names: [id("caseARestatement")],
+    },
+    caseERefund: {
+      TipoFactura: "R5",
+      TipoRectificativa: "I",
+      lines: [["10.00", "-2.73", "-0.27"]],
+      CuotaTotal: "-0.27",
+      ImporteTotal: "-3.00",
+      names: [id("caseBRestatement")],
+    },
+    caseCInvoice: {
+      TipoFactura: "F1",
+      lines: [["21.00", "100.00", "21.00"]],
+      CuotaTotal: "21.00",
+      ImporteTotal: "121.00",
+    },
+    caseCRestatement: {
+      TipoFactura: "R1",
+      TipoRectificativa: "S",
+      lines: [["21.00", "50.00", "10.50"]],
+      CuotaTotal: "10.50",
+      ImporteTotal: "60.50",
+      ImporteRectificacion: rectified("100.00", "21.00"),
+      names: [id("caseCInvoice")],
+      FechaOperacion: "26-09-2026",
+    },
+    caseDReceipt: { TipoFactura: "F2", lines: nine, CuotaTotal: "0.82", ImporteTotal: "9.00" },
+    caseDRefund: {
+      TipoFactura: "R5",
+      TipoRectificativa: "I",
+      lines: [["10.00", "-8.18", "-0.82"]],
+      CuotaTotal: "-0.82",
+      ImporteTotal: "-9.00",
+      names: [id("caseDReceipt")],
+    },
+    caseFReceipt: {
+      TipoFactura: "F2",
+      lines: [...six, ["21.00", "3.00", "0.63"]],
+      CuotaTotal: "1.18",
+      ImporteTotal: "9.63",
+    },
+    caseFRestatement: {
+      TipoFactura: "R5",
+      TipoRectificativa: "S",
+      lines: six,
+      CuotaTotal: "0.55",
+      ImporteTotal: "6.00",
+      ImporteRectificacion: rectified("8.45", "1.18"),
+      names: [id("caseFReceipt")],
+    },
+    caseGReceipt: { TipoFactura: "F2", lines: nine, CuotaTotal: "0.82", ImporteTotal: "9.00" },
+    caseGRestatement: {
+      TipoFactura: "R5",
+      TipoRectificativa: "S",
+      lines: six,
+      CuotaTotal: "0.55",
+      ImporteTotal: "6.00",
+      ImporteRectificacion: rectified("8.18", "0.82"),
+      names: [id("caseGReceipt")],
+      FechaOperacion: "26-09-2026",
+    },
+    caseIReceipt: { TipoFactura: "F2", lines: nine, CuotaTotal: "0.82", ImporteTotal: "9.00" },
+    caseIReplacement: {
+      TipoFactura: "R5",
+      TipoRectificativa: "S",
+      lines: nine,
+      CuotaTotal: "0.82",
+      ImporteTotal: "9.00",
+      ImporteRectificacion: rectified("0.00", "0.00"),
+      names: [id("caseIReceipt")],
+    },
+    caseIRestatement: {
+      TipoFactura: "R5",
+      TipoRectificativa: "S",
+      lines: six,
+      CuotaTotal: "0.55",
+      ImporteTotal: "6.00",
+      ImporteRectificacion: rectified("8.18", "0.82"),
+      names: [id("caseIReplacement")],
+    },
+    caseHReceipt: { TipoFactura: "F2", lines: nine, CuotaTotal: "0.82", ImporteTotal: "9.00" },
+    caseHRestatement: {
+      TipoFactura: "R5",
+      TipoRectificativa: "S",
+      lines: six,
+      CuotaTotal: "0.55",
+      ImporteTotal: "6.00",
+      ImporteRectificacion: rectified("8.18", "0.82"),
+      names: [id("caseHReceipt")],
+    },
+  };
+  assert.deepEqual(Object.keys(records), RESTATEMENT_STAGES);
+  for (const stage of RESTATEMENT_STAGES) {
+    assert.deepEqual(JSON.parse(JSON.stringify(figuresOf(records[stage]))), expected[stage], stage);
+  }
+  assert.deepEqual(
+    Object.fromEntries(
+      RESTATEMENT_STAGES.map((stage) => [stage, records[stage].IDFactura.NumSerieFactura]),
+    ),
+    {
+      caseAReceipt: "CI-RST-FS/20260927/12345-A",
+      caseARestatement: "CI-RST-RS/20260927/12345-AS",
+      caseBRestatement: "CI-RST-RS/20260927/12345-BS",
+      caseERefund: "CI-RST-RS/20260927/12345-EI",
+      caseCInvoice: "CI-RST-FF/20260927/12345-C",
+      caseCRestatement: "CI-RST-RF/20260927/12345-CS",
+      caseDReceipt: "CI-RST-FS/20260927/12345-D",
+      caseDRefund: "CI-RST-RS/20260927/12345-DI",
+      caseFReceipt: "CI-RST-FS/20260927/12345-F",
+      caseFRestatement: "CI-RST-RS/20260927/12345-FS",
+      caseGReceipt: "CI-RST-FS/20260927/12345-G",
+      caseGRestatement: "CI-RST-RS/20260927/12345-GS",
+      caseIReceipt: "CI-RST-FS/20260927/12345-I",
+      caseIReplacement: "CI-RST-RS/20260927/12345-IQ",
+      caseIRestatement: "CI-RST-RS/20260927/12345-IS",
+      caseHReceipt: "CI-RST-FS/20260927/12345-H",
+      caseHRestatement: "CI-RST-RS/20260927/12345-HS",
+    },
+  );
+  const issued = {
+    caseCInvoice: "26-09-2026",
+    caseGReceipt: "26-09-2026",
+    caseIReceipt: "28-09-2026",
+    caseHReceipt: "28-09-2026",
+  };
+  for (const stage of RESTATEMENT_STAGES) {
+    assert.equal(
+      records[stage].IDFactura.FechaExpedicionFactura,
+      issued[stage] ?? "27-09-2026",
+      stage,
+    );
+  }
+  assert.equal(records.caseIReceipt.FechaHoraHusoGenRegistro, "2026-09-28T14:00:00+02:00");
+  assert.equal(records.caseGReceipt.FechaHoraHusoGenRegistro, "2026-09-27T14:00:00+02:00");
+  for (const [letter, stages] of RESTATEMENT_CHAINS) {
+    const chain = stages.map((stage) => records[stage]);
+    assert.deepEqual(chain[0].Encadenamiento, { PrimerRegistro: "S" }, letter);
+    for (const [i, record] of chain.entries()) {
+      assert.equal(record.SistemaInformatico.NumeroInstalacion, `CI-RST-12345-${letter}`);
+      if (i > 0) {
+        assert.deepEqual(record.Encadenamiento, {
+          RegistroAnterior: { ...chain[i - 1].IDFactura, Huella: chain[i - 1].Huella },
+        });
+      }
+    }
+  }
+  for (const stage of ["caseCInvoice", "caseCRestatement"]) {
+    assert.deepEqual(records[stage].Destinatarios, {
+      IDDestinatario: [
+        { NombreRazon: decimalOptions.recipientName, NIF: decimalOptions.recipientNif },
+      ],
+    });
+  }
+  for (const stage of RESTATEMENT_STAGES) {
+    const record = records[stage];
+    if (!stage.startsWith("caseC")) assert.equal(record.Destinatarios, undefined, stage);
+    assert.equal(record.Huella, computeHuella(record), stage);
+    const tomorrow = stage === "caseIReceipt" || stage === "caseHReceipt";
+    const clock = tomorrow ? new Date(decimalOptions.now.getTime() + DAY_MS) : decimalOptions.now;
+    assert.deepEqual(
+      validate(record, { now: clock }).filter(({ severity }) => severity === "error"),
+      [],
+      stage,
+    );
+  }
+});
+
+for (const [name, stage, chain, now, message] of [
+  [
+    "case A's receipt is from the day before",
+    "caseARestatement",
+    "caseAReceipt",
+    ["2026-11-28T22:59:55Z", "2026-11-28T23:00:05Z"],
+    "Case (a)'s chain began with a record dated 28-11-2026, but this one would be dated 29-11-2026: the Madrid day changed between them, so nothing more was sent; run again away from Madrid midnight",
+  ],
+  [
+    "case G's receipt is two days before",
+    "caseGRestatement",
+    "caseGReceipt",
+    ["2026-11-28T22:59:55Z", "2026-11-28T23:00:05Z"],
+    "Case (g)'s chain began with a record dated 27-11-2026, but this one would be dated 29-11-2026, not the day after it: the Madrid day changed between them, so nothing more was sent; run again away from Madrid midnight",
+  ],
+  [
+    "case I's receipt is dated today, not tomorrow",
+    "caseIReplacement",
+    "caseIReceipt",
+    ["2026-11-28T22:59:55Z", "2026-11-28T23:00:05Z"],
+    "Case (i)'s chain began with a record dated 29-11-2026, but this one would be dated 29-11-2026, not the day before it: the Madrid day changed between them, so nothing more was sent; run again away from Madrid midnight",
+  ],
+  [
+    "case B follows a restatement from the day before",
+    "caseBRestatement",
+    ["caseAReceipt", "caseARestatement"],
+    ["2026-11-28T22:59:55Z", "2026-11-28T23:00:05Z"],
+    "Case (b)'s chain began with a record dated 28-11-2026, but this one would be dated 29-11-2026: the Madrid day changed between them, so nothing more was sent; run again away from Madrid midnight",
+  ],
+]) {
+  test(`restatement-corrections refuses to build ${stage} when ${name}`, () => {
+    const before = new Date(now[0]);
+    const earlier = [];
+    for (const first of [chain].flat()) {
+      earlier.push(...live.buildRestatementProbeRecords(decimalOptions, [first], before, earlier));
+    }
+    assert.throws(
+      () => live.buildRestatementProbeRecords(decimalOptions, [stage], new Date(now[1]), earlier),
+      { message },
+    );
+  });
+}
+
+for (const [name, now, yesterday, tomorrow] of [
+  ["a month", "2026-10-01T08:00:00Z", "30-09-2026", "02-10-2026"],
+  ["the autumn clock change", "2027-10-30T22:30:00Z", "30-10-2027", "01-11-2027"],
+  ["the spring clock change", "2027-03-27T23:30:00Z", "27-03-2027", "29-03-2027"],
+]) {
+  test(`restatement-corrections dates the day before and after across ${name}`, () => {
+    const at = new Date(now);
+    const [g] = live.buildRestatementProbeRecords(decimalOptions, ["caseGReceipt"], at);
+    const [i] = live.buildRestatementProbeRecords(decimalOptions, ["caseIReceipt"], at);
+    assert.equal(g.IDFactura.FechaExpedicionFactura, yesterday);
+    assert.equal(i.IDFactura.FechaExpedicionFactura, tomorrow);
+    const [restated] = live.buildRestatementProbeRecords(decimalOptions, ["caseGRestatement"], at, [
+      g,
+    ]);
+    assert.equal(restated.FechaOperacion, yesterday);
+  });
+}
+
+async function restatementProbe(fault = {}) {
+  assert.equal(typeof live.submitRestatementProbe, "function");
+  let clock = fault.start ?? decimalOptions.now.getTime();
+  const fake = createFakeAeat({ serverNow: new Date(clock), tiempoEsperaInicial: 13 });
+  let exchange;
+  const requests = [];
+  const consultas = [];
+  const waits = [];
+  const reports = [];
+  const soap = createClient({
+    endpoint: "https://fake.aeat.test/soap",
+    fetch: async (url, init) => {
+      exchange = { request: init.body };
+      const response = await fake.fetch(url, init);
+      exchange.reply = await response.clone().text();
+      return response;
+    },
+  });
+  const evidence = await live.submitRestatementProbe(
+    {
+      async submit(header, records) {
+        requests.push(records.map(({ RegistroAlta }) => structuredClone(RegistroAlta)));
+        const n = requests.length;
+        for (const { RegistroAlta: id } of records) {
+          if (fault.reject && id.IDFactura.NumSerieFactura.endsWith(fault.reject)) {
+            const { IDEmisorFactura, NumSerieFactura, FechaExpedicionFactura } = id.IDFactura;
+            fake.reject(
+              `${IDEmisorFactura}|${NumSerieFactura}|${FechaExpedicionFactura}`,
+              1100,
+              "controlled refusal",
+            );
+          }
+        }
+        const response = await soap.submit(header, records);
+        response.TiempoEsperaEnvio = n + 10;
+        return response;
+      },
+      async consultar(header, filter) {
+        consultas.push([structuredClone(header), structuredClone(filter)]);
+        return soap.consultar(header, filter);
+      },
+    },
+    successorHeader,
+    decimalOptions,
+    {
+      now: () => new Date(clock),
+      waitForSubmission: async (seconds) => {
+        waits.push(seconds);
+        clock += seconds * 1000;
+        fake.setServerNow(new Date(clock));
+      },
+      rawExchange: () => (exchange ? structuredClone(exchange) : undefined),
+      clearRawExchange: () => {
+        exchange = undefined;
+      },
+      report: (request) => reports.push(structuredClone(request.stages)),
+    },
+  );
+  return { evidence, requests, consultas, waits, reports };
+}
+
+test("restatement-corrections sends each record alone, in its chain, then looks up every number", async () => {
+  const { evidence, requests, consultas, waits, reports } = await restatementProbe();
+  assert.equal(evidence.incomplete, false);
+  assert.equal(live.restatementPassed(evidence), true);
+  assert.deepEqual(
+    reports,
+    RESTATEMENT_STAGES.map((stage) => [stage]),
+  );
+  assert.equal(waits.length, RESTATEMENT_STAGES.length - 1);
+  for (const [i, stage] of RESTATEMENT_STAGES.entries()) {
+    assert.deepEqual(evidence[stage].record, requests[i][0], stage);
+    const refused = stage === "caseIReceipt" || stage === "caseHReceipt";
+    assert.equal(evidence[stage].line.EstadoRegistro, refused ? "Incorrecto" : "Correcto", stage);
+    if (refused) assert.equal(evidence[stage].line.CodigoErrorRegistro, 1112, stage);
+    assert.equal(evidence.consulta[stage].matchesExpectation, true, stage);
+  }
+  assert.deepEqual(
+    consultas.map(([, filter]) => filter.NumSerieFactura),
+    requests.map(([record]) => record.IDFactura.NumSerieFactura),
+  );
+  assert.deepEqual(
+    live.restatementSummary("caseIReceipt", evidence.caseIReceipt).expected,
+    "Incorrecto 1112",
+  );
+  const decisions = live.restatementDecisions(evidence);
+  assert.equal(decisions.S4.caseCRestatement.EstadoRegistro, "Correcto");
+  assert.equal(decisions.S4.caseGRestatement.EstadoRegistro, "Correcto");
+  assert.equal(decisions.S11.caseHReceipt.CodigoErrorRegistro, 1112);
+  assert.equal(decisions.S11.caseHRestatement.EstadoRegistro, "Correcto");
+});
+
+for (const [name, reject] of [
+  ["accepted", undefined],
+  ["refused", "RS/20260927/12345-HS"],
+]) {
+  test(`restatement-corrections leaves the verdict to the required cases when case H's restatement is ${name}`, async () => {
+    const { evidence } = await restatementProbe({ reject });
+    assert.equal(evidence.caseHRestatement.line.EstadoRegistro, reject ? "Incorrecto" : "Correcto");
+    assert.equal(evidence.incomplete, false);
+    assert.equal(live.restatementPassed(evidence), true);
+    const summary = live.restatementSummary("caseHRestatement", evidence.caseHRestatement);
+    assert.equal(summary.case, "h");
+    assert.equal(summary.expected, "reported only");
+    assert.equal(
+      live.restatementDecisions(evidence).S11.caseHRestatement.EstadoRegistro,
+      reject ? "Incorrecto" : "Correcto",
+    );
+  });
+}
+
+for (const [stage, serialEnd] of [
+  ["caseARestatement", "RS/20260927/12345-AS"],
+  ["caseBRestatement", "RS/20260927/12345-BS"],
+  ["caseCRestatement", "RF/20260927/12345-CS"],
+  ["caseDRefund", "RS/20260927/12345-DI"],
+  ["caseERefund", "RS/20260927/12345-EI"],
+  ["caseFRestatement", "RS/20260927/12345-FS"],
+  ["caseGRestatement", "RS/20260927/12345-GS"],
+  ["caseIReplacement", "RS/20260927/12345-IQ"],
+  ["caseIRestatement", "RS/20260927/12345-IS"],
+]) {
+  test(`restatement-corrections fails the run and prints AEAT's code when ${stage} is refused`, async () => {
+    const { evidence, requests } = await restatementProbe({ reject: serialEnd });
+    assert.equal(requests.length, RESTATEMENT_STAGES.length);
+    assert.equal(evidence.incomplete, false);
+    assert.equal(evidence[stage].matchesExpectation, false);
+    assert.equal(live.restatementPassed(evidence), false);
+    assert.deepEqual(live.restatementSummary(stage, evidence[stage]), {
+      case: stage[4].toLowerCase(),
+      record: live.restatementSummary(stage, {}).record,
+      expected: "Correcto",
+      EstadoEnvio: "Incorrecto",
+      EstadoRegistro: "Incorrecto",
+      CodigoErrorRegistro: 1100,
+      DescripcionErrorRegistro: "controlled refusal",
+    });
+  });
+}
+
+test("restatement-corrections stops case A, sending nothing more, when Madrid midnight passes before its restatement", async () => {
+  const { evidence, requests, consultas } = await restatementProbe({
+    start: Date.parse("2026-11-28T22:59:55Z"),
+  });
+  assert.equal(requests.length, 1);
+  assert.equal(evidence.incomplete, true);
+  assert.equal(evidence.stoppedAfter, "caseARestatement");
+  assert.equal(evidence.caseARestatement.record, undefined);
+  assert.match(evidence.caseARestatement.error, /the Madrid day changed between them/);
+  assert.equal(evidence.caseCInvoice, undefined);
+  assert.equal(consultas.length, 1);
+  assert.equal(live.restatementPassed(evidence), false);
+});
+
+test("restatement-corrections passes only when every required record and its lookup matched, whatever case H shows", () => {
+  const passing = Object.fromEntries(
+    RESTATEMENT_VERDICT_STAGES.map((stage) => [stage, { matchesExpectation: true }]),
+  );
+  const consulta = Object.fromEntries(
+    RESTATEMENT_VERDICT_STAGES.map((stage) => [stage, { matchesExpectation: true }]),
+  );
+  assert.equal(live.restatementPassed({ incomplete: false, ...passing, consulta }), true);
+  assert.equal(
+    live.restatementPassed({
+      incomplete: false,
+      ...passing,
+      caseHReceipt: { matchesExpectation: false },
+      caseHRestatement: { matchesExpectation: false },
+      consulta: { ...consulta, caseHRestatement: { matchesExpectation: false } },
+    }),
+    true,
+  );
+  assert.equal(live.restatementPassed({ incomplete: true, ...passing, consulta }), false);
+  for (const stage of RESTATEMENT_VERDICT_STAGES) {
+    const missing = { incomplete: false, ...passing, consulta: { ...consulta } };
+    delete missing[stage];
+    assert.equal(live.restatementPassed(missing), false, stage);
+    const lookupFailed = {
+      incomplete: false,
+      ...passing,
+      consulta: { ...consulta, [stage]: { matchesExpectation: false } },
+    };
+    assert.equal(live.restatementPassed(lookupFailed), false, stage);
+  }
+});
+
+test("restatement-corrections reports case C's and G's FechaOperacion answers for S4 and case H's for S11", () => {
+  assert.deepEqual(live.restatementDecisions({}), {
+    S4: {
+      caseCRestatement: { verdict: "unverified", reason: "no answer from AEAT was read" },
+      caseGRestatement: { verdict: "unverified", reason: "no answer from AEAT was read" },
+    },
+    S11: {
+      caseHReceipt: { verdict: "unverified", reason: "no answer from AEAT was read" },
+      caseHRestatement: { verdict: "unverified", reason: "no answer from AEAT was read" },
+    },
+  });
+});
+
+test("restatement-corrections is a reachable live CLI mode listed in the workflow", () => {
+  const run = spawnSync(process.execPath, ["scripts/live-aeat.mjs", "restatement-corrections"], {
+    encoding: "utf8",
+    timeout: 5000,
+    env: { PATH: process.env.PATH },
+  });
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /Set AEAT_TEST_NIF/);
+  assert.doesNotMatch(run.stderr, /Unknown AEAT preproduction mode/);
+  const workflow = readFileSync(".github/workflows/live-aeat.yml", "utf8");
+  assert.match(workflow, /^ {10}- restatement-corrections$/m);
+});
+
+function restatementCli(refuseSerialEnd) {
+  const source = `
+    import https from "node:https";
+    import { syncBuiltinESMExports } from "node:module";
+    import { EventEmitter } from "node:events";
+    import { pathToFileURL } from "node:url";
+    import { createFakeAeat } from "./dist/testing/fake-aeat.js";
+    import { parseEnvio } from "./dist/index.js";
+    const RealDate = Date;
+    const realTimeout = setTimeout;
+    let clock = RealDate.parse("2026-10-21T10:00:00Z");
+    globalThis.Date = class extends RealDate {
+      constructor(...args) { super(...(args.length ? args : [clock])); }
+      static now() { return clock; }
+    };
+    globalThis.setTimeout = (callback, milliseconds, ...args) => {
+      clock += milliseconds;
+      return realTimeout(callback, 0, ...args);
+    };
+    const fake = createFakeAeat({ serverNow: new RealDate(clock), tiempoEsperaInicial: 0 });
+    globalThis.fetch = () => { throw new Error("unexpected external request"); };
+    https.request = (url, options, callback) => {
+      if (!url.startsWith("https://prewww") || options.method !== "POST") throw new Error("unexpected endpoint");
+      const req = new EventEmitter();
+      req.end = async (body) => {
+        try {
+          fake.setServerNow(new RealDate(clock));
+          if (${JSON.stringify(refuseSerialEnd)} && body.includes("RegFactuSistemaFacturacion>")) {
+            for (const entry of parseEnvio(body).registros) {
+              const id = entry.RegistroAlta.IDFactura;
+              if (id.NumSerieFactura.endsWith(${JSON.stringify(refuseSerialEnd)})) {
+                fake.reject(id.IDEmisorFactura + "|" + id.NumSerieFactura + "|" + id.FechaExpedicionFactura, 1100, "controlled refusal");
+              }
+            }
+          }
+          const result = await fake.fetch(url, { method: options.method, headers: options.headers, body });
+          const response = new EventEmitter();
+          response.statusCode = result.status;
+          callback(response);
+          response.emit("data", Buffer.from(await result.text()));
+          response.emit("end");
+        } catch (error) { req.emit("error", error); }
+      };
+      return req;
+    };
+    syncBuiltinESMExports();
+    process.argv = [process.execPath, process.cwd() + "/scripts/live-aeat.mjs", "restatement-corrections"];
+    await import(pathToFileURL(process.argv[1]));
+  `;
+  return spawnSync(process.execPath, ["--input-type=module", "--eval", source], {
+    encoding: "utf8",
+    timeout: 10000,
+    env: {
+      PATH: process.env.PATH,
+      AEAT_TEST_P12_BASE64: Buffer.from("invalid synthetic certificate").toString("base64"),
+      AEAT_TEST_P12_PASSWORD: "synthetic-password-never-logged",
+      AEAT_TEST_NIF: "89890001K",
+      AEAT_TEST_NAME: "Issuer & Partners <A>",
+      AEAT_TEST_SYSTEM_NIF: "B99999997",
+      AEAT_TEST_SYSTEM_NAME: "Software & Systems <B>",
+      AEAT_TEST_RECIPIENT_NIF: "11111111H",
+      AEAT_TEST_RECIPIENT_NAME: "Guest & Friends <C>",
+      GITHUB_RUN_ID: "7654321",
+    },
+  });
+}
+
+for (const [refuse, status] of [
+  ["", 0],
+  ["RS/20261021/7654321-HS", 0],
+  ["RS/20261021/7654321-FS", 1],
+  ["RF/20261021/7654321-CS", 1],
+]) {
+  test(`restatement-corrections CLI exits ${status} ${refuse ? `when ${refuse} is refused` : "when every record is answered as expected"}, printing each verdict and the decisions`, () => {
+    const run = restatementCli(refuse);
+    assert.equal(run.status, status, run.stderr + run.stdout);
+    const lines = run.stdout.trim().split("\n");
+    assert.equal(lines.length, 1 + 17 * 3 + 2, run.stdout);
+    assert.match(
+      lines[0],
+      /^AEAT restatement-corrections expectation: cases \(a\) to \(g\) every record Correcto; case \(i\) its receipt dated tomorrow Incorrecto with 1112 and both its R5 Correcto; case \(h\) reported only\./,
+    );
+    assert.match(lines[0], /Test service only; results do not establish production behaviour\.$/);
+    const summaries = lines
+      .filter((line) => / result: /.test(line))
+      .map((line) => JSON.parse(line.replace(/^AEAT restatement-corrections \w+ result: /, "")));
+    assert.deepEqual(
+      summaries.map((summary) => summary.case),
+      RESTATEMENT_STAGES.map((stage) => stage[4].toLowerCase()),
+    );
+    const refusedStage = { HS: "caseHRestatement", FS: "caseFRestatement", CS: "caseCRestatement" }[
+      refuse.slice(-2)
+    ];
+    for (const [i, summary] of summaries.entries()) {
+      const stage = RESTATEMENT_STAGES[i];
+      const future = stage === "caseIReceipt" || stage === "caseHReceipt";
+      const refused = stage === refusedStage;
+      assert.equal(summary.EstadoRegistro, future || refused ? "Incorrecto" : "Correcto", stage);
+      if (future) assert.equal(summary.CodigoErrorRegistro, 1112, stage);
+      if (refused) assert.equal(summary.CodigoErrorRegistro, 1100, stage);
+    }
+    assert.equal(lines.filter((line) => / consulta: /.test(line)).length, 17);
+    const decisions = JSON.parse(
+      lines.at(-2).replace("AEAT restatement-corrections decisions: ", ""),
+    );
+    assert.equal(
+      decisions.S4.caseCRestatement.EstadoRegistro,
+      refusedStage === "caseCRestatement" ? "Incorrecto" : "Correcto",
+    );
+    assert.equal(decisions.S4.caseGRestatement.EstadoRegistro, "Correcto");
+    assert.equal(decisions.S11.caseHReceipt.CodigoErrorRegistro, 1112);
+    const evidence = JSON.parse(
+      lines.at(-1).replace("AEAT restatement-corrections complete: ", ""),
+    );
+    assert.equal(evidence.incomplete, false);
+    assert.equal(evidence.caseCRestatement.record.FechaOperacion, "20-10-2026");
+    assert.equal(evidence.caseGRestatement.record.FechaOperacion, "20-10-2026");
+    for (const identity of [
+      "89890001K",
+      "B99999997",
+      "11111111H",
+      "Issuer",
+      "Partners",
+      "Software &",
+      "Systems",
+      "Guest",
+      "synthetic-password-never-logged",
+    ]) {
+      assert.equal(run.stdout.includes(identity), false, identity);
+      assert.equal(run.stderr.includes(identity), false, identity);
+    }
+  });
+}
